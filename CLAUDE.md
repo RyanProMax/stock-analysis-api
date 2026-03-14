@@ -1,12 +1,13 @@
 # CLAUDE.md
 
-Stock Analysis API 后端项目。
+Stock Analysis API 后端项目，支持 HTTP REST API 和 MCP 协议。
 
 ## 技术栈
 
 - Python 3.12+
 - FastAPI + Uvicorn
 - Poetry 依赖管理
+- MCP (Model Context Protocol)
 
 ## 开发命令
 
@@ -14,13 +15,13 @@ Stock Analysis API 后端项目。
 # 安装依赖
 poetry install
 
-# 运行服务
+# 运行 HTTP 服务
 poetry run python main.py
 # 或
 poetry run start
 
-# 运行测试
-poetry run pytest
+# 运行 MCP 服务 (供 AI Agent 调用)
+poetry run stock-mcp
 
 # 代码格式化
 poetry run black --line-length 100 .
@@ -30,31 +31,80 @@ poetry run black --line-length 100 .
 
 ```
 src/
-├── analyzer/         # 因子计算
+├── analyzer/         # 因子计算 (DCF, Comps, 技术/基本面)
 ├── api/              # FastAPI 路由
 ├── config.py         # 配置
-├── core/             # 核心功能
-├── data_provider/    # 数据源
+├── core/             # 核心功能 (StockService)
+├── data_provider/    # 数据源 (A谷/美股)
+├── mcp/              # MCP Server (AI Agent 接口)
 ├── model/            # 数据模型
-├── notification/     # 通知
 ├── storage/          # 缓存存储
-└── utils/           # 工具函数
+└── utils/            # 工具函数
 ```
 
-## 环境变量
+## API 能力
 
-复制 `.env.example` 为 `.env` 并配置：
+### HTTP API (`/stock/*`, `/valuation/*`)
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/stock/analyze` | POST | 批量分析股票 |
+| `/stock/list` | GET | 获取股票列表 |
+| `/stock/search` | POST | 搜索股票 |
+| `/valuation/dcf` | GET | DCF 估值分析 |
+| `/valuation/comps` | GET | 可比公司分析 |
+
+### MCP Tools (8个)
+
+| 工具 | 描述 |
+|------|------|
+| `get_stock_data` | 获取股票行情数据 |
+| `get_stock_list` | 获取股票列表 |
+| `search_stocks` | 搜索股票 |
+| `analyze_stock` | 综合分析股票 (技术面+基本面) |
+| `get_technical_factors` | 获取技术面因子 |
+| `get_fundamental_factors` | 获取基本面因子 |
+| `analyze_dcf` | DCF 估值分析 (仅美股) |
+| `analyze_comps` | 可比公司分析 (仅美股) |
+
+**MCP 和 HTTP API 能力对齐原则：**
+- MCP 工具与 HTTP API 提供相同的分析能力
+- MCP 使用 stdio 传输，适合同服务器 Agent 调用
+- HTTP API 使用 REST，适合跨服务调用
+
+## 环境变量
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | TUSHARE_TOKEN | 可选 | Tushare Token |
-| PORT | 否 | 端口 (默认 8080) |
+| PORT | 否 | HTTP 端口 (默认 8080) |
 | ENV | 否 | development/production |
 
 ## 部署
 
-使用 Docker 构建：
+### Docker
+
 ```bash
 docker build -t stock-analysis-api .
 docker run -p 8080:8080 stock-analysis-api
 ```
+
+### MCP Agent 连接
+
+```json
+{
+  "mcpServers": {
+    "stock-analysis": {
+      "command": "python",
+      "args": ["-m", "src.mcp.server"],
+      "cwd": "/path/to/stock-analysis-api"
+    }
+  }
+}
+```
+
+## 代码规范
+
+- 新增 API 能力时，需同时更新 HTTP API 和 MCP Tools
+- 业务逻辑放在 `src/core/` 或 `src/analyzer/`，API 层只做调用转发
+- DCF 和 Comps 分析仅支持美股
