@@ -73,11 +73,6 @@ class Config:
 
     def _load_config(self):
         """从环境变量加载配置"""
-        # LLM 配置
-        self.openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
-        self.openai_base_url: str = os.environ.get("OPENAI_BASE_URL", "")
-        self.deepseek_api_key: str = os.environ.get("DEEPSEEK_API_KEY", "")
-
         # 数据源配置
         self.tushare_token: str = os.environ.get("TUSHARE_TOKEN", "")
 

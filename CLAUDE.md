@@ -30,7 +30,6 @@ poetry run black --line-length 100 .
 
 ```
 src/
-├── agents/           # Agent 分析系统
 ├── analyzer/         # 因子计算
 ├── api/              # FastAPI 路由
 ├── config.py         # 配置
@@ -48,7 +47,6 @@ src/
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| | 推荐 | AI 分析 |
 | TUSHARE_TOKEN | 可选 | Tushare Token |
 | PORT | 否 | 端口 (默认 8080) |
 | ENV | 否 | development/production |
