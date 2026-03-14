@@ -5,7 +5,7 @@ Stock Analysis MCP Server
     poetry run mcp
 
     或:
-    poetry run python -m src.mcp.server
+    poetry run python -m src.mcp_server.server
 
 Agent 连接配置示例 (Claude Code):
     在 MCP 配置文件中添加:
@@ -14,7 +14,7 @@ Agent 连接配置示例 (Claude Code):
       "mcpServers": {
         "stock-analysis": {
           "command": "python",
-          "args": ["-m", "src.mcp.server"],
+          "args": ["-m", "src.mcp_server.server"],
           "cwd": "/path/to/stock-analysis-api"
         }
       }
@@ -22,6 +22,7 @@ Agent 连接配置示例 (Claude Code):
 """
 
 from dataclasses import asdict
+from typing import Optional
 
 from mcp.server import FastMCP
 
@@ -36,7 +37,7 @@ mcp = FastMCP("stock-analysis")
 
 
 @mcp.tool()
-def get_stock_list(market: str = None, refresh: bool = False) -> dict:
+def get_stock_list(market: Optional[str] = None, refresh: bool = False) -> dict:
     """获取股票列表
 
     Args:
@@ -51,7 +52,7 @@ def get_stock_list(market: str = None, refresh: bool = False) -> dict:
 
 
 @mcp.tool()
-def search_stocks(keyword: str, market: str = None) -> dict:
+def search_stocks(keyword: str, market: Optional[str] = None) -> dict:
     """搜索股票
 
     Args:
@@ -124,7 +125,7 @@ def analyze_dcf(symbol: str) -> dict:
 
 
 @mcp.tool()
-def analyze_comps(symbol: str, sector: str = None) -> dict:
+def analyze_comps(symbol: str, sector: Optional[str] = None) -> dict:
     """可比公司分析 (仅支持美股)
 
     基于行业筛选可比公司，计算相对估值
