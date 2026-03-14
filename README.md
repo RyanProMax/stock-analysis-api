@@ -54,7 +54,7 @@ docker run -d -p 8080:8080 \
 **启动 MCP 服务:**
 
 ```bash
-poetry run stock-mcp
+poetry run mcp
 # 或
 poetry run python -m src.mcp.server
 ```
@@ -73,15 +73,12 @@ poetry run python -m src.mcp.server
 }
 ```
 
-**MCP 工具列表:**
+**MCP 工具列表 (与 HTTP API 对齐):**
 
 | 工具 | 描述 |
 |------|------|
-| `get_stock_data` | 获取股票行情数据 |
+| `analyze_stock` | 综合分析股票 |
 | `get_stock_list` | 获取股票列表 |
 | `search_stocks` | 搜索股票 |
-| `analyze_stock` | 综合分析股票 |
-| `get_technical_factors` | 获取技术面因子 |
-| `get_fundamental_factors` | 获取基本面因子 |
 | `analyze_dcf` | DCF 估值分析 (仅美股) |
 | `analyze_comps` | 可比公司分析 (仅美股) |
