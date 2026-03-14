@@ -6,25 +6,30 @@ Stock Analysis API 后端项目，支持 HTTP REST API 和 MCP 协议。
 
 - Python 3.12+
 - FastAPI + Uvicorn
-- Poetry 依赖管理
+- uv 依赖管理
 - MCP (Model Context Protocol)
 
 ## 开发命令
 
 ```bash
-# 安装依赖
-poetry install
+# 安装 uv (如果没有)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 创建虚拟环境并安装依赖
+uv venv
+source .venv/bin/activate
+uv pip install -e .
 
 # 运行 HTTP 服务
-poetry run python main.py
+python main.py
 # 或
-poetry run start
+uv run start
 
 # 运行 MCP 服务 (供 AI Agent 调用)
-poetry run mcp
+uv run mcp
 
 # 代码格式化
-poetry run black --line-length 100 .
+black --line-length 100 .
 ```
 
 ## 项目结构
