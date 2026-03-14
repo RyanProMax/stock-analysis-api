@@ -30,6 +30,7 @@ dependencies = [
 dev = ["taskipy (>=1.14.1,<2.0.0)", "black (>=26.3.0,<27.0.0)"]
 
 [project.scripts]
+start = "src.main:start"
 mcp = "src.mcp_server.server:mcp"
 
 [build-system]
