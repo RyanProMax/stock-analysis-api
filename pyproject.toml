@@ -36,9 +36,3 @@ mcp = "src.mcp_server.server:mcp.run"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
-
-[tool.uv]
-dev-dependencies = [
-    "taskipy>=1.14.1,<2.0.0",
-    "black>=26.3.0,<27.0.0",
-]
