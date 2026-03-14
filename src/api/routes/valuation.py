@@ -22,7 +22,6 @@ dcf_exporter = DCFExcelExporter()
     "/dcf",
     response_model=StandardResponse[dict],
     summary="DCF 估值分析",
-    tags=["Valuation"],
 )
 def analyze_dcf(
     symbol: str = Query(
@@ -112,7 +111,6 @@ def analyze_dcf(
 @router.get(
     "/dcf/excel",
     summary="导出 DCF 估值 Excel",
-    tags=["Valuation"],
 )
 def export_dcf_excel(
     symbol: str = Query(
