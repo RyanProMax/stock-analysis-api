@@ -23,6 +23,7 @@ dependencies = [
     "tenacity (>=8.2.0,<9.0.0)",
     "efinance (>=0.5.5.2,<0.6.0.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
+    "mcp (>=1.0.0,<2.0.0)",
 ]
 
 [dependency-groups]
@@ -38,6 +39,7 @@ packages = [{ include = "src" }]
 
 [tool.poetry.scripts]
 start = "main:start"
+stock-mcp = "src.mcp.server:mcp.run"
 
 [tool.taskipy.tasks]
 build = "docker build --build-arg USE_CHINA_MIRROR=true -t stock-analysis ."
