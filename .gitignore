@@ -52,3 +52,6 @@ Thumbs.db
 
 # Cache
 .cache/
+
+# Claude
+.claude/settings.json

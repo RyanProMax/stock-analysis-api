@@ -1,13 +1,14 @@
 # Stock Analysis API
 
-股票分析系统后端 API 服务。
+股票分析系统后端 API 服务，支持 HTTP REST API 和 MCP 协议。
 
 ## 功能
 
 - 股票技术分析 (MA, MACD, RSI, KDJ 等)
 - 股票基本面分析 (PE, PB, ROE, 营收增长等)
 - DCF 估值模型
-- SSE 流式响应
+- Comps 可比公司分析
+- MCP 协议支持 (供 AI Agent 调用)
 
 ## 快速开始
 
@@ -17,9 +18,8 @@ poetry install
 
 # 复制环境变量
 cp .env.example .env
-# 编辑 .env 填入你的 API Key
 
-# 运行服务
+# 运行 HTTP 服务
 poetry run python main.py
 ```
 
@@ -27,8 +27,10 @@ poetry run python main.py
 
 ## 环境变量
 
-- `TUSHARE_TOKEN`: Tushare Token (可选)
-- `PORT`: 服务端口，默认 8080
+| 变量 | 说明 |
+|------|------|
+| `TUSHARE_TOKEN` | Tushare Token (可选) |
+| `PORT` | 服务端口，默认 8080 |
 
 ## 部署
 
@@ -45,4 +47,41 @@ docker run -d -p 8080:8080 \
   stock-analysis-api
 ```
 
-访问 [http://localhost:8080/docs](http://localhost:8080/docs) 查看 API 文档。
+### MCP 服务 (供 AI Agent 调用)
+
+本项目支持 MCP 协议，可被 Claude、OpenClaw 等 AI Agent 直接调用。
+
+**启动 MCP 服务:**
+
+```bash
+poetry run stock-mcp
+# 或
+poetry run python -m src.mcp.server
+```
+
+**Agent 连接配置:**
+
+```json
+{
+  "mcpServers": {
+    "stock-analysis": {
+      "command": "python",
+      "args": ["-m", "src.mcp.server"],
+      "cwd": "/path/to/stock-analysis-api"
+    }
+  }
+}
+```
+
+**MCP 工具列表:**
+
+| 工具 | 描述 |
+|------|------|
+| `get_stock_data` | 获取股票行情数据 |
+| `get_stock_list` | 获取股票列表 |
+| `search_stocks` | 搜索股票 |
+| `analyze_stock` | 综合分析股票 |
+| `get_technical_factors` | 获取技术面因子 |
+| `get_fundamental_factors` | 获取基本面因子 |
+| `analyze_dcf` | DCF 估值分析 (仅美股) |
+| `analyze_comps` | 可比公司分析 (仅美股) |
