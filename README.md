@@ -7,7 +7,6 @@
 - 股票技术分析 (MA, MACD, RSI, KDJ 等)
 - 股票基本面分析 (PE, PB, ROE, 营收增长等)
 - DCF 估值模型
-- AI 智能分析 (LLM)
 - SSE 流式响应
 
 ## 快速开始
@@ -24,14 +23,26 @@ cp .env.example .env
 poetry run python main.py
 ```
 
-服务启动后访问 http://localhost:8080/docs 查看 API 文档。
+服务启动后访问 [http://localhost:8080/docs](http://localhost:8080/docs) 查看 API 文档。
 
 ## 环境变量
 
-- `DEEPSEEK_API_KEY`: (推荐)
 - `TUSHARE_TOKEN`: Tushare Token (可选)
 - `PORT`: 服务端口，默认 8080
 
 ## 部署
 
-支持 Docker 部署到 Google Cloud Run。
+### Docker 本地部署
+
+```bash
+# 构建镜像
+docker build -t stock-analysis-api .
+
+# 运行容器
+docker run -d -p 8080:8080 \
+  --name stock-analysis-api \
+  -e TUSHARE_TOKEN=your_token_here \
+  stock-analysis-api
+```
+
+访问 [http://localhost:8080/docs](http://localhost:8080/docs) 查看 API 文档。

@@ -1,10 +1,9 @@
 """
 缓存工具模块
 
-提供缓存功能，支持本地文件系统和 Google Cloud Storage
+提供缓存功能，支持本地文件系统
 - 股票列表缓存：cache/stock_list/
 - 分析报告缓存：cache/reports/
-- 自动检测环境：开发环境使用本地文件系统，生产环境使用 GCS（如果配置）
 """
 
 import os
@@ -12,17 +11,10 @@ import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional, Dict, List
-from google.cloud import storage
-
-from ..config import is_production
 
 
 class CacheUtil:
     """缓存工具类"""
-
-    # Google Cloud Storage 配置
-    GCS_BUCKET_NAME = os.environ.get("GCS_CACHE_BUCKET", "")
-    USE_GCS = bool(GCS_BUCKET_NAME) and is_production()
 
     @staticmethod
     def get_cst_date_key() -> str:
@@ -58,36 +50,10 @@ class CacheUtil:
     STOCK_LIST_CACHE_DIR = "stock_list"
     REPORTS_CACHE_DIR = "reports"
 
-    # GCS 客户端（懒加载）
-    _gcs_client = None
-
-    @classmethod
-    def _get_gcs_client(cls):
-        """获取 GCS 客户端（懒加载）"""
-        if cls._gcs_client is not None:
-            return cls._gcs_client
-
-        if not cls.USE_GCS:
-            return None
-
-        try:
-            cls._gcs_client = storage.Client()
-            print("✓ Google Cloud Storage 客户端初始化成功")
-            return cls._gcs_client
-        except Exception as e:
-            print(f"⚠️ GCS 客户端初始化失败: {e}，将使用本地文件系统缓存")
-            return None
-
     @classmethod
     def _ensure_cache_dir(cls, cache_dir: Path) -> None:
         """确保本地缓存目录存在"""
-        if not cls.USE_GCS:
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def _get_gcs_path(cls, cache_dir: str, filename: str) -> str:
-        """获取 GCS 对象路径"""
-        return f"{cache_dir}/{filename}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def _get_local_cache_file_path(cls, cache_dir: str, filename: str) -> Path:
@@ -95,53 +61,6 @@ class CacheUtil:
         local_dir = cls.CACHE_ROOT / cache_dir
         cls._ensure_cache_dir(local_dir)
         return local_dir / filename
-
-    @classmethod
-    def _save_to_gcs(cls, path: str, data: Any, force: bool = False) -> bool:
-        """保存数据到 GCS"""
-        try:
-            client = cls._get_gcs_client()
-            if client is None:
-                return False
-
-            bucket = client.bucket(cls.GCS_BUCKET_NAME)
-            blob = bucket.blob(path)
-
-            # 如果已存在且不强制覆盖，则跳过保存
-            if not force and blob.exists():
-                return True
-
-            if isinstance(data, (dict, list)):
-                content = json.dumps(data, ensure_ascii=False, indent=2)
-                blob.upload_from_string(content, content_type="application/json")
-            else:
-                blob.upload_from_string(str(data))
-
-            print(f"✓ 文件保存成功 GCS: gs://{cls.GCS_BUCKET_NAME}/{path}")
-            return True
-        except Exception as e:
-            print(f"⚠️ 保存到 GCS 失败: {e}")
-            return False
-
-    @classmethod
-    def _load_from_gcs(cls, path: str) -> Optional[Any]:
-        """从 GCS 加载数据"""
-        try:
-            client = cls._get_gcs_client()
-            if client is None:
-                return None
-
-            bucket = client.bucket(cls.GCS_BUCKET_NAME)
-            blob = bucket.blob(path)
-
-            if not blob.exists():
-                return None
-
-            content = blob.download_as_text()
-            return json.loads(content)
-        except Exception as e:
-            print(f"⚠️ 从 GCS 加载失败: {e}")
-            return None
 
     @classmethod
     def save_stock_list(
@@ -152,7 +71,7 @@ class CacheUtil:
         force: bool = False,
     ) -> bool:
         """
-        保存股票列表到缓存（GCS 或本地文件系统）
+        保存股票列表到本地文件系统缓存
 
         Args:
             market: 市场类型（"A股" 或 "美股"）
@@ -171,19 +90,14 @@ class CacheUtil:
             market_prefix = "a_stocks" if market == "A股" else "us_stocks"
             filename = f"{market_prefix}_{date}.json"
 
-            # 优先保存到 GCS（如果配置了）
-            if cls.USE_GCS:
-                gcs_path = cls._get_gcs_path(cls.STOCK_LIST_CACHE_DIR, filename)
-                if cls._save_to_gcs(gcs_path, data, force=force):
-                    return True
-
-            # 兜底保存到本地
+            # 保存到本地文件系统
             cache_file = cls._get_local_cache_file_path(cls.STOCK_LIST_CACHE_DIR, filename)
             if not force and cache_file.exists():
                 return True
             else:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
+                print(f"✓ 股票列表已保存到本地缓存: {cache_file}")
                 return True
         except Exception as e:
             print(f"⚠️ 保存股票列表缓存失败: {e}")
@@ -194,7 +108,7 @@ class CacheUtil:
         cls, market: str, date: Optional[str] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
-        从缓存加载股票列表（优先从 GCS，其次本地文件系统）
+        从本地文件系统缓存加载股票列表
 
         Args:
             market: 市场类型（"A股" 或 "美股"）
@@ -209,16 +123,6 @@ class CacheUtil:
 
             market_prefix = "a_stocks" if market == "A股" else "us_stocks"
             filename = f"{market_prefix}_{date}.json"
-
-            # 优先从 GCS 加载
-            if cls.USE_GCS:
-                gcs_path = cls._get_gcs_path(cls.STOCK_LIST_CACHE_DIR, filename)
-                data = cls._load_from_gcs(gcs_path)
-                if data is not None and isinstance(data, list) and len(data) > 0:
-                    print(
-                        f"✓ 从 GCS 加载股票列表: gs://{cls.GCS_BUCKET_NAME}/{gcs_path}，共 {len(data)} 只股票"
-                    )
-                    return data
 
             # 从本地文件系统加载
             cache_file = cls._get_local_cache_file_path(cls.STOCK_LIST_CACHE_DIR, filename)
@@ -246,7 +150,7 @@ class CacheUtil:
         force: bool = False,
     ) -> bool:
         """
-        保存分析报告到缓存（GCS 或本地文件系统）
+        保存分析报告到本地文件系统缓存
 
         Args:
             symbol: 股票代码
@@ -263,14 +167,7 @@ class CacheUtil:
 
             filename = f"{symbol.upper()}.json"
 
-            # 优先保存到 GCS（如果配置了）
-            if cls.USE_GCS:
-                # GCS 路径：reports/YYYY-MM-DD/SYMBOL.json
-                gcs_path = cls._get_gcs_path(f"{cls.REPORTS_CACHE_DIR}/{date}", filename)
-                if cls._save_to_gcs(gcs_path, report, force=force):
-                    return True
-
-            # 兜底到本地文件系统
+            # 保存到本地文件系统
             date_dir = cls.CACHE_ROOT / cls.REPORTS_CACHE_DIR / date
             cls._ensure_cache_dir(date_dir)
             cache_file = date_dir / filename
@@ -281,6 +178,7 @@ class CacheUtil:
             else:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(report, f, ensure_ascii=False, indent=2)
+                print(f"✓ 分析报告已保存到本地缓存: {cache_file}")
                 return True
         except Exception as e:
             print(f"⚠️ 保存分析报告缓存失败: {e}")
@@ -289,7 +187,7 @@ class CacheUtil:
     @classmethod
     def load_report(cls, symbol: str, date: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        从缓存加载分析报告（优先从 GCS，其次本地文件系统）
+        从本地文件系统缓存加载分析报告
 
         Args:
             symbol: 股票代码
@@ -303,14 +201,6 @@ class CacheUtil:
                 date = cls.get_cst_date_key()
 
             filename = f"{symbol.upper()}.json"
-
-            # 优先从 GCS 加载
-            if cls.USE_GCS:
-                gcs_path = cls._get_gcs_path(f"{cls.REPORTS_CACHE_DIR}/{date}", filename)
-                data = cls._load_from_gcs(gcs_path)
-                if data is not None:
-                    print(f"✓ 从 GCS 加载分析报告: gs://{cls.GCS_BUCKET_NAME}/{gcs_path}")
-                    return data
 
             # 从本地文件系统加载
             date_dir = cls.CACHE_ROOT / cls.REPORTS_CACHE_DIR / date
@@ -331,7 +221,6 @@ class CacheUtil:
     def cleanup_old_cache(cls, days_to_keep: int = 7) -> None:
         """
         清理旧的缓存文件（保留最近 N 天的缓存）
-        注意：GCS 清理需要单独配置生命周期策略
 
         Args:
             days_to_keep: 保留最近几天的缓存，默认 7 天
@@ -374,10 +263,6 @@ class CacheUtil:
                             print(f"✓ 已删除旧缓存目录: {date_dir}")
                     except Exception:
                         continue
-
-            # GCS 清理建议：在 GCS Bucket 上配置生命周期策略，自动删除旧文件
-            if cls.USE_GCS:
-                print("ℹ️ GCS 缓存清理：建议在 GCS Bucket 上配置生命周期策略自动清理")
 
         except Exception as e:
             print(f"⚠️ 清理旧缓存失败: {e}")
