@@ -25,7 +25,7 @@ uv pip install -e .
 uv sync
 
 # 运行 HTTP 服务
-PYTHONPATH=. python main.py
+uv run start
 ```
 
 服务启动后访问 [http://localhost:8080/docs](http://localhost:8080/docs) 查看 API 文档。
