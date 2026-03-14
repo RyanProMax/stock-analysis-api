@@ -6,6 +6,6 @@ API层 - HTTP接口
 - schemas: 请求/响应模型
 """
 
-from .routes import stock, agent, index
+from . import routes
 
-__all__ = ["stock", "agent", "index"]
+__all__ = ["routes"]
