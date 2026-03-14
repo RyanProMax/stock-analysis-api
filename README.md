@@ -13,14 +13,16 @@
 ## 快速开始
 
 ```bash
-# 安装依赖
-poetry install
+# 安装 uv (如果没有)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 复制环境变量
-cp .env.example .env
+# 创建虚拟环境并安装依赖
+uv venv
+source .venv/bin/activate
+uv pip install -e .
 
-# 运行 HTTP 服务
-poetry run python main.py
+# 或使用 uv sync (自动安装依赖)
+uv sync
 ```
 
 服务启动后访问 [http://localhost:8080/docs](http://localhost:8080/docs) 查看 API 文档。
@@ -54,9 +56,12 @@ docker run -d -p 8080:8080 \
 **启动 MCP 服务:**
 
 ```bash
-poetry run mcp
-# 或
-poetry run python -m src.mcp_server.server
+# 方式1: 使用 uv run
+uv run mcp
+
+# 方式2: 激活环境后运行
+source .venv/bin/activate
+python -m src.mcp_server.server
 ```
 
 **Agent 连接配置:**
