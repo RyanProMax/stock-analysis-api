@@ -21,9 +21,7 @@ source .venv/bin/activate
 uv pip install -e .
 
 # 运行 HTTP 服务
-python main.py
-# 或
-uv run start
+PYTHONPATH=. python main.py
 
 # 运行 MCP 服务 (供 AI Agent 调用)
 uv run mcp
