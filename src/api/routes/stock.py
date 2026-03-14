@@ -79,7 +79,6 @@ def _convert_report_to_response(report: Any) -> AnalysisReportResponse:
     "/analyze",
     response_model=StandardResponse[List[AnalysisReportResponse]],
     summary="批量分析股票列表",
-    tags=["Stock Analysis"],
 )
 def analyze_stocks(payload: StockAnalysisRequest):
     """
@@ -127,7 +126,6 @@ def analyze_stocks(payload: StockAnalysisRequest):
     "/list",
     response_model=StandardResponse[StockListResponse],
     summary="获取股票列表",
-    tags=["Stock List"],
 )
 def get_stock_list(market: Optional[str] = None, refresh: bool = False):
     """
@@ -174,7 +172,6 @@ def get_stock_list(market: Optional[str] = None, refresh: bool = False):
     "/search",
     response_model=StandardResponse[StockListResponse],
     summary="搜索股票",
-    tags=["Stock List"],
 )
 def search_stocks(payload: StockSearchRequest):
     """

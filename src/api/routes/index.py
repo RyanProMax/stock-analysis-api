@@ -11,13 +11,10 @@ from .comps import router as comps_router
 router = APIRouter()
 
 # 注册股票分析相关路由
-# /stock/* - 传统批量分析接口
-router.include_router(stock_router, prefix="/stock", tags=["Stock Analysis"])
+# /stock/* - 股票数据和分析接口
+router.include_router(stock_router, prefix="/stock", tags=["Stock"])
 
 # 注册估值分析相关路由
-# /valuation/* - DCF 估值分析接口
+# /valuation/* - DCF 和 Comps 估值分析接口
 router.include_router(valuation_router, prefix="/valuation", tags=["Valuation"])
-
-# 注册可比公司分析路由
-# /valuation/comps - Comps 估值分析接口
 router.include_router(comps_router, prefix="/valuation", tags=["Valuation"])

@@ -22,7 +22,6 @@ excel_exporter = CompsExcelExporter()
     "/comps",
     response_model=StandardResponse[dict],
     summary="可比公司分析",
-    tags=["Valuation"],
 )
 def analyze_comps(
     symbol: str = Query(
@@ -80,7 +79,6 @@ def analyze_comps(
 @router.get(
     "/comps/excel",
     summary="导出 Comps 分析 Excel",
-    tags=["Valuation"],
 )
 def export_comps_excel(
     symbol: str = Query(
