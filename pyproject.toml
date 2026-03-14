@@ -39,7 +39,7 @@ packages = [{ include = "src" }]
 
 [tool.poetry.scripts]
 start = "main:start"
-stock-mcp = "src.mcp.server:mcp.run"
+mcp = "src.mcp.server:mcp.run"
 
 [tool.taskipy.tasks]
 build = "docker build --build-arg USE_CHINA_MIRROR=true -t stock-analysis ."
