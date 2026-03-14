@@ -56,7 +56,7 @@ docker run -d -p 8080:8080 \
 ```bash
 poetry run mcp
 # 或
-poetry run python -m src.mcp.server
+poetry run python -m src.mcp_server.server
 ```
 
 **Agent 连接配置:**
@@ -66,7 +66,7 @@ poetry run python -m src.mcp.server
   "mcpServers": {
     "stock-analysis": {
       "command": "python",
-      "args": ["-m", "src.mcp.server"],
+      "args": ["-m", "src.mcp_server.server"],
       "cwd": "/path/to/stock-analysis-api"
     }
   }

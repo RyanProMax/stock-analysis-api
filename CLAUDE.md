@@ -36,7 +36,7 @@ src/
 ├── config.py         # 配置
 ├── core/             # 核心功能 (StockService)
 ├── data_provider/    # 数据源 (A股/美股)
-├── mcp/              # MCP Server (AI Agent 接口)
+├── mcp_server/       # MCP Server (AI Agent 接口)
 ├── model/            # 数据模型
 ├── storage/          # 缓存存储
 └── utils/            # 工具函数
@@ -93,7 +93,7 @@ docker run -p 8080:8080 stock-analysis-api
   "mcpServers": {
     "stock-analysis": {
       "command": "python",
-      "args": ["-m", "src.mcp.server"],
+      "args": ["-m", "src.mcp_server.server"],
       "cwd": "/path/to/stock-analysis-api"
     }
   }
