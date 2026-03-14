@@ -10,9 +10,9 @@ from typing import List, Dict, Any, ClassVar, Optional
 import pandas as pd
 import tushare as ts
 
-load_dotenv()
-
 from ..base import BaseStockDataSource
+
+load_dotenv()
 
 
 class TushareDataSource(BaseStockDataSource):
@@ -107,7 +107,7 @@ class TushareDataSource(BaseStockDataSource):
     def is_available(self, market: str) -> bool:
         """检查数据源是否可用"""
         if not self.TOKEN:
-            print(f"⚠️ Tushare Token为空，跳过")
+            print("⚠️ Tushare Token为空，跳过")
             return False
         pro = self.get_pro()
         return pro is not None
@@ -198,8 +198,14 @@ class TushareDataSource(BaseStockDataSource):
                     if len(df_income) >= 2:
                         latest_revenue = df_income.iloc[0].get("revenue")
                         prev_revenue = df_income.iloc[1].get("revenue")
-                        if pd.notna(latest_revenue) and pd.notna(prev_revenue) and prev_revenue > 0:
-                            revenue_growth = ((latest_revenue - prev_revenue) / prev_revenue) * 100
+                        if (
+                            pd.notna(latest_revenue)
+                            and pd.notna(prev_revenue)
+                            and prev_revenue > 0
+                        ):
+                            revenue_growth = (
+                                (latest_revenue - prev_revenue) / prev_revenue
+                            ) * 100
                             financial_data["revenue_growth"] = float(revenue_growth)
             except Exception as e:
                 print(f"⚠️ 获取利润表失败: {e}")
