@@ -58,6 +58,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8080
 
 # Default: HTTP service
-# Use: docker run ... stock-analysis-api http   (HTTP API)
-# Use: docker run ... stock-analysis-api mcp    (MCP Server)
-CMD ["sh", "-c", "if [ \"$1\" = \"mcp\" ]; then exec python -m src.mcp_server.server; else exec uvicorn src.main:app --host 0.0.0.0 --port 8080; fi"]
+# Set MODE=mcp to run MCP server
+CMD ["sh", "-c", "if [ \"$MODE\" = \"mcp\" ]; then exec python -m src.mcp_server.server; else exec uvicorn src.main:app --host 0.0.0.0 --port 8080; fi"]
