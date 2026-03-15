@@ -31,6 +31,8 @@ from ..analyzer.dcf_model import DCFModel
 from ..analyzer.comps_analyzer import CompsAnalyzer
 from ..analyzer.lbo_model import LBOModel
 from ..analyzer.three_statement_model import ThreeStatementModel
+from ..analyzer.competitive_analyzer import CompetitiveAnalyzer
+from ..analyzer.earnings_analyzer import EarningsAnalyzer
 
 mcp = FastMCP("stock-analysis")
 
@@ -213,6 +215,79 @@ def analyze_three_statement(
     """
     model = ThreeStatementModel(projection_years=projection_years)
     result = model.analyze(symbol.upper(), scenario)
+
+    if result.error:
+        return {"error": result.error}
+
+    return result.to_dict()
+
+
+# ==================== 竞争分析工具 ====================
+
+
+@mcp.tool()
+def analyze_competitive(
+    symbol: str,
+    competitors: Optional[str] = None,
+    industry: str = "technology",
+) -> dict:
+    """竞争格局分析
+
+    分析目标公司的竞争环境
+
+    Args:
+        symbol: 目标公司代码
+        competitors: 竞争对手代码，逗号分隔 (可选)
+        industry: 行业类型 (technology/saas/payments/marketplace/retail/logistics)
+
+    Returns:
+        竞争分析结果，包含市场背景、公司画像、竞品对比、定位矩阵、护城河评估
+    """
+    # 解析竞争对手列表
+    competitor_list = None
+    if competitors:
+        competitor_list = [c.strip().upper() for c in competitors.split(",")]
+
+    analyzer = CompetitiveAnalyzer()
+    result = analyzer.analyze(
+        symbol=symbol.upper(),
+        competitors=competitor_list,
+        industry=industry,
+    )
+
+    if result.error:
+        return {"error": result.error}
+
+    return result.to_dict()
+
+
+# ==================== 季报分析工具 ====================
+
+
+@mcp.tool()
+def analyze_earnings(
+    symbol: str,
+    quarter: Optional[str] = None,
+    fiscal_year: Optional[int] = None,
+) -> dict:
+    """季报分析
+
+    分析公司最新季度财报
+
+    Args:
+        symbol: 股票代码
+        quarter: 季度 (Q1/Q2/Q3/Q4)，默认最新季度
+        fiscal_year: 财年，默认当前年份
+
+    Returns:
+        季报分析结果，包含财报摘要、Beat/Miss分析、业务板块、指引更新、关键指标
+    """
+    analyzer = EarningsAnalyzer()
+    result = analyzer.analyze(
+        symbol=symbol.upper(),
+        quarter=quarter,
+        fiscal_year=fiscal_year,
+    )
 
     if result.error:
         return {"error": result.error}
