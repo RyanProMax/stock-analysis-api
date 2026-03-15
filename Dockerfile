@@ -21,8 +21,9 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY pyproject.toml uv.lock* README.md ./
 
 # Install dependencies
-RUN uv venv /app/.venv
-RUN uv pip install --system -e .
+RUN uv venv /app/.venv && \
+    . /app/.venv/bin/activate && \
+    uv pip install -e .
 
 # Copy application code
 COPY . .
