@@ -12,7 +12,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/stock-analysis-api
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
 
 jobs:
   build-and-push:
@@ -61,14 +61,31 @@ jobs:
       - name: Clean up old Docker images (keep latest 3)
         if: github.event_name != 'pull_request'
         run: |
-          # Get all tags from Docker Hub (excluding latest)
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-          TAGS=$(curl -s -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" \
-            "https://hub.docker.com/v2/repositories/$IMAGE/tags?page_size=100" | \
-            jq -r '.results[] | select(.name != "latest") | .name')
+          echo "Cleaning up old tags for: $IMAGE"
+
+          # Get all tags from Docker Hub (excluding latest)
+          RESPONSE=$(curl -s -w "\n%{http_code}" -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" \
+            "https://hub.docker.com/v2/repositories/$IMAGE/tags?page_size=100")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Failed to get tags, HTTP: $HTTP_CODE, Response: $BODY"
+            exit 0
+          fi
+
+          TAGS=$(echo "$BODY" | jq -r '.results // [] | .[] | select(.name != "latest") | .name' 2>/dev/null || echo "")
+
+          if [ -z "$TAGS" ]; then
+            echo "No tags found to clean up"
+            exit 0
+          fi
 
           # Count total tags
           TAG_COUNT=$(echo "$TAGS" | wc -l)
+          echo "Found $TAG_COUNT tags (excluding latest)"
 
           if [ "$TAG_COUNT" -gt 3 ]; then
             # Keep only the 3 most recent (by name, assuming date-based tags)
@@ -76,7 +93,7 @@ jobs:
             for tag in $TO_DELETE; do
               echo "Deleting old tag: $tag"
               curl -s -X DELETE -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" \
-                "https://hub.docker.com/v2/repositories/$IMAGE/tags/$tag/"
+                "https://hub.docker.com/v2/repositories/$IMAGE/tags/$tag/" || true
             done
           else
             echo "Only $TAG_COUNT tags found, no cleanup needed"
