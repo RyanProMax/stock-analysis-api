@@ -29,6 +29,8 @@ from mcp.server import FastMCP
 from ..core.pipeline import stock_service
 from ..analyzer.dcf_model import DCFModel
 from ..analyzer.comps_analyzer import CompsAnalyzer
+from ..analyzer.lbo_model import LBOModel
+from ..analyzer.three_statement_model import ThreeStatementModel
 
 mcp = FastMCP("stock-analysis")
 
@@ -139,6 +141,78 @@ def analyze_comps(symbol: str, sector: Optional[str] = None) -> dict:
     """
     analyzer = CompsAnalyzer()
     result = analyzer.analyze(symbol.upper(), sector)
+
+    if result.error:
+        return {"error": result.error}
+
+    return result.to_dict()
+
+
+# ==================== 模型分析工具 ====================
+
+
+@mcp.tool()
+def analyze_lbo(
+    symbol: str,
+    holding_period: int = 5,
+    entry_multiple: float = 10.0,
+    exit_multiple: float = 10.0,
+    leverage: float = 0.65,
+) -> dict:
+    """LBO (Leveraged Buyout) 估值分析
+
+    基于杠杆收购模型计算投资回报
+
+    Args:
+        symbol: 美股代码
+        holding_period: 持有年限 (默认 5 年)
+        entry_multiple: 入场 EV/EBITDA 倍数 (默认 10x)
+        exit_multiple: 出场 EV/EBITDA 倍数 (默认 10x)
+        leverage: 债务占比 (默认 65%)
+
+    Returns:
+        LBO 分析结果，包含 Sources & Uses、债务时间表、IRR/MOIC
+    """
+    # 债务结构参数
+    senior_pct = leverage * 0.8
+    mezz_pct = leverage * 0.2
+
+    model = LBOModel(
+        holding_period=holding_period,
+        entry_multiple=entry_multiple,
+        exit_multiple=exit_multiple,
+        senior_debt_pct=senior_pct,
+        mezz_debt_pct=mezz_pct,
+    )
+
+    result = model.analyze(symbol.upper())
+
+    if result.error:
+        return {"error": result.error}
+
+    return result.to_dict()
+
+
+@mcp.tool()
+def analyze_three_statement(
+    symbol: str,
+    scenario: str = "base",
+    projection_years: int = 5,
+) -> dict:
+    """3-Statement Model (三表财务模型)
+
+    预测公司未来财务状况
+
+    Args:
+        symbol: 美股代码
+        scenario: 情景 (bull/base/bear)
+        projection_years: 预测年限 (默认 5 年)
+
+    Returns:
+        三表模型结果，包含 Income Statement、Balance Sheet、Cash Flow Statement
+    """
+    model = ThreeStatementModel(projection_years=projection_years)
+    result = model.analyze(symbol.upper(), scenario)
 
     if result.error:
         return {"error": result.error}
