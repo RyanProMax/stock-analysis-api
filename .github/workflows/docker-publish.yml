@@ -61,12 +61,12 @@ jobs:
       - name: Clean up old Docker images (keep latest 3)
         if: github.event_name != 'pull_request'
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}"
           echo "Cleaning up old tags for: $IMAGE"
 
           # Get all tags from Docker Hub (excluding latest)
           RESPONSE=$(curl -s -w "\n%{http_code}" -u "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" \
-            "https://hub.docker.com/v2/repositories/$IMAGE/tags?page_size=100")
+            "https://hub.docker.com/v2/repositories/${IMAGE}/tags?page_size=100")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')

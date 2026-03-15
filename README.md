@@ -36,27 +36,65 @@ uv run start
 |------|------|
 | `TUSHARE_TOKEN` | Tushare Token (可选) |
 | `PORT` | 服务端口，默认 8080 |
+| `MODE` | 运行模式: `http` 或 `mcp` (Docker 部署用) |
 
 ## 部署
 
 ### Docker 本地部署
 
-```bash
-# 构建镜像
-docker build -t stock-analysis-api .
+#### 构建镜像
 
-# 运行容器
+```bash
+docker build -t stock-analysis-api .
+```
+
+#### 运行 HTTP 服务
+
+```bash
 docker run -d -p 8080:8080 \
   --name stock-analysis-api \
+  -e MODE=http \
   -e TUSHARE_TOKEN=your_token_here \
   stock-analysis-api
+```
+
+#### 运行 MCP 服务
+
+```bash
+# 启动 MCP 容器 (stdio 模式)
+docker run -d \
+  --name stock-analysis-mcp \
+  -e MODE=mcp \
+  stock-analysis-api
+
+# Agent 连接方式1: docker exec
+docker exec -i stock-analysis-mcp python -m src.mcp_server.server
+```
+
+#### 使用 Docker Hub 镜像
+
+```bash
+# 拉取镜像
+docker pull ryanpro1024/stock-analysis-api:latest
+
+# 运行 HTTP 服务
+docker run -d -p 8080:8080 \
+  --name stock-analysis-api \
+  -e MODE=http \
+  ryanpro1024/stock-analysis-api:latest
+
+# 运行 MCP 服务
+docker run -d \
+  --name stock-analysis-mcp \
+  -e MODE=mcp \
+  ryanpro1024/stock-analysis-api:latest
 ```
 
 ### MCP 服务 (供 AI Agent 调用)
 
 本项目支持 MCP 协议，可被 Claude、OpenClaw 等 AI Agent 直接调用。
 
-**启动 MCP 服务:**
+**本地启动 MCP 服务:**
 
 ```bash
 # 方式1: 使用 uv run
