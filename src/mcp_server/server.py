@@ -108,18 +108,42 @@ def analyze_stock(symbol: str, include_qlib: bool = False) -> dict:
 
 
 @mcp.tool()
-def analyze_dcf(symbol: str) -> dict:
+def analyze_dcf(
+    symbol: str,
+    risk_free_rate: Optional[float] = None,
+    equity_risk_premium: Optional[float] = None,
+    terminal_growth_rate: Optional[float] = None,
+) -> dict:
     """DCF 估值分析 (仅支持美股)
 
     基于自由现金流折现法计算股票内在价值
 
     Args:
         symbol: 美股代码
+        risk_free_rate: 无风险利率 (默认 4.2%)
+        equity_risk_premium: 股权风险溢价 (默认 5.5%)
+        terminal_growth_rate: 永续增长率 (默认 2.5%)
 
     Returns:
         DCF 估值结果，包含 WACC、FCF预测、敏感性分析、估值区间
     """
-    model = DCFModel()
+    model = DCFModel(
+        risk_free_rate=(
+            risk_free_rate
+            if risk_free_rate is not None
+            else DCFModel.DEFAULT_RISK_FREE_RATE
+        ),
+        equity_risk_premium=(
+            equity_risk_premium
+            if equity_risk_premium is not None
+            else DCFModel.DEFAULT_EQUITY_RISK_PREMIUM
+        ),
+        terminal_growth_rate=(
+            terminal_growth_rate
+            if terminal_growth_rate is not None
+            else DCFModel.DEFAULT_TERMINAL_GROWTH_RATE
+        ),
+    )
     result = model.analyze(symbol.upper())
 
     if result.error:
@@ -200,6 +224,7 @@ def analyze_three_statement(
     symbol: str,
     scenario: str = "base",
     projection_years: int = 5,
+    comparison: bool = False,
 ) -> dict:
     """3-Statement Model (三表财务模型)
 
@@ -209,11 +234,25 @@ def analyze_three_statement(
         symbol: 美股代码
         scenario: 情景 (bull/base/bear)
         projection_years: 预测年限 (默认 5 年)
+        comparison: 是否返回三场景对比 (默认 False)
 
     Returns:
         三表模型结果，包含 Income Statement、Balance Sheet、Cash Flow Statement
+        当 comparison=True 时，返回全部三个场景的对比数据
     """
     model = ThreeStatementModel(projection_years=projection_years)
+
+    if comparison:
+        scenarios_result = {}
+        for s in ["bull", "base", "bear"]:
+            result = model.analyze(symbol.upper(), s)
+            scenarios_result[s] = {
+                "revenue_growth": result.revenue_growth_rate,
+                "key_metrics": result.key_metrics,
+                "assumptions": result.assumptions,
+            }
+        return {"symbol": symbol.upper(), "scenarios": scenarios_result}
+
     result = model.analyze(symbol.upper(), scenario)
 
     if result.error:
