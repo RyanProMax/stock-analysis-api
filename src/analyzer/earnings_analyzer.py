@@ -23,7 +23,7 @@ class EarningsAnalysisResult:
         symbol: str,
         company_name: str = "",
         quarter: Optional[str] = "",
-        fiscal_year: int = 0,
+        fiscal_year: Optional[int] = None,
         earnings_summary: Optional[Dict] = None,
         beat_miss_analysis: Optional[Dict] = None,
         segment_performance: Optional[List[Dict]] = None,
@@ -233,61 +233,62 @@ class EarningsAnalyzer:
         """
         分析 Beat/Miss
 
-        由于 yfinance 不提供 consensus estimates，
-        这里基于 forward vs trailing EPS 进行简化分析
+        使用 yfinance 的 consensus estimates 与 actuals 进行比较
+        - EPS: 使用 forwardEPS (共识预期) vs trailingEPS (实际)
+        - Revenue: 使用 revenueEstimate (共识预期) vs totalRevenue (实际)
         """
-        trailing_eps = info.get("trailingEPS", 0)
-        forward_eps = info.get("forwardEPS", 0)
+        # EPS Beat/Miss: forwardEPS = consensus estimate, trailingEPS = actual
+        consensus_eps = info.get("forwardEPS", 0) or info.get("epsForward", 0)
+        actual_eps = info.get("trailingEPS", 0)
 
-        # 简化：假设 forward > trailing 表示 beat 预期
-        if forward_eps and trailing_eps:
-            if forward_eps > trailing_eps * 1.05:
-                expectation = "Beat Expected"
-                variance = f"+{((forward_eps / trailing_eps) - 1) * 100:.1f}%"
-            elif forward_eps < trailing_eps * 0.95:
-                expectation = "Miss Expected"
-                variance = f"{((forward_eps / trailing_eps) - 1) * 100:.1f}%"
+        if consensus_eps and actual_eps and actual_eps > 0:
+            eps_variance = (consensus_eps - actual_eps) / abs(actual_eps)
+            if eps_variance < -0.02:
+                eps_status = "Beat"
+                variance_str = f"+{abs(eps_variance) * 100:.1f}%"
+            elif eps_variance > 0.02:
+                eps_status = "Miss"
+                variance_str = f"-{eps_variance * 100:.1f}%"
             else:
-                expectation = "In-Line"
-                variance = "0.0%"
+                eps_status = "In-Line"
+                variance_str = "0.0%"
         else:
-            expectation = "N/A"
-            variance = "N/A"
+            eps_status = "N/A"
+            variance_str = "N/A"
 
-        # 收入 beat/miss (如果有 guidance 数据)
-        revenue_estimate = info.get("revenueAvg", 0)
+        # Revenue Beat/Miss: revenueEstimate = consensus, totalRevenue = actual
+        revenue_estimate = info.get("revenueEstimate", 0) or info.get("revenueAvg", 0)
         revenue_actual = info.get("totalRevenue", 0)
 
-        if revenue_estimate and revenue_actual:
+        if revenue_estimate and revenue_actual and revenue_actual > 0:
             revenue_variance = (revenue_actual - revenue_estimate) / revenue_estimate
-            if revenue_variance > 0.05:
+            if revenue_variance > 0.02:
                 revenue_status = "Beat"
-            elif revenue_variance < -0.05:
+            elif revenue_variance < -0.02:
                 revenue_status = "Miss"
             else:
                 revenue_status = "In-Line"
+            revenue_variance_str = f"{revenue_variance * 100:+.1f}%"
         else:
             revenue_status = "N/A"
-            revenue_variance = 0
+            revenue_variance_str = "N/A"
 
         return {
             "earnings": {
-                "status": expectation,
-                "variance": variance,
-                "consensus": f"${trailing_eps:.2f}" if trailing_eps else "N/A",
-                "actual_or_expected": f"${forward_eps:.2f}" if forward_eps else "N/A",
+                "status": eps_status,
+                "variance": variance_str,
+                "consensus": f"${consensus_eps:.2f}" if consensus_eps else "N/A",
+                "actual": f"${actual_eps:.2f}" if actual_eps else "N/A",
             },
             "revenue": {
                 "status": revenue_status,
-                "variance": (
-                    f"{revenue_variance * 100:.1f}%" if revenue_variance else "N/A"
-                ),
+                "variance": revenue_variance_str,
                 "consensus": (
                     f"${revenue_estimate / 1e9:.2f}B" if revenue_estimate else "N/A"
                 ),
                 "actual": f"${revenue_actual / 1e9:.2f}B" if revenue_actual else "N/A",
             },
-            "summary": self._generate_beat_miss_summary(expectation, revenue_status),
+            "summary": self._generate_beat_miss_summary(eps_status, revenue_status),
         }
 
     def _generate_beat_miss_summary(
@@ -304,29 +305,48 @@ class EarningsAnalyzer:
             return f"盈利预期 {earnings_status}，收入预期 {revenue_status}"
 
     def _analyze_segments(self, info: Dict, financials: Dict) -> List[Dict]:
-        """分析各业务板块表现"""
-        # yfinance 的 segment 数据有限，这里返回主要可用的分割数据
+        """分析各业务板块表现
+
+        优先从 quarterly financials 获取真实 segment 数据，
+        fallback 到 info 中的 sector/industry 信息
+        """
         segments = []
 
-        # 尝试从 info 中获取 segment 数据
-        if info.get("totalRevenue"):
-            segments.append(
-                {
-                    "segment": "Total",
-                    "revenue": info.get("totalRevenue", 0) / 1e9,
-                    "growth": info.get("revenueGrowth", 0) * 100,
-                }
-            )
+        # 尝试从 quarterly financials 获取真实 segment 数据
+        try:
+            if financials.get("income") is not None and not financials["income"].empty:
+                income = financials["income"]
+                # 查找 segment/revenue by segment 行
+                for idx in income.index:
+                    idx_lower = str(idx).lower()
+                    if any(kw in idx_lower for kw in ["segment", "revenue by", "by segment", "geographic"]):
+                        row = income.loc[idx]
+                        for col, val in row.items():
+                            if val and val > 0:
+                                seg_name = str(idx).replace(" ", "_")[:30]
+                                segments.append({
+                                    "segment": seg_name,
+                                    "revenue": round(val / 1e9, 2),
+                                    "note": "From quarterly filing",
+                                })
+                        break
+        except Exception:
+            pass
 
-        # 如果有 sector/industry 信息也可以作为 segment
+        # 如果没有 quarterly segment 数据，使用总营收 + sector 信息
+        if not segments and info.get("totalRevenue"):
+            segments.append({
+                "segment": "Total Revenue",
+                "revenue": info.get("totalRevenue", 0) / 1e9,
+                "growth": (info.get("revenueGrowth") or 0) * 100,
+            })
+
         if info.get("sector"):
-            segments.append(
-                {
-                    "segment": info.get("sector"),
-                    "revenue": info.get("totalRevenue", 0) / 1e9,
-                    "note": "Primary segment",
-                }
-            )
+            segments.append({
+                "segment": info.get("sector"),
+                "revenue": info.get("totalRevenue", 0) / 1e9,
+                "note": "Primary segment (sector-level)",
+            })
 
         return segments
 
@@ -341,7 +361,7 @@ class EarningsAnalyzer:
         # PEG 比率
         peg = info.get("pegRatio", 0)
 
-        guidance = {
+        guidance: Dict[str, Any] = {
             "eps_guidance": {
                 "forward_eps": f"${forward_eps:.2f}" if forward_eps else "N/A",
                 "trailing_eps": (
@@ -370,13 +390,13 @@ class EarningsAnalyzer:
         trailing_eps = info.get("trailingEPS")
         if forward_eps and trailing_eps:
             if forward_eps > trailing_eps * 1.1:
-                guidance["direction"] = "Raising"  # type: ignore
+                guidance["direction"] = "Raising"
             elif forward_eps < trailing_eps * 0.9:
-                guidance["direction"] = "Lowering"  # type: ignore
+                guidance["direction"] = "Lowering"
             else:
-                guidance["direction"] = "Maintaining"  # type: ignore
+                guidance["direction"] = "Maintaining"
         else:
-            guidance["direction"] = "Unknown"  # type: ignore
+            guidance["direction"] = "Unknown"
 
         return guidance
 
