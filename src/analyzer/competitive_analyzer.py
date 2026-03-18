@@ -22,12 +22,14 @@ class CompetitiveAnalysisResult:
         self,
         symbol: str,
         company_name: str = "",
-        market_context: Optional[Dict] = None,
-        target_profile: Optional[Dict] = None,
-        competitors: Optional[List[Dict]] = None,
-        positioning: Optional[Dict] = None,
-        comparative: Optional[Dict] = None,
-        moat_assessment: Optional[Dict] = None,
+        market_context: Optional[Dict[str, Any]] = None,
+        target_profile: Optional[Dict[str, Any]] = None,
+        competitors: Optional[List[Dict[str, Any]]] = None,
+        positioning: Optional[Dict[str, Any]] = None,
+        comparative: Optional[Dict[str, Any]] = None,
+        moat_assessment: Optional[Dict[str, Any]] = None,
+        industry_metrics: Optional[Dict[str, Any]] = None,
+        scenario_analysis: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
     ):
         self.symbol = symbol
@@ -38,6 +40,8 @@ class CompetitiveAnalysisResult:
         self.positioning = positioning or {}
         self.comparative = comparative or {}
         self.moat_assessment = moat_assessment or {}
+        self.industry_metrics = industry_metrics or {}
+        self.scenario_analysis = scenario_analysis or {}
         self.error = error
 
     def to_dict(self) -> Dict[str, Any]:
@@ -50,6 +54,8 @@ class CompetitiveAnalysisResult:
             "positioning": self.positioning,
             "comparative": self.comparative,
             "moat_assessment": self.moat_assessment,
+            "industry_metrics": self.industry_metrics,
+            "scenario_analysis": self.scenario_analysis,
             "error": self.error,
         }
 
@@ -127,6 +133,8 @@ class CompetitiveAnalyzer:
                     target_info, competitor_data, industry
                 ),
                 moat_assessment=self._assess_moat(target_info, competitor_data),
+                industry_metrics=self._calculate_industry_metrics(target_info, competitor_data, industry),
+                scenario_analysis=self._analyze_scenarios(target_info, competitor_data),
             )
 
         except Exception as e:
@@ -134,7 +142,7 @@ class CompetitiveAnalyzer:
                 symbol=symbol, error=f"竞争分析异常: {str(e)}"
             )
 
-    def _get_company_info(self, symbol: str) -> Optional[Dict]:
+    def _get_company_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """获取公司信息"""
         try:
             stock = yf.Ticker(symbol)
@@ -171,7 +179,7 @@ class CompetitiveAnalyzer:
         except Exception:
             return None
 
-    def _find_competitors(self, symbol: str, industry: str) -> List[str]:
+    def _find_competitors(self, symbol: str, industry: str) -> List[str]:  # type: ignore[empty-body]
         """
         查找竞争对手
 
@@ -192,7 +200,7 @@ class CompetitiveAnalyzer:
 
         return competitor_map.get(symbol.upper(), [])
 
-    def _format_target_profile(self, info: Dict) -> Dict:
+    def _format_target_profile(self, info: Dict[str, Any]) -> Dict[str, Any]:
         """格式化目标公司画像"""
         revenue = info.get("revenue", 0) / 1e9  # 转为十亿
 
@@ -233,7 +241,7 @@ class CompetitiveAnalyzer:
             },
         }
 
-    def _format_competitor(self, info: Dict) -> Dict:
+    def _format_competitor(self, info: Dict[str, Any]) -> Dict[str, Any]:
         """格式化竞争对手数据"""
         revenue = info.get("revenue", 0) / 1e9
 
@@ -261,7 +269,7 @@ class CompetitiveAnalyzer:
             },
         }
 
-    def _analyze_market_context(self, info: Dict, industry: str) -> Dict:
+    def _analyze_market_context(self, info: Dict[str, Any], industry: str) -> Dict[str, Any]:
         """分析市场背景"""
         market_cap = info.get("marketCap", 0)
 
@@ -291,8 +299,8 @@ class CompetitiveAnalyzer:
             return "Micro Cap"
 
     def _generate_positioning(
-        self, target: Dict, competitors: List[Dict], industry: str
-    ) -> Dict:
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]], industry: str
+    ) -> Dict[str, Any]:
         """生成定位可视化数据"""
         if not competitors:
             return {}
@@ -352,8 +360,8 @@ class CompetitiveAnalyzer:
         }
 
     def _generate_comparative(
-        self, target: Dict, competitors: List[Dict], industry: str
-    ) -> Dict:
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]], industry: str
+    ) -> Dict[str, Any]:
         """生成比较分析"""
         all_companies = [{"symbol": target.get("symbol"), **target}] + competitors
 
@@ -392,7 +400,7 @@ class CompetitiveAnalyzer:
 
         return {"comparison_table": rows}
 
-    def _assess_moat(self, target: Dict, competitors: List[Dict]) -> Dict:
+    def _assess_moat(self, target: Dict[str, Any], competitors: List[Dict[str, Any]]) -> Dict[str, Any]:
         """评估护城河"""
         # 基于财务指标简化评估
         gross_margin = target.get("grossMargins", 0)
@@ -424,7 +432,7 @@ class CompetitiveAnalyzer:
             "risk_factors": self._identify_risks(target, competitors),
         }
 
-    def _score_network_effects(self, info: Dict) -> float:
+    def _score_network_effects(self, info: Dict[str, Any]) -> float:
         """评分网络效应"""
         # 简化：科技公司通常有网络效应
         sector = info.get("sector", "").lower()
@@ -434,7 +442,7 @@ class CompetitiveAnalyzer:
             return 0.6
         return 0.4
 
-    def _score_switching_costs(self, info: Dict) -> float:
+    def _score_switching_costs(self, info: Dict[str, Any]) -> float:
         """评分转换成本"""
         # 简化：B2B 软件有高转换成本
         industry = info.get("industry", "").lower()
@@ -463,7 +471,7 @@ class CompetitiveAnalyzer:
             return 0.5
         return 0.3
 
-    def _identify_strengths(self, scores: Dict) -> List[str]:
+    def _identify_strengths(self, scores: Dict[str, float]) -> List[str]:
         """识别优势"""
         strengths = []
         if scores.get("network_effects", 0) > 0.6:
@@ -476,7 +484,7 @@ class CompetitiveAnalyzer:
             strengths.append("品牌/专利优势")
         return strengths or ["无明显护城河"]
 
-    def _identify_weaknesses(self, scores: Dict) -> List[str]:
+    def _identify_weaknesses(self, scores: Dict[str, float]) -> List[str]:
         """识别劣势"""
         weaknesses = []
         if scores.get("network_effects", 0) < 0.4:
@@ -489,7 +497,7 @@ class CompetitiveAnalyzer:
             weaknesses.append("利润率低于同行")
         return weaknesses or ["无明显劣势"]
 
-    def _identify_risks(self, target: Dict, competitors: List[Dict]) -> List[str]:
+    def _identify_risks(self, target: Dict[str, Any], competitors: List[Dict[str, Any]]) -> List[str]:
         """识别风险"""
         risks = []
 
@@ -520,3 +528,129 @@ class CompetitiveAnalyzer:
         elif market_cap >= 1e6:
             return f"${market_cap / 1e6:.1f}M"
         return "N/A"
+
+    def _calculate_industry_metrics(
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]], industry: str
+    ) -> Dict[str, Any]:
+        """
+        计算行业特定指标
+
+        参考 plugins 定义的行业关键指标:
+        - SaaS: ARR, NRR, CAC payback, LTV/CAC, Rule of 40
+        - Payments: GPV, take rate, attach rate, margin
+        - Marketplaces: GMV, take rate, repeat rate
+        - Retail: same store sales, inventory turns, sales per sqft
+        - Logistics: volume, cost per unit, utilization
+        """
+        metrics: Dict[str, Any] = {"industry": industry}
+
+        if industry == "saas":
+            # SaaS 特有指标
+            revenue = target.get("revenue", 0)
+            growth = target.get("revenueGrowth", 0)
+            margin = target.get("profitMargins", 0)
+            rule_of_40 = (growth + margin) if growth and margin else 0
+            metrics.update({
+                "arr": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                "net_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                "rule_of_40": f"{rule_of_40 * 100:.1f}%" if rule_of_40 else "N/A",
+                "note": "ARR estimated as annual revenue; Rule of 40 = growth% + profit margin%",
+            })
+        elif industry == "payments":
+            revenue = target.get("revenue", 0)
+            gross_margin = target.get("grossMargins", 0)
+            # take rate = revenue / GMV (GPV 需要额外数据源)
+            metrics.update({
+                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                "gross_margin": f"{gross_margin * 100:.1f}%" if gross_margin else "N/A",
+                "take_rate": "N/A (requires GPV data)",
+                "note": "Take rate requires Gross Payment Volume from filings",
+            })
+        elif industry == "marketplace":
+            revenue = target.get("revenue", 0)
+            growth = target.get("revenueGrowth", 0)
+            metrics.update({
+                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                "gmv": "N/A (requires GMV data)",
+                "take_rate": "N/A",
+                "note": "GMV requires marketplace-specific data from filings",
+            })
+        elif industry == "retail":
+            revenue = target.get("revenue", 0)
+            margin = target.get("grossMargins", 0)
+            metrics.update({
+                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                "same_store_sales": "N/A",
+                "note": "Same-store sales requires historical store count data",
+            })
+        else:
+            # technology / 默认
+            revenue = target.get("revenue", 0)
+            growth = target.get("revenueGrowth", 0)
+            margin = target.get("grossMargins", 0)
+            rd = target.get("rAndD", 0)
+            metrics.update({
+                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                "rd_spending": f"${rd / 1e9:.1f}B" if rd else "N/A",
+            })
+
+        return metrics
+
+    def _analyze_scenarios(
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        场景分析 (Bull / Base / Bear)
+
+        基于市场地位、增长预期和估值进行三场景分析
+        """
+        market_cap = target.get("marketCap", 0)
+        revenue = target.get("revenue", 0)
+        growth = target.get("revenueGrowth", 0)
+        pe = target.get("peRatio", 0)
+        current_price = target.get("currentPrice", 0)
+
+        # 基于当前估值估算各场景目标价
+        if current_price > 0 and pe > 0:
+            # Bull: 估值扩张 (P/E +30%), 增长加速 (+50%)
+            bull_pe = pe * 1.3
+            bull_growth_adj = 1.5
+            bull_target = (target.get("forwardEPS", current_price / pe) *
+                           bull_pe * bull_growth_adj)
+            # Base: 估值不变, 增长持平
+            base_target = current_price * (1 + (growth or 0))
+            # Bear: 估值压缩 (P/E -30%), 增长放缓 (-50%)
+            bear_pe = pe * 0.7
+            bear_target = (target.get("forwardEPS", current_price / pe) *
+                           bear_pe * 0.5)
+        else:
+            bull_target = base_target = bear_target = 0
+
+        upside = (bull_target / current_price - 1) if current_price > 0 else 0
+        downside = (bear_target / current_price - 1) if current_price > 0 else 0
+
+        return {
+            "bull": {
+                "target_price": f"${bull_target:.0f}" if bull_target > 0 else "N/A",
+                "upside": f"+{upside * 100:.0f}%" if upside else "N/A",
+                "drivers": "估值扩张 + 增长加速 + 市场份额提升",
+                "probability": "20%",
+            },
+            "base": {
+                "target_price": f"${base_target:.0f}" if base_target > 0 else "N/A",
+                "upside": f"+{(base_target / current_price - 1) * 100:.0f}%" if current_price > 0 else "N/A",
+                "drivers": "按预期增长，估值维持",
+                "probability": "55%",
+            },
+            "bear": {
+                "target_price": f"${bear_target:.0f}" if bear_target > 0 else "N/A",
+                "downside": f"{downside * 100:.0f}%" if downside else "N/A",
+                "drivers": "估值压缩 + 增长放缓 + 竞争加剧",
+                "probability": "25%",
+            },
+        }
