@@ -21,6 +21,15 @@ class FactorDetail:
     bullish_signals: List[str] = field(default_factory=list)
     bearish_signals: List[str] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "key": self.key,
+            "name": self.name,
+            "status": self.status,
+            "bullish_signals": self.bullish_signals,
+            "bearish_signals": self.bearish_signals,
+        }
+
 
 @dataclass
 class FactorAnalysis:
@@ -30,6 +39,13 @@ class FactorAnalysis:
     data_source: str = ""
     raw_data: Dict[str, Any] | None = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "factors": [factor.to_dict() for factor in self.factors],
+            "data_source": self.data_source,
+            "raw_data": self.raw_data,
+        }
+
 
 @dataclass
 class FearGreed:
@@ -37,6 +53,12 @@ class FearGreed:
 
     index: float  # 贪恐指数值 (0-100)
     label: str  # 贪恐指数标签
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "index": self.index,
+            "label": self.label,
+        }
 
 
 @dataclass
@@ -46,6 +68,7 @@ class AnalysisReport:
     symbol: str
     stock_name: str
     price: float
+    as_of: Optional[str] = None
     # 基础指标
     fear_greed: FearGreed = field(default_factory=lambda: FearGreed(index=50.0, label="中性"))
     # 行业信息（用于基本面分析时的行业对比）
@@ -56,6 +79,22 @@ class AnalysisReport:
     qlib: FactorAnalysis = field(default_factory=FactorAnalysis)
     # 趋势分析结果
     trend_analysis: Optional[TrendAnalysisResult] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "stock_name": self.stock_name,
+            "price": self.price,
+            "as_of": self.as_of,
+            "fear_greed": self.fear_greed.to_dict(),
+            "industry": self.industry,
+            "technical": self.technical.to_dict(),
+            "fundamental": self.fundamental.to_dict(),
+            "qlib": self.qlib.to_dict(),
+            "trend_analysis": (
+                self.trend_analysis.to_dict() if self.trend_analysis is not None else None
+            ),
+        }
 
 
 @dataclass

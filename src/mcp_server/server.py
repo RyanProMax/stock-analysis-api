@@ -21,7 +21,6 @@ Agent 连接配置示例 (Claude Code):
     }
 """
 
-from dataclasses import asdict
 from typing import Optional
 
 from mcp.server import FastMCP
@@ -88,20 +87,7 @@ def analyze_stock(symbol: str, include_qlib: bool = False) -> dict:
     if report is None:
         return {"error": f"无法分析 {symbol}"}
 
-    result = asdict(report)
-
-    # 处理 trend_analysis 的枚举类型
-    if result.get("trend_analysis") and hasattr(result["trend_analysis"], "__dict__"):
-        ta = result["trend_analysis"]
-        ta_dict = {}
-        for key, value in ta.__dict__.items():
-            if hasattr(value, "value"):
-                ta_dict[key] = value.value
-            else:
-                ta_dict[key] = value
-        result["trend_analysis"] = ta_dict
-
-    return result
+    return report.to_dict()
 
 
 # ==================== 估值分析工具 ====================
@@ -185,7 +171,7 @@ def analyze_lbo(
     exit_multiple: float = 10.0,
     leverage: float = 0.65,
 ) -> dict:
-    """LBO (Leveraged Buyout) 估值分析
+    """LBO (Leveraged Buyout) 情景模型
 
     基于杠杆收购模型计算投资回报
 
@@ -197,7 +183,7 @@ def analyze_lbo(
         leverage: 债务占比 (默认 65%)
 
     Returns:
-        LBO 分析结果，包含 Sources & Uses、债务时间表、IRR/MOIC
+        LBO 情景模型结果，包含 Sources & Uses、债务时间表、IRR/MOIC
     """
     # 债务结构参数
     senior_pct = leverage * 0.8
@@ -226,7 +212,7 @@ def analyze_three_statement(
     projection_years: int = 5,
     comparison: bool = False,
 ) -> dict:
-    """3-Statement Model (三表财务模型)
+    """3-Statement Model (三表预测模型)
 
     预测公司未来财务状况
 
@@ -237,7 +223,7 @@ def analyze_three_statement(
         comparison: 是否返回三场景对比 (默认 False)
 
     Returns:
-        三表模型结果，包含 Income Statement、Balance Sheet、Cash Flow Statement
+        三表预测模型结果，包含 Income Statement、Balance Sheet、Cash Flow Statement
         当 comparison=True 时，返回全部三个场景的对比数据
     """
     model = ThreeStatementModel(projection_years=projection_years)
@@ -280,7 +266,8 @@ def analyze_competitive(
         industry: 行业类型 (technology/saas/payments/marketplace/retail/logistics)
 
     Returns:
-        竞争分析结果，包含市场背景、公司画像、竞品对比、定位矩阵、护城河评估
+        竞争分析结果，包含市场背景、公司画像、竞品对比、定位矩阵、护城河评估。
+        其中部分市场背景和护城河字段属于启发式估算。
     """
     # 解析竞争对手列表
     competitor_list = None

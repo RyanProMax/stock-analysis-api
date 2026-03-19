@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get(
     "/lbo",
     response_model=StandardResponse[dict],
-    summary="LBO 估值分析",
+    summary="LBO 情景模型",
 )
 def analyze_lbo(
     symbol: str = Query(
@@ -51,7 +51,7 @@ def analyze_lbo(
     ),
 ):
     """
-    LBO (Leveraged Buyout) 估值分析
+    LBO (Leveraged Buyout) 情景模型
 
     基于杠杆收购模型计算投资回报，包括：
 
@@ -62,6 +62,7 @@ def analyze_lbo(
     - **回报分析**: IRR、MOIC (退出倍数)
 
     仅支持美股，数据来源为 yfinance。
+    返回结果属于参数化情景测算，不应视为市场观测值。
     """
     try:
         symbol = symbol.upper()
@@ -110,7 +111,7 @@ def analyze_lbo(
 @router.get(
     "/three-statement",
     response_model=StandardResponse[dict],
-    summary="3-Statement Model 分析",
+    summary="3-Statement 预测模型",
 )
 def analyze_three_statement(
     symbol: str = Query(
@@ -131,7 +132,7 @@ def analyze_three_statement(
     ),
 ):
     """
-    3-Statement Model (三表财务模型)
+    3-Statement Model (三表预测模型)
 
     预测公司未来财务状况，包括：
 
@@ -143,6 +144,7 @@ def analyze_three_statement(
     - **情景分析**: Bull / Base / Bear 三种情景
 
     仅支持美股，数据来源为 yfinance。
+    返回结果属于预测模型，不应解释为公司已披露的事实报表。
     """
     try:
         symbol = symbol.upper()
@@ -182,7 +184,7 @@ def analyze_three_statement(
 @router.get(
     "/three-statement/scenarios",
     response_model=StandardResponse[dict],
-    summary="3-Statement 情景对比分析",
+    summary="3-Statement 情景预测对比",
 )
 def compare_three_statement_scenarios(
     symbol: str = Query(

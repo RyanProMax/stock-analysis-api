@@ -8,6 +8,9 @@
 - 股票基本面分析 (PE, PB, ROE, 营收增长等)
 - DCF 估值模型
 - Comps 可比公司分析
+- LBO 情景模型
+- 3-Statement 预测模型
+- Competitive / Earnings 分析接口
 - MCP 协议支持 (供 AI Agent 调用)
 
 ## 快速开始
@@ -119,7 +122,7 @@ python -m src.mcp_server.server
 }
 ```
 
-**MCP 工具列表 (与 HTTP API 对齐):**
+**MCP 工具列表 (当前实际暴露能力):**
 
 | 工具 | 描述 |
 |------|------|
@@ -128,3 +131,7 @@ python -m src.mcp_server.server
 | `search_stocks` | 搜索股票 |
 | `analyze_dcf` | DCF 估值分析 (仅美股) |
 | `analyze_comps` | 可比公司分析 (仅美股) |
+| `analyze_lbo` | LBO 情景模型 |
+| `analyze_three_statement` | 三表预测模型 |
+| `analyze_competitive` | 竞争格局分析 |
+| `analyze_earnings` | 季报分析 |

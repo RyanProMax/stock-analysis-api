@@ -13,6 +13,7 @@ import yfinance as yf
 from datetime import datetime
 import requests
 from typing import Dict, List, Any, Optional
+import pandas as pd
 
 
 class EarningsAnalysisResult:
@@ -24,6 +25,9 @@ class EarningsAnalysisResult:
         company_name: str = "",
         quarter: Optional[str] = "",
         fiscal_year: Optional[int] = None,
+        fiscal_period: Optional[str] = None,
+        report_date: Optional[str] = None,
+        as_of: Optional[str] = None,
         earnings_summary: Optional[Dict] = None,
         beat_miss_analysis: Optional[Dict] = None,
         segment_performance: Optional[List[Dict]] = None,
@@ -37,6 +41,9 @@ class EarningsAnalysisResult:
         self.company_name = company_name
         self.quarter = quarter
         self.fiscal_year = fiscal_year
+        self.fiscal_period = fiscal_period
+        self.report_date = report_date
+        self.as_of = as_of
         self.earnings_summary = earnings_summary or {}
         self.beat_miss_analysis = beat_miss_analysis or {}
         self.segment_performance = segment_performance or []
@@ -52,6 +59,9 @@ class EarningsAnalysisResult:
             "company_name": self.company_name,
             "quarter": self.quarter,
             "fiscal_year": self.fiscal_year,
+            "fiscal_period": self.fiscal_period,
+            "report_date": self.report_date,
+            "as_of": self.as_of,
             "earnings_summary": self.earnings_summary,
             "beat_miss_analysis": self.beat_miss_analysis,
             "segment_performance": self.segment_performance,
@@ -106,12 +116,22 @@ class EarningsAnalyzer:
             # 获取历史财务数据
             financials = self._get_financials(stock)
 
-            # 确定分析的季度
-            if not quarter or not fiscal_year:
-                quarter, fiscal_year = self._get_latest_quarter()
+            report_context = self._resolve_reporting_period(
+                financials, quarter, fiscal_year
+            )
+            if report_context is None:
+                return EarningsAnalysisResult(
+                    symbol=symbol,
+                    company_name=company_name,
+                    error="无法确定有效的季度财报期",
+                )
 
-            # 确保 fiscal_year 是 int 类型
-            fiscal_year = fiscal_year or 0
+            quarter_data = report_context["quarter_data"]
+            quarter = report_context["quarter"]
+            fiscal_year = report_context["fiscal_year"]
+            fiscal_period = report_context["fiscal_period"]
+            report_date = report_context["report_date"]
+            as_of = report_context["as_of"]
 
             # 构建分析结果
             return EarningsAnalysisResult(
@@ -119,13 +139,18 @@ class EarningsAnalyzer:
                 company_name=company_name,
                 quarter=quarter,
                 fiscal_year=fiscal_year,
-                earnings_summary=self._build_earnings_summary(info, financials),
-                beat_miss_analysis=self._analyze_beat_miss(info, financials),
-                segment_performance=self._analyze_segments(info, financials),
+                fiscal_period=fiscal_period,
+                report_date=report_date,
+                as_of=as_of,
+                earnings_summary=self._build_earnings_summary(info, quarter_data),
+                beat_miss_analysis=self._analyze_beat_miss(),
+                segment_performance=self._analyze_segments(info, quarter_data),
                 guidance=self._analyze_guidance(info),
                 key_metrics=self._extract_key_metrics(info),
                 trends=self._analyze_trends(financials),
-                sources=self._collect_sources(symbol, quarter, fiscal_year),
+                sources=self._collect_sources(
+                    symbol, quarter, fiscal_year, report_date
+                ),
             )
 
         except Exception as e:
@@ -136,10 +161,29 @@ class EarningsAnalyzer:
     def _get_financials(self, stock) -> Dict:
         """获取历史财务数据"""
         financials = {
+            "quarterly_income": None,
+            "quarterly_balance_sheet": None,
+            "quarterly_cashflow": None,
             "income": None,
             "balance_sheet": None,
             "cashflow": None,
+            "earnings_dates": None,
         }
+
+        try:
+            financials["quarterly_income"] = stock.quarterly_income_stmt
+        except Exception:
+            pass
+
+        try:
+            financials["quarterly_balance_sheet"] = stock.quarterly_balance_sheet
+        except Exception:
+            pass
+
+        try:
+            financials["quarterly_cashflow"] = stock.quarterly_cashflow
+        except Exception:
+            pass
 
         try:
             financials["income"] = stock.income_stmt
@@ -156,36 +200,239 @@ class EarningsAnalyzer:
         except Exception:
             pass
 
+        try:
+            financials["earnings_dates"] = stock.earnings_dates
+        except Exception:
+            pass
+
         return financials
 
-    def _get_latest_quarter(self) -> tuple:
-        """获取最新季度
+    def _resolve_reporting_period(
+        self,
+        financials: Dict,
+        requested_quarter: Optional[str],
+        requested_fiscal_year: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        """基于季度报表列确定财报期，避免按当前月份猜季度。"""
+        income = financials.get("quarterly_income")
+        if income is None or income.empty:
+            return None
 
-        假设公司财年与日历年一致:
-        - Q1: Jan-Mar ( earnings in Apr )
-        - Q2: Apr-Jun ( earnings in Jul )
-        - Q3: Jul-Sep ( earnings in Oct )
-        - Q4: Oct-Dec ( earnings in Jan )
-        """
-        now = datetime.now()
-        month = now.month
+        columns = [col for col in income.columns if isinstance(col, pd.Timestamp)]
+        if not columns:
+            columns = list(income.columns)
+        if not columns:
+            return None
 
-        # 当前季度判断 (基于财报发布时间)
-        if month <= 4:  # Jan-Apr: Q4 上一年财报发布
-            return "Q4", now.year - 1
-        elif month <= 7:  # May-Jul: Q1 本年财报发布
-            return "Q1", now.year
-        elif month <= 10:  # Aug-Oct: Q2 本年财报发布
-            return "Q2", now.year
-        else:  # Nov-Dec: Q3 本年财报发布
-            return "Q3", now.year
+        fiscal_year_end = self._get_fiscal_year_end(financials.get("income"))
 
-    def _build_earnings_summary(self, info: Dict, financials: Dict) -> Dict:
-        """构建财报摘要"""
-        # 从 info 获取最新数据
-        revenue = info.get("totalRevenue", 0) / 1e9  # 转为十亿
-        net_income = info.get("netIncomeToCommon", 0) / 1e9
-        ebitda = info.get("ebitda", 0) / 1e9
+        target_column = None
+        target_quarter = None
+        target_year = None
+
+        for col in columns:
+            quarter, fiscal_year = self._derive_fiscal_period(col, fiscal_year_end)
+            if requested_quarter and quarter != requested_quarter:
+                continue
+            if requested_fiscal_year and fiscal_year != requested_fiscal_year:
+                continue
+            target_column = col
+            target_quarter = quarter
+            target_year = fiscal_year
+            break
+
+        if target_column is None:
+            if requested_quarter or requested_fiscal_year:
+                return None
+            target_column = columns[0]
+            target_quarter, target_year = self._derive_fiscal_period(
+                target_column, fiscal_year_end
+            )
+
+        report_date = self._find_report_date(
+            financials.get("earnings_dates"), target_column
+        )
+        quarter_data = self._extract_quarter_data(financials, target_column)
+
+        return {
+            "quarter": target_quarter or requested_quarter or "Q?",
+            "fiscal_year": target_year or requested_fiscal_year or 0,
+            "fiscal_period": f"{target_quarter or requested_quarter or 'Q?'} FY{target_year or requested_fiscal_year or 0}",
+            "report_date": report_date,
+            "as_of": report_date or self._format_timestamp(target_column),
+            "quarter_data": quarter_data,
+        }
+
+    def _get_fiscal_year_end(
+        self, annual_income: Optional[pd.DataFrame]
+    ) -> Optional[pd.Timestamp]:
+        if annual_income is None or annual_income.empty:
+            return None
+        first_col = annual_income.columns[0]
+        return first_col if isinstance(first_col, pd.Timestamp) else None
+
+    def _derive_fiscal_period(
+        self,
+        period_end: Any,
+        fiscal_year_end: Optional[pd.Timestamp],
+    ) -> tuple[Optional[str], Optional[int]]:
+        if not isinstance(period_end, pd.Timestamp):
+            return None, None
+
+        fy_end_month = fiscal_year_end.month if fiscal_year_end is not None else 12
+        delta_months = (fy_end_month - period_end.month) % 12
+        quarter_number = 4 - (delta_months // 3)
+        if quarter_number < 1 or quarter_number > 4:
+            quarter_number = ((period_end.month - 1) // 3) + 1
+
+        fiscal_year = (
+            period_end.year if period_end.month <= fy_end_month else period_end.year + 1
+        )
+        return f"Q{quarter_number}", fiscal_year
+
+    def _find_report_date(
+        self,
+        earnings_dates: Optional[pd.DataFrame],
+        target_column: Any,
+    ) -> Optional[str]:
+        """尽量从 earnings_dates 找到接近该财报期的披露日期。"""
+        if (
+            earnings_dates is None
+            or earnings_dates.empty
+            or not isinstance(target_column, pd.Timestamp)
+        ):
+            return self._format_timestamp(target_column)
+
+        try:
+            index_values = earnings_dates.index
+            if len(index_values) == 0:
+                return self._format_timestamp(target_column)
+            nearest = min(index_values, key=lambda idx: abs((idx - target_column).days))
+            return self._format_timestamp(nearest)
+        except Exception:
+            return self._format_timestamp(target_column)
+
+    def _extract_quarter_data(
+        self, financials: Dict, target_column: Any
+    ) -> Dict[str, float]:
+        """从季度三表抽取核心季度字段。"""
+        income = financials.get("quarterly_income")
+        balance_sheet = financials.get("quarterly_balance_sheet")
+        cashflow = financials.get("quarterly_cashflow")
+
+        revenue = self._get_statement_value(
+            income, target_column, ["Total Revenue", "Operating Revenue"]
+        )
+        net_income = self._get_statement_value(
+            income,
+            target_column,
+            [
+                "Net Income",
+                "Net Income Common Stockholders",
+                "Net Income Including Noncontrolling Interests",
+            ],
+        )
+        ebitda = self._get_statement_value(income, target_column, ["EBITDA"])
+        basic_eps = self._get_statement_value(
+            income,
+            target_column,
+            ["Diluted EPS", "Basic EPS", "Reported EPS"],
+        )
+        operating_cash_flow = self._get_statement_value(
+            cashflow,
+            target_column,
+            ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"],
+        )
+        capex = self._get_statement_value(
+            cashflow,
+            target_column,
+            ["Capital Expenditure", "Capital Expenditures"],
+        )
+        free_cash_flow = None
+        if operating_cash_flow is not None:
+            free_cash_flow = operating_cash_flow - abs(capex or 0.0)
+
+        cash = self._get_statement_value(
+            balance_sheet,
+            target_column,
+            [
+                "Cash And Cash Equivalents",
+                "Cash Cash Equivalents And Short Term Investments",
+                "Cash",
+            ],
+        )
+        total_debt = self._get_statement_value(
+            balance_sheet,
+            target_column,
+            [
+                "Total Debt",
+                "Current Debt And Capital Lease Obligation",
+                "Long Term Debt And Capital Lease Obligation",
+            ],
+        )
+
+        return {
+            "revenue": revenue or 0.0,
+            "net_income": net_income or 0.0,
+            "ebitda": ebitda or 0.0,
+            "eps": basic_eps or 0.0,
+            "operating_cash_flow": operating_cash_flow or 0.0,
+            "capex": capex or 0.0,
+            "free_cash_flow": free_cash_flow or 0.0,
+            "cash": cash or 0.0,
+            "total_debt": total_debt or 0.0,
+        }
+
+    def _get_statement_value(
+        self,
+        statement: Optional[pd.DataFrame],
+        column: Any,
+        candidates: List[str],
+    ) -> Optional[float]:
+        if statement is None or statement.empty or column not in statement.columns:
+            return None
+
+        normalized = {self._normalize_label(idx): idx for idx in statement.index}
+        for candidate in candidates:
+            row_key = normalized.get(self._normalize_label(candidate))
+            if row_key is None:
+                continue
+            value = statement.at[row_key, column]
+            if pd.isna(value):
+                continue
+            return float(value)
+        return None
+
+    def _normalize_label(self, value: Any) -> str:
+        return str(value).strip().lower().replace("_", " ")
+
+    def _format_timestamp(self, value: Any) -> Optional[str]:
+        if isinstance(value, pd.Timestamp):
+            return value.date().isoformat()
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        if value is not None:
+            return str(value)
+        return None
+
+    def _build_earnings_summary(
+        self, info: Dict, quarter_data: Dict[str, float]
+    ) -> Dict:
+        """构建季度财报摘要，季度值必须来自季度报表。"""
+        revenue = quarter_data.get("revenue", 0) / 1e9
+        net_income = quarter_data.get("net_income", 0) / 1e9
+        ebitda = quarter_data.get("ebitda", 0) / 1e9
+        eps = quarter_data.get("eps", 0)
+        net_margin = (
+            (quarter_data.get("net_income", 0) / quarter_data.get("revenue", 1))
+            if quarter_data.get("revenue", 0) > 0
+            else None
+        )
+        ebitda_margin = (
+            (quarter_data.get("ebitda", 0) / quarter_data.get("revenue", 1))
+            if quarter_data.get("revenue", 0) > 0
+            else None
+        )
 
         return {
             "revenue": {
@@ -195,25 +442,19 @@ class EarningsAnalyzer:
             "net_income": {
                 "actual": f"${net_income:.2f}B" if net_income > 0 else "N/A",
                 "margin": (
-                    f"{info.get('profitMargins', 0) * 100:.1f}%"
-                    if info.get("profitMargins")
-                    else "N/A"
+                    f"{net_margin * 100:.1f}%" if net_margin is not None else "N/A"
                 ),
             },
             "ebitda": {
                 "actual": f"${ebitda:.2f}B" if ebitda > 0 else "N/A",
                 "margin": (
-                    f"{info.get('ebitdaMargins', 0) * 100:.1f}%"
-                    if info.get("ebitdaMargins")
+                    f"{ebitda_margin * 100:.1f}%"
+                    if ebitda_margin is not None
                     else "N/A"
                 ),
             },
             "earnings_per_share": {
-                "eps": (
-                    f"${info.get('trailingEPS', 0):.2f}"
-                    if info.get("trailingEPS")
-                    else "N/A"
-                ),
+                "eps": f"${eps:.2f}" if eps else "N/A",
                 "forward_eps": (
                     f"${info.get('forwardEPS', 0):.2f}"
                     if info.get("forwardEPS")
@@ -229,66 +470,23 @@ class EarningsAnalyzer:
         direction = "+" if growth_rate > 0 else ""
         return f"{direction}{growth_rate * 100:.1f}% YoY"
 
-    def _analyze_beat_miss(self, info: Dict, financials: Dict) -> Dict:
-        """
-        分析 Beat/Miss
-
-        使用 yfinance 的 consensus estimates 与 actuals 进行比较
-        - EPS: 使用 forwardEPS (共识预期) vs trailingEPS (实际)
-        - Revenue: 使用 revenueEstimate (共识预期) vs totalRevenue (实际)
-        """
-        # EPS Beat/Miss: forwardEPS = consensus estimate, trailingEPS = actual
-        consensus_eps = info.get("forwardEPS", 0) or info.get("epsForward", 0)
-        actual_eps = info.get("trailingEPS", 0)
-
-        if consensus_eps and actual_eps and actual_eps > 0:
-            eps_variance = (consensus_eps - actual_eps) / abs(actual_eps)
-            if eps_variance < -0.02:
-                eps_status = "Beat"
-                variance_str = f"+{abs(eps_variance) * 100:.1f}%"
-            elif eps_variance > 0.02:
-                eps_status = "Miss"
-                variance_str = f"-{eps_variance * 100:.1f}%"
-            else:
-                eps_status = "In-Line"
-                variance_str = "0.0%"
-        else:
-            eps_status = "N/A"
-            variance_str = "N/A"
-
-        # Revenue Beat/Miss: revenueEstimate = consensus, totalRevenue = actual
-        revenue_estimate = info.get("revenueEstimate", 0) or info.get("revenueAvg", 0)
-        revenue_actual = info.get("totalRevenue", 0)
-
-        if revenue_estimate and revenue_actual and revenue_actual > 0:
-            revenue_variance = (revenue_actual - revenue_estimate) / revenue_estimate
-            if revenue_variance > 0.02:
-                revenue_status = "Beat"
-            elif revenue_variance < -0.02:
-                revenue_status = "Miss"
-            else:
-                revenue_status = "In-Line"
-            revenue_variance_str = f"{revenue_variance * 100:+.1f}%"
-        else:
-            revenue_status = "N/A"
-            revenue_variance_str = "N/A"
-
+    def _analyze_beat_miss(self) -> Dict:
+        """缺少可靠季度 consensus 时明确降级，而不是伪造 beat/miss。"""
         return {
+            "status": "unavailable",
+            "summary": "缺少可验证的季度 consensus 数据，未输出 beat/miss 结论",
             "earnings": {
-                "status": eps_status,
-                "variance": variance_str,
-                "consensus": f"${consensus_eps:.2f}" if consensus_eps else "N/A",
-                "actual": f"${actual_eps:.2f}" if actual_eps else "N/A",
+                "status": "unavailable",
+                "variance": "N/A",
+                "consensus": "N/A",
+                "actual": "N/A",
             },
             "revenue": {
-                "status": revenue_status,
-                "variance": revenue_variance_str,
-                "consensus": (
-                    f"${revenue_estimate / 1e9:.2f}B" if revenue_estimate else "N/A"
-                ),
-                "actual": f"${revenue_actual / 1e9:.2f}B" if revenue_actual else "N/A",
+                "status": "unavailable",
+                "variance": "N/A",
+                "consensus": "N/A",
+                "actual": "N/A",
             },
-            "summary": self._generate_beat_miss_summary(eps_status, revenue_status),
         }
 
     def _generate_beat_miss_summary(
@@ -304,49 +502,30 @@ class EarningsAnalyzer:
         else:
             return f"盈利预期 {earnings_status}，收入预期 {revenue_status}"
 
-    def _analyze_segments(self, info: Dict, financials: Dict) -> List[Dict]:
-        """分析各业务板块表现
-
-        优先从 quarterly financials 获取真实 segment 数据，
-        fallback 到 info 中的 sector/industry 信息
-        """
+    def _analyze_segments(
+        self, info: Dict, quarter_data: Dict[str, float]
+    ) -> List[Dict]:
+        """分析各业务板块表现"""
         segments = []
 
-        # 尝试从 quarterly financials 获取真实 segment 数据
-        try:
-            if financials.get("income") is not None and not financials["income"].empty:
-                income = financials["income"]
-                # 查找 segment/revenue by segment 行
-                for idx in income.index:
-                    idx_lower = str(idx).lower()
-                    if any(kw in idx_lower for kw in ["segment", "revenue by", "by segment", "geographic"]):
-                        row = income.loc[idx]
-                        for col, val in row.items():
-                            if val and val > 0:
-                                seg_name = str(idx).replace(" ", "_")[:30]
-                                segments.append({
-                                    "segment": seg_name,
-                                    "revenue": round(val / 1e9, 2),
-                                    "note": "From quarterly filing",
-                                })
-                        break
-        except Exception:
-            pass
-
-        # 如果没有 quarterly segment 数据，使用总营收 + sector 信息
-        if not segments and info.get("totalRevenue"):
-            segments.append({
-                "segment": "Total Revenue",
-                "revenue": info.get("totalRevenue", 0) / 1e9,
-                "growth": (info.get("revenueGrowth") or 0) * 100,
-            })
+        if quarter_data.get("revenue"):
+            segments.append(
+                {
+                    "segment": "Quarter Total Revenue",
+                    "revenue": quarter_data.get("revenue", 0) / 1e9,
+                    "growth": (info.get("revenueGrowth") or 0) * 100,
+                    "note": "Quarterly filing aggregate",
+                }
+            )
 
         if info.get("sector"):
-            segments.append({
-                "segment": info.get("sector"),
-                "revenue": info.get("totalRevenue", 0) / 1e9,
-                "note": "Primary segment (sector-level)",
-            })
+            segments.append(
+                {
+                    "segment": info.get("sector"),
+                    "revenue": quarter_data.get("revenue", 0) / 1e9,
+                    "note": "Primary segment (sector-level)",
+                }
+            )
 
         return segments
 
@@ -424,10 +603,19 @@ class EarningsAnalyzer:
                 "revenue_quarterly_growth": f"{(info.get('revenueQuarterlyGrowth') or 0) * 100:.1f}%",
             },
             "dividends": {
-                "dividend_yield": f"{(info.get('dividendYield') or 0) * 100:.2f}%",
+                "dividend_yield": f"{self._normalize_ratio(info.get('dividendYield')) * 100:.2f}%",
                 "payout_ratio": f"{(info.get('payoutRatio') or 0) * 100:.1f}%",
             },
         }
+
+    def _normalize_ratio(self, value: Any) -> float:
+        if value is None:
+            return 0.0
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return numeric / 100.0 if numeric > 1 else numeric
 
     def _analyze_trends(self, financials: Dict) -> Dict:
         """分析趋势"""
@@ -435,12 +623,18 @@ class EarningsAnalyzer:
 
         # 尝试从 income statement 获取历史数据
         try:
-            if financials.get("income") is not None and not financials["income"].empty:
-                income = financials["income"]
+            income = financials.get("quarterly_income")
+            if income is None or income.empty:
+                income = financials.get("income")
+
+            if income is not None and not income.empty:
 
                 # 获取最近几年的数据
-                if "totalRevenue" in income.index:
-                    revenues = income.loc["totalRevenue"].head(5)
+                revenue_row = self._find_row_name(
+                    income, ["Total Revenue", "Operating Revenue"]
+                )
+                if revenue_row is not None:
+                    revenues = income.loc[revenue_row].head(5)
                     trends["revenue_history"] = [
                         {
                             "year": str(col)[:4],
@@ -449,8 +643,12 @@ class EarningsAnalyzer:
                         for col, val in revenues.items()
                     ]
 
-                if "netIncome" in income.index:
-                    net_incomes = income.loc["netIncome"].head(5)
+                net_income_row = self._find_row_name(
+                    income,
+                    ["Net Income", "Net Income Common Stockholders"],
+                )
+                if net_income_row is not None:
+                    net_incomes = income.loc[net_income_row].head(5)
                     trends["net_income_history"] = [
                         {
                             "year": str(col)[:4],
@@ -463,16 +661,27 @@ class EarningsAnalyzer:
 
         return trends
 
+    def _find_row_name(
+        self, frame: pd.DataFrame, candidates: List[str]
+    ) -> Optional[Any]:
+        normalized = {self._normalize_label(idx): idx for idx in frame.index}
+        for candidate in candidates:
+            row_name = normalized.get(self._normalize_label(candidate))
+            if row_name is not None:
+                return row_name
+        return None
+
     def _collect_sources(
         self,
         symbol: str,
         quarter: Optional[str],
         fiscal_year: Optional[int],
+        report_date: Optional[str],
     ) -> List[str]:
         """收集数据来源"""
         sources = [
-            f"yfinance - {symbol} financial data",
-            f"Company investor relations - {quarter} {fiscal_year or 'latest'} earnings",
+            f"yfinance - {symbol} quarterly financial statements",
+            f"Company investor relations - {quarter} {fiscal_year or 'latest'} earnings ({report_date or 'date unavailable'})",
             "SEC EDGAR - Company filings",
         ]
 

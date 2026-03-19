@@ -116,6 +116,7 @@ class AnalysisReportResponse(BaseModel):
     symbol: str
     stock_name: str | None = None
     price: float
+    as_of: str | None = None
     fear_greed: FearGreedResponse
     technical: FactorAnalysisResponse
     fundamental: FactorAnalysisResponse

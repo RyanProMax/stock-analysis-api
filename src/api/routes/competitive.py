@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get(
     "/competitive",
     response_model=StandardResponse[dict],
-    summary="竞争格局分析",
+    summary="竞争格局分析（含估算字段）",
 )
 def analyze_competitive(
     symbol: str = Query(
@@ -37,7 +37,7 @@ def analyze_competitive(
 
     分析目标公司的竞争环境，包括:
 
-    - **市场背景**: 行业概况、市场规模
+    - **市场背景**: 行业概况、估算市场背景
     - **目标公司画像**: 财务指标、估值、分析师预期
     - **竞争对手数据**: 主要竞争对手财务对比
     - **定位可视化**: 2×2 矩阵数据
@@ -45,6 +45,7 @@ def analyze_competitive(
     - **护城河评估**: 网络效应、转换成本、规模经济等
 
     仅支持美股，数据来源为 yfinance。
+    返回中的市场背景、护城河和场景字段包含启发式估算，不应视为外部已验证事实。
     """
     try:
         symbol = symbol.upper()

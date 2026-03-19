@@ -278,7 +278,12 @@ class CompetitiveAnalyzer:
 
         return {
             "industry": industry,
-            "target_market": f"${estimated_market_size / 1e9:.0f}B (estimated)",
+            "estimated_market_context": {
+                "value": f"${estimated_market_size / 1e9:.0f}B",
+                "is_estimate": True,
+                "methodology": "estimated as market_cap * 5 heuristic",
+                "derived_from": "target company marketCap",
+            },
             "key_metrics": self.INDUSTRY_METRICS.get(
                 industry, ["revenue", "growth", "margin"]
             ),
