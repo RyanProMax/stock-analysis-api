@@ -24,6 +24,14 @@ def _format_percent(value: float) -> str:
     return f"{value * 100:.2f}%"
 
 
+def _format_yahoo_dividend_yield(value: float) -> str:
+    """格式化 Yahoo dividendYield，兼容 0.02 => 0.02% 的特殊口径。"""
+    numeric = float(value)
+    if 0 < abs(numeric) <= 0.1:
+        return f"{numeric:.2f}%"
+    return f"{numeric * 100:.2f}%"
+
+
 def _format_number(value: float) -> str:
     """格式化数值"""
     return f"{value:.2f}"
@@ -72,7 +80,7 @@ YFINANCE_FIELD_MAP = {
     "trailingEps": ("每股收益(TTM)", _format_number),
     "forwardEps": ("远期每股收益", _format_number),
     "revenuePerShare": ("每股营收", _format_number),
-    "dividendYield": ("股息率", _format_percent),
+    "dividendYield": ("股息率", _format_yahoo_dividend_yield),
     "payoutRatio": ("派息比率", _format_percent),
     # 分析师预期
     "targetMeanPrice": ("分析师目标价均值", _format_number),

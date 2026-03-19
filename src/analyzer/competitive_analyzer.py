@@ -113,11 +113,13 @@ class CompetitiveAnalyzer:
                 competitors = self._find_competitors(symbol, industry)
 
             # 获取竞争对手数据
-            competitor_data = []
+            competitor_profiles = []
+            competitor_metrics = []
             for comp in competitors:
                 comp_info = self._get_company_info(comp)
                 if comp_info:
-                    competitor_data.append(self._format_competitor(comp_info))
+                    competitor_metrics.append(comp_info)
+                    competitor_profiles.append(self._format_competitor(comp_info))
 
             # 构建竞争分析
             return CompetitiveAnalysisResult(
@@ -125,16 +127,16 @@ class CompetitiveAnalyzer:
                 company_name=company_name,
                 market_context=self._analyze_market_context(target_info, industry),
                 target_profile=self._format_target_profile(target_info),
-                competitors=competitor_data,
+                competitors=competitor_profiles,
                 positioning=self._generate_positioning(
-                    target_info, competitor_data, industry
+                    target_info, competitor_metrics, industry
                 ),
                 comparative=self._generate_comparative(
-                    target_info, competitor_data, industry
+                    target_info, competitor_metrics, industry
                 ),
-                moat_assessment=self._assess_moat(target_info, competitor_data),
-                industry_metrics=self._calculate_industry_metrics(target_info, competitor_data, industry),
-                scenario_analysis=self._analyze_scenarios(target_info, competitor_data),
+                moat_assessment=self._assess_moat(target_info, competitor_metrics),
+                industry_metrics=self._calculate_industry_metrics(target_info, competitor_metrics, industry),
+                scenario_analysis=self._analyze_scenarios(target_info, competitor_metrics),
             )
 
         except Exception as e:
