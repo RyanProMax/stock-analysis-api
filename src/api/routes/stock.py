@@ -118,7 +118,11 @@ def analyze_stocks(payload: StockAnalysisRequest):
     response_model=StandardResponse[StockListResponse],
     summary="获取股票列表",
 )
-def get_stock_list(market: Optional[str] = None, refresh: bool = False):
+def get_stock_list(
+    market: Optional[str] = None,
+    refresh: bool = False,
+    limit: Optional[int] = None,
+):
     """
     获取股票列表（按tushare格式返回，按日缓存）
 
@@ -131,6 +135,8 @@ def get_stock_list(market: Optional[str] = None, refresh: bool = False):
     """
     try:
         stocks = stock_service.get_stock_list(market, refresh)
+        if limit is not None and limit >= 0:
+            stocks = stocks[:limit]
 
         # 直接转换为响应格式（保持tushare格式）
         stock_responses = [

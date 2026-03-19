@@ -123,6 +123,11 @@ class LBOResult:
     # 假设参数
     assumptions: Dict[str, Any] = field(default_factory=dict)
 
+    # 元数据
+    model_type: str = "scenario"
+    derived_from_assumptions: bool = True
+    assumptions_source: str = "user_parameters_and_heuristics"
+
     # 错误信息
     error: Optional[str] = None
 
@@ -180,6 +185,9 @@ class LBOResult:
                 "cash_on_cash": round(self.returns.cash_on_cash * 100, 2),
             },
             "assumptions": self.assumptions,
+            "model_type": self.model_type,
+            "derived_from_assumptions": self.derived_from_assumptions,
+            "assumptions_source": self.assumptions_source,
             "error": self.error,
         }
 

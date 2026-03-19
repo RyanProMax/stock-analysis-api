@@ -140,6 +140,13 @@ class DCFResult:
     # 分析假设
     assumptions: Dict[str, Any] = field(default_factory=dict)
 
+    # 元数据
+    model_type: str = "quick_model"
+    data_completeness: str = "partial"
+    assumptions_source: str = "heuristic"
+    fcf_source: str = ""
+    as_of: Optional[str] = None
+
     # 错误信息
     error: Optional[str] = None
 
@@ -229,5 +236,10 @@ class DCFResult:
             },
             "recommendation": self.recommendation,
             "confidence": self.confidence,
+            "model_type": self.model_type,
+            "data_completeness": self.data_completeness,
+            "assumptions_source": self.assumptions_source,
+            "fcf_source": self.fcf_source,
+            "as_of": self.as_of,
             "error": self.error,
         }

@@ -6,7 +6,8 @@ DCF (Discounted Cash Flow) 估值模型
 """
 
 import yfinance as yf
-from typing import List, Tuple
+from typing import List, Tuple, Any, Optional
+import pandas as pd
 
 from ..model import (
     DCFResult,
@@ -89,7 +90,9 @@ class DCFModel:
                 )
 
             # 2. 获取历史财务数据用于预测
-            historical_fcf = self._get_historical_fcf(info)
+            historical_fcf, fcf_source, data_completeness, as_of = self._get_historical_fcf(
+                stock, info
+            )
 
             if not historical_fcf or historical_fcf[-1] <= 0:
                 return DCFResult(
@@ -98,6 +101,11 @@ class DCFModel:
                     current_price=current_price,
                     currency=currency,
                     wacc_components=wacc_components,
+                    model_type="quick_model",
+                    data_completeness="insufficient",
+                    assumptions_source="heuristic",
+                    fcf_source=fcf_source,
+                    as_of=as_of,
                     error="无法获取有效的自由现金流数据",
                 )
 
@@ -169,6 +177,11 @@ class DCFModel:
                     "terminal_growth_rate": self.terminal_growth_rate,
                     "projection_years": self.projection_years,
                 },
+                model_type="quick_model",
+                data_completeness=data_completeness,
+                assumptions_source="historical_cashflow_plus_model_assumptions",
+                fcf_source=fcf_source,
+                as_of=as_of,
             )
 
             return result
@@ -234,33 +247,90 @@ class DCFModel:
 
         return components
 
-    def _get_historical_fcf(self, info: dict) -> List[float]:
-        """获取历史自由现金流"""
-        # 优先使用 yfinance 提供的 FCF
-        free_cashflow = info.get("freeCashflow", 0) or 0
+    def _get_historical_fcf(
+        self, stock, info: dict
+    ) -> Tuple[List[float], str, str, Optional[str]]:
+        """获取历史自由现金流，优先使用真实现金流表，禁止倒推伪历史。"""
+        cashflow = None
+        try:
+            cashflow = stock.cashflow
+        except Exception:
+            cashflow = None
 
-        if free_cashflow > 0:
-            # 如果有 FCF 数据，假设过去几年按一定增长率增长
-            # 使用营收增长率估算历史 FCF
-            revenue_growth = info.get("revenueGrowth", 0.1) or 0.1
-            growth_rate = min(revenue_growth, 0.3)  # 限制最大增长率
+        if cashflow is not None and not cashflow.empty:
+            history, as_of = self._extract_fcf_from_cashflow(cashflow)
+            if history:
+                completeness = "complete" if len(history) >= 3 else "partial"
+                return history, "cashflow_statement", completeness, as_of
 
-            historical = []
-            for i in range(3):
-                historical.insert(0, free_cashflow / ((1 + growth_rate) ** (i + 1)))
-            historical.append(free_cashflow)
-            return historical
-
-        # 备选方案：从现金流计算
+        # 备选方案：从 info 的单期现金流计算，只允许 partial，不再造多期历史
         operating_cashflow = info.get("operatingCashflow", 0) or 0
         capex = info.get("capitalExpenditures", 0) or 0
 
         if operating_cashflow > 0:
             calculated_fcf = operating_cashflow - abs(capex)
             if calculated_fcf > 0:
-                return [calculated_fcf]
+                return [calculated_fcf], "info_operating_cashflow_minus_capex", "partial", None
 
-        return []
+        return [], "unavailable", "insufficient", None
+
+    def _extract_fcf_from_cashflow(
+        self, cashflow: pd.DataFrame
+    ) -> Tuple[List[float], Optional[str]]:
+        operating_row = self._find_cashflow_row(
+            cashflow,
+            [
+                "Operating Cash Flow",
+                "Cash Flow From Continuing Operating Activities",
+                "Net Cash Provided By Operating Activities",
+            ],
+        )
+        capex_row = self._find_cashflow_row(
+            cashflow,
+            ["Capital Expenditure", "Capital Expenditures"],
+        )
+        if operating_row is None:
+            return [], None
+
+        values: List[float] = []
+        as_of = None
+        columns = list(cashflow.columns)
+        if len(columns) >= 2 and isinstance(columns[0], pd.Timestamp) and isinstance(columns[-1], pd.Timestamp):
+            if columns[0] > columns[-1]:
+                columns = list(reversed(columns))
+
+        for column in columns:
+            operating_cashflow = cashflow.at[operating_row, column]
+            if pd.isna(operating_cashflow):
+                continue
+            capex = 0.0
+            if capex_row is not None:
+                capex_value = cashflow.at[capex_row, column]
+                if not pd.isna(capex_value):
+                    capex = float(capex_value)
+            fcf = float(operating_cashflow) - abs(capex)
+            if fcf > 0:
+                values.append(fcf)
+                as_of = self._format_period(column)
+        return values, as_of
+
+    def _find_cashflow_row(self, cashflow: pd.DataFrame, candidates: List[str]) -> Optional[Any]:
+        normalized = {self._normalize_label(idx): idx for idx in cashflow.index}
+        for candidate in candidates:
+            row_name = normalized.get(self._normalize_label(candidate))
+            if row_name is not None:
+                return row_name
+        return None
+
+    def _normalize_label(self, value: Any) -> str:
+        return str(value).strip().lower().replace("_", " ")
+
+    def _format_period(self, value: Any) -> Optional[str]:
+        if isinstance(value, pd.Timestamp):
+            return value.date().isoformat()
+        if value is not None:
+            return str(value)
+        return None
 
     def _project_fcf(
         self,
