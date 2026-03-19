@@ -8,8 +8,9 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from ...analyzer.comps_analyzer import CompsAnalyzer
+from ...analyzer.normalizers import comps_contract
 from ...utils.excel_exporter import CompsExcelExporter
-from ..schemas import StandardResponse
+from ..schemas import StandardResponse, StructuredInterfaceResponse
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ excel_exporter = CompsExcelExporter()
 
 @router.get(
     "/comps",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="可比公司分析",
 )
 def analyze_comps(
@@ -53,7 +54,7 @@ def analyze_comps(
         result = comps_analyzer.analyze(symbol, sector)
 
         # 转换为字典格式
-        response_data = result.to_dict()
+        response_data = comps_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(

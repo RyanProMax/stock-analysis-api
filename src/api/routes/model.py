@@ -8,15 +8,16 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from ...analyzer.lbo_model import LBOModel
+from ...analyzer.normalizers import lbo_contract, three_statement_contract
 from ...analyzer.three_statement_model import ThreeStatementModel
-from ..schemas import StandardResponse
+from ..schemas import StandardResponse, StructuredInterfaceResponse
 
 router = APIRouter()
 
 
 @router.get(
     "/lbo",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="LBO 情景模型",
 )
 def analyze_lbo(
@@ -85,7 +86,7 @@ def analyze_lbo(
         result = model.analyze(symbol)
 
         # 转换为字典格式
-        response_data = result.to_dict()
+        response_data = lbo_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(
@@ -110,7 +111,7 @@ def analyze_lbo(
 
 @router.get(
     "/three-statement",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="3-Statement 预测模型",
 )
 def analyze_three_statement(
@@ -158,7 +159,7 @@ def analyze_three_statement(
         result = model.analyze(symbol, scenario)
 
         # 转换为字典格式
-        response_data = result.to_dict()
+        response_data = three_statement_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(
@@ -183,7 +184,7 @@ def analyze_three_statement(
 
 @router.get(
     "/three-statement/scenarios",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="3-Statement 情景预测对比",
 )
 def compare_three_statement_scenarios(
@@ -224,10 +225,16 @@ def compare_three_statement_scenarios(
 
         return StandardResponse(
             status_code=200,
-            data={
-                "symbol": symbol,
-                "scenarios": scenarios_result,
-            },
+            data=three_statement_contract(
+                {
+                    "symbol": symbol,
+                    "company_name": symbol,
+                    "historical_source": "scenario_comparison",
+                    "as_of": None,
+                    "limitations": ["Scenario comparison derived from model outputs"],
+                    "scenarios": scenarios_result,
+                }
+            ),
             err_msg=None,
         )
 

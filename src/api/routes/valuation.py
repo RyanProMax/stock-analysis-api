@@ -8,8 +8,9 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from ...analyzer.dcf_model import DCFModel
+from ...analyzer.normalizers import dcf_contract
 from ...utils.excel_exporter import DCFExcelExporter
-from ..schemas import StandardResponse
+from ..schemas import StandardResponse, StructuredInterfaceResponse
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ dcf_exporter = DCFExcelExporter()
 
 @router.get(
     "/dcf",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="DCF 估值分析",
 )
 def analyze_dcf(
@@ -85,7 +86,7 @@ def analyze_dcf(
         result = model.analyze(symbol)
 
         # 转换为字典格式
-        response_data = result.to_dict()
+        response_data = dcf_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(

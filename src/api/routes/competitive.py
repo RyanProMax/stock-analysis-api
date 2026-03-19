@@ -7,14 +7,15 @@ from fastapi import APIRouter, Query
 from typing import Optional
 
 from ...analyzer.competitive_analyzer import CompetitiveAnalyzer
-from ..schemas import StandardResponse
+from ...analyzer.normalizers import competitive_contract
+from ..schemas import StandardResponse, StructuredInterfaceResponse
 
 router = APIRouter()
 
 
 @router.get(
     "/competitive",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="竞争格局分析（含估算字段）",
 )
 def analyze_competitive(
@@ -62,17 +63,18 @@ def analyze_competitive(
             competitors=competitor_list,
             industry=industry,
         )
+        response_data = competitive_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(
                 status_code=400,
-                data=result.to_dict(),
+                data=response_data,
                 err_msg=result.error,
             )
 
         return StandardResponse(
             status_code=200,
-            data=result.to_dict(),
+            data=response_data,
             err_msg=None,
         )
 
