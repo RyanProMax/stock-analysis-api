@@ -615,6 +615,8 @@ class EarningsAnalyzer:
             numeric = float(value)
         except (TypeError, ValueError):
             return 0.0
+        if 0 < abs(numeric) <= 0.1:
+            return numeric / 100.0
         return numeric / 100.0 if numeric > 1 else numeric
 
     def _analyze_trends(self, financials: Dict) -> Dict:

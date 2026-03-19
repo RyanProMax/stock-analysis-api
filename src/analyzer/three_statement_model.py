@@ -121,6 +121,7 @@ class ThreeStatementModel:
                 income_statements,
                 total_equity,
                 cash,
+                baseline,
                 params,
             )
 
@@ -190,6 +191,26 @@ class ThreeStatementModel:
             bs_col,
             ["Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"],
         )
+        accounts_receivable = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Accounts Receivable", "Receivables", "Net Receivables"],
+        ) or 0.0
+        inventory = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Inventory", "Finished Goods", "Raw Materials"],
+        ) or 0.0
+        accounts_payable = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Accounts Payable", "Payables And Accrued Expenses", "Payables"],
+        ) or 0.0
+        ppe = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Net PPE", "Gross PPE", "Property Plant Equipment"],
+        ) or 0.0
         cash = self._get_statement_value(
             balance_sheet,
             bs_col,
@@ -204,6 +225,10 @@ class ThreeStatementModel:
             "total_assets": total_assets / 1e6,
             "total_debt": total_debt / 1e6,
             "total_equity": total_equity / 1e6,
+            "accounts_receivable": accounts_receivable / 1e6,
+            "inventory": inventory / 1e6,
+            "accounts_payable": accounts_payable / 1e6,
+            "ppe": ppe / 1e6,
             "cash": cash / 1e6,
             "as_of": bs_col.date().isoformat() if isinstance(bs_col, pd.Timestamp) else str(bs_col),
         }
@@ -297,6 +322,7 @@ class ThreeStatementModel:
         income_statements: List[Dict],
         initial_equity: float,
         initial_cash: float,
+        baseline: Dict[str, Any],
         params: Dict,
     ) -> Tuple[List[Dict], List[Dict]]:
         """
@@ -313,10 +339,11 @@ class ThreeStatementModel:
         # 期初值
         beginning_cash = initial_cash
         beginning_equity = initial_equity  # = Retained Earnings
-        prev_ar = 0
-        prev_inventory = 0
-        prev_ap = 0
-        prev_debt = initial_equity * self.WORKING_CAPITAL_ASSUMPTIONS["debt_to_assets"]
+        prev_ar = baseline.get("accounts_receivable", 0.0)
+        prev_inventory = baseline.get("inventory", 0.0)
+        prev_ap = baseline.get("accounts_payable", 0.0)
+        prev_debt = max(baseline.get("total_debt", 0.0), 0.0)
+        prev_ppe = baseline.get("ppe", 0.0)
 
         for i, income in enumerate(income_statements):
             year = income["year"]
@@ -330,9 +357,6 @@ class ThreeStatementModel:
             # 流动资产
             ar = revenue * wc["ar_pct"]
             inventory = revenue * wc["inventory_pct"]
-
-            # 非流动资产 (固定资产)
-            ppe = revenue * wc["ppe_pct"]
 
             # 流动负债
             ap = revenue * wc["ap_pct"]
@@ -354,9 +378,11 @@ class ThreeStatementModel:
 
             net_cfo = cfo + nwc_impact
 
-            # CFI: CapEx (负现金流)
             capex = revenue * params["capex_pct"]
             net_cfi = -capex
+
+            # 非流动资产 (固定资产): 基于期初 PPE 滚动，而不是每年从 0 重建。
+            ppe = max(prev_ppe + capex - da, 0)
 
             # CFF: 股息 (负现金流)
             dividend = net_income * self.DEFAULT_DIVIDEND_PAYOUT_RATIO
@@ -377,21 +403,22 @@ class ThreeStatementModel:
             total_assets = current_assets + ppe
 
             # 负债
-            # 债务水平 - 简化假设：保持与资产的比例
-            debt = total_assets * wc["debt_to_assets"]
-            total_liabilities = ap + debt
-
             # 股东权益 (RE滚动)
             # Ending RE = Beginning RE + Net Income - Dividends
             ending_equity = beginning_equity + net_income - dividend
 
-            # 验证 BS 平衡: Assets = Liabilities + Equity
-            # 如果不平衡，使用 debt 作为 plug (债务调整)
-            calculated_liabilities_plus_equity = total_liabilities + ending_equity
-            balance_diff = total_assets - calculated_liabilities_plus_equity
+            # 先按资产负债率给一个目标债务，再用非负债务做平衡约束。
+            target_debt = max(total_assets * wc["debt_to_assets"], prev_debt * 0.9)
+            required_liabilities = max(total_assets - ending_equity, 0)
+            debt = max(required_liabilities - ap, 0)
 
-            # 使用债务调整来平衡
-            debt = debt + balance_diff
+            if debt == 0 and required_liabilities == 0 and ending_equity > total_assets - ap:
+                # 权益超过资产时，下调权益到可平衡值，避免生成负负债。
+                ending_equity = max(total_assets - ap, 0)
+            elif debt < target_debt and required_liabilities >= ap:
+                debt = max(target_debt, debt)
+                ending_equity = max(total_assets - (ap + debt), 0)
+
             total_liabilities = ap + debt
 
             # 重新验证
@@ -443,6 +470,7 @@ class ThreeStatementModel:
             prev_inventory = inventory
             prev_ap = ap
             prev_debt = debt
+            prev_ppe = ppe
 
         return balance_sheets, cash_flows
 
