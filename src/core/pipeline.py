@@ -11,7 +11,6 @@
 """
 
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import asdict
 import pandas as pd
 
 from ..data_provider import data_manager, StockListService
@@ -152,7 +151,7 @@ class StockService:
 
             # 保存到文件缓存
             if report is not None:
-                report_dict = asdict(report)
+                report_dict = report.to_dict()
                 CacheUtil.save_report(symbol, report_dict, force=refresh)
 
             # 开发环境输出控制台报告
@@ -297,12 +296,70 @@ class StockService:
                 symbol=report_dict.get("symbol", symbol),
                 stock_name=report_dict.get("stock_name", ""),
                 price=report_dict.get("price", 0.0),
+                as_of=report_dict.get("as_of"),
                 fear_greed=fear_greed,
                 industry=report_dict.get("industry", ""),
                 technical=rebuild_factor_analysis("technical"),
                 fundamental=rebuild_factor_analysis("fundamental"),
                 qlib=rebuild_factor_analysis("qlib"),
             )
+
+            trend_analysis_data = report_dict.get("trend_analysis")
+            if isinstance(trend_analysis_data, dict):
+                from ..model.trend import (
+                    TrendAnalysisResult,
+                    TrendStatus,
+                    VolumeStatus,
+                    MACDStatus,
+                    RSIStatus,
+                    BuySignal,
+                )
+
+                report.trend_analysis = TrendAnalysisResult(
+                    code=trend_analysis_data.get("code", symbol),
+                    trend_status=TrendStatus(
+                        trend_analysis_data.get("trend_status", TrendStatus.CONSOLIDATION.value)
+                    ),
+                    ma_alignment=trend_analysis_data.get("ma_alignment", ""),
+                    trend_strength=trend_analysis_data.get("trend_strength", 0.0),
+                    ma5=trend_analysis_data.get("ma5", 0.0),
+                    ma10=trend_analysis_data.get("ma10", 0.0),
+                    ma20=trend_analysis_data.get("ma20", 0.0),
+                    ma60=trend_analysis_data.get("ma60", 0.0),
+                    current_price=trend_analysis_data.get("current_price", 0.0),
+                    bias_ma5=trend_analysis_data.get("bias_ma5", 0.0),
+                    bias_ma10=trend_analysis_data.get("bias_ma10", 0.0),
+                    bias_ma20=trend_analysis_data.get("bias_ma20", 0.0),
+                    volume_status=VolumeStatus(
+                        trend_analysis_data.get("volume_status", VolumeStatus.NORMAL.value)
+                    ),
+                    volume_ratio_5d=trend_analysis_data.get("volume_ratio_5d", 0.0),
+                    volume_trend=trend_analysis_data.get("volume_trend", ""),
+                    support_ma5=trend_analysis_data.get("support_ma5", False),
+                    support_ma10=trend_analysis_data.get("support_ma10", False),
+                    resistance_levels=trend_analysis_data.get("resistance_levels", []),
+                    support_levels=trend_analysis_data.get("support_levels", []),
+                    macd_dif=trend_analysis_data.get("macd_dif", 0.0),
+                    macd_dea=trend_analysis_data.get("macd_dea", 0.0),
+                    macd_bar=trend_analysis_data.get("macd_bar", 0.0),
+                    macd_status=MACDStatus(
+                        trend_analysis_data.get("macd_status", MACDStatus.BULLISH.value)
+                    ),
+                    macd_signal=trend_analysis_data.get("macd_signal", ""),
+                    rsi_6=trend_analysis_data.get("rsi_6", 0.0),
+                    rsi_12=trend_analysis_data.get("rsi_12", 0.0),
+                    rsi_24=trend_analysis_data.get("rsi_24", 0.0),
+                    rsi_status=RSIStatus(
+                        trend_analysis_data.get("rsi_status", RSIStatus.NEUTRAL.value)
+                    ),
+                    rsi_signal=trend_analysis_data.get("rsi_signal", ""),
+                    buy_signal=BuySignal(
+                        trend_analysis_data.get("buy_signal", BuySignal.WAIT.value)
+                    ),
+                    signal_score=trend_analysis_data.get("signal_score", 0),
+                    signal_reasons=trend_analysis_data.get("signal_reasons", []),
+                    risk_factors=trend_analysis_data.get("risk_factors", []),
+                )
 
             return report
 

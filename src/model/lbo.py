@@ -210,6 +210,12 @@ class ThreeStatementResult:
     # 假设
     assumptions: Dict[str, Any] = field(default_factory=dict)
 
+    # 元数据
+    model_type: str = "forecast"
+    historical_source: str = ""
+    as_of: Optional[str] = None
+    limitations: List[str] = field(default_factory=list)
+
     # 错误信息
     error: Optional[str] = None
 
@@ -223,5 +229,9 @@ class ThreeStatementResult:
             "cash_flow_statements": self.cash_flow_statements,
             "key_metrics": self.key_metrics,
             "assumptions": self.assumptions,
+            "model_type": self.model_type,
+            "historical_source": self.historical_source,
+            "as_of": self.as_of,
+            "limitations": self.limitations,
             "error": self.error,
         }

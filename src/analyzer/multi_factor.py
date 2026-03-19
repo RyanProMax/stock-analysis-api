@@ -1,5 +1,6 @@
 from stockstats import StockDataFrame
 import pandas as pd
+from datetime import date, datetime
 
 from ..core import AnalysisReport, FactorAnalysis, FearGreed
 from ..data_provider import data_manager
@@ -230,7 +231,9 @@ class MultiFactorAnalyzer:
         volume_series = volume_series.ffill().fillna(0)
         volume_ma5 = float(volume_series.tail(5).mean())
         volume_ma20 = (
-            float(volume_series.tail(20).mean()) if len(volume_series) >= 20 else volume_ma5
+            float(volume_series.tail(20).mean())
+            if len(volume_series) >= 20
+            else volume_ma5
         )
 
         # --- 获取财务数据（基本面因子）---
@@ -323,6 +326,8 @@ class MultiFactorAnalyzer:
         # 创建贪恐指数对象
         fear_greed = FearGreed(index=fg_index, label=fg_label)
 
+        as_of = self._extract_as_of(last_row)
+
         # --- 趋势分析 ---
         trend_analysis = None
         try:
@@ -338,6 +343,7 @@ class MultiFactorAnalyzer:
             symbol=self.symbol,
             stock_name=self.stock_name,
             price=close,
+            as_of=as_of,
             technical=FactorAnalysis(
                 factors=technical_factors,
                 data_source=self.data_source,
@@ -359,3 +365,19 @@ class MultiFactorAnalyzer:
         )
 
         return report
+
+    def _extract_as_of(self, row) -> str | None:
+        """从最新行情行中提取数据日期，避免缓存结果被误认为实时。"""
+        raw_value = row.get("date")
+        if raw_value is None and hasattr(row, "name"):
+            raw_value = row.name
+
+        if isinstance(raw_value, pd.Timestamp):
+            return raw_value.date().isoformat()
+        if isinstance(raw_value, datetime):
+            return raw_value.date().isoformat()
+        if isinstance(raw_value, date):
+            return raw_value.isoformat()
+        if raw_value:
+            return str(raw_value)
+        return None

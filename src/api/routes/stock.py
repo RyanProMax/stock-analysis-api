@@ -4,7 +4,6 @@
 
 from fastapi import APIRouter
 from typing import List, Optional, Any
-from dataclasses import asdict
 
 from ...core.pipeline import stock_service
 from ..schemas import (
@@ -63,15 +62,7 @@ def _convert_trend_analysis(trend: TrendAnalysisResult | None) -> dict[str, Any]
 
 def _convert_report_to_response(report: Any) -> AnalysisReportResponse:
     """将 AnalysisReport 转换为 API 响应格式"""
-    # 基础转换
-    report_dict = asdict(report)
-
-    # 处理趋势分析的特殊序列化
-    if hasattr(report, "trend_analysis") and report.trend_analysis is not None:
-        report_dict["trend_analysis"] = _convert_trend_analysis(report.trend_analysis)
-    else:
-        report_dict["trend_analysis"] = None
-
+    report_dict = report.to_dict()
     return AnalysisReportResponse(**report_dict)
 
 

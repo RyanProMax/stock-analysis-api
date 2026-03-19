@@ -18,6 +18,7 @@
 
 import yfinance as yf
 from typing import List, Dict, Any, Tuple
+import pandas as pd
 
 from ..model.lbo import ThreeStatementResult
 
@@ -94,12 +95,12 @@ class ThreeStatementModel:
             # 基本信息
             company_name = info.get("longName", info.get("shortName", symbol))
 
-            # 获取财务数据
-            revenue = info.get("totalRevenue", 0) or 0
-            total_assets = info.get("totalAssets", 0) or 0
-            total_debt = info.get("totalDebt", 0) or 0
-            total_equity = info.get("bookValue", 0) or 0
-            cash = info.get("totalCash", 0) or 0
+            baseline = self._load_historical_baseline(stock)
+            revenue = baseline["revenue"]
+            total_assets = baseline["total_assets"]
+            total_debt = baseline["total_debt"]
+            total_equity = baseline["total_equity"]
+            cash = baseline["cash"]
 
             if revenue <= 0:
                 return ThreeStatementResult(
@@ -107,13 +108,6 @@ class ThreeStatementModel:
                     company_name=company_name,
                     error="无法获取有效的财务数据",
                 )
-
-            # 转换单位 (百万)
-            revenue = revenue / 1e6
-            total_assets = total_assets / 1e6
-            total_debt = total_debt / 1e6
-            total_equity = total_equity / 1e6
-            cash = cash / 1e6
 
             # 获取情景参数
             params = self.SCENARIOS.get(scenario, self.SCENARIOS["base"])
@@ -155,12 +149,84 @@ class ThreeStatementModel:
                     **params,
                     **self.WORKING_CAPITAL_ASSUMPTIONS,
                 },
+                model_type="forecast",
+                historical_source="yfinance financial statements",
+                as_of=baseline["as_of"],
+                limitations=[
+                    "Forecast model based on historical financial statement baseline",
+                    "Output should not be interpreted as reported financial statements",
+                ],
             )
 
         except Exception as e:
             return ThreeStatementResult(
                 symbol=symbol, error=f"三表模型分析异常: {str(e)}"
             )
+
+    def _load_historical_baseline(self, stock) -> Dict[str, Any]:
+        """从真实历史报表提取三表模型起始基数，避免使用 per-share 字段。"""
+        income = stock.income_stmt
+        balance_sheet = stock.balance_sheet
+
+        if income is None or income.empty or balance_sheet is None or balance_sheet.empty:
+            raise ValueError("缺少历史财务报表")
+
+        income_col = income.columns[0]
+        bs_col = balance_sheet.columns[0]
+
+        revenue = self._get_statement_value(income, income_col, ["Total Revenue", "Operating Revenue"])
+        total_assets = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Total Assets"],
+        )
+        total_debt = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Total Debt", "Current Debt And Capital Lease Obligation", "Long Term Debt And Capital Lease Obligation"],
+        ) or 0.0
+        total_equity = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"],
+        )
+        cash = self._get_statement_value(
+            balance_sheet,
+            bs_col,
+            ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments", "Cash"],
+        ) or 0.0
+
+        if revenue is None or total_assets is None or total_equity is None:
+            raise ValueError("历史财务报表字段不完整")
+
+        return {
+            "revenue": revenue / 1e6,
+            "total_assets": total_assets / 1e6,
+            "total_debt": total_debt / 1e6,
+            "total_equity": total_equity / 1e6,
+            "cash": cash / 1e6,
+            "as_of": bs_col.date().isoformat() if isinstance(bs_col, pd.Timestamp) else str(bs_col),
+        }
+
+    def _get_statement_value(
+        self,
+        statement: pd.DataFrame,
+        column: Any,
+        candidates: List[str],
+    ) -> float | None:
+        normalized = {self._normalize_label(idx): idx for idx in statement.index}
+        for candidate in candidates:
+            row_name = normalized.get(self._normalize_label(candidate))
+            if row_name is None:
+                continue
+            value = statement.at[row_name, column]
+            if pd.isna(value):
+                continue
+            return float(value)
+        return None
+
+    def _normalize_label(self, value: Any) -> str:
+        return str(value).strip().lower().replace("_", " ")
 
     def _project_income_statement(
         self,
