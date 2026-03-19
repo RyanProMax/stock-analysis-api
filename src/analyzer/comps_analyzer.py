@@ -252,7 +252,7 @@ class CompsAnalyzer:
             implied = self._calculate_implied_valuation(target, percentiles)
 
             # 生成建议
-            recommendation = self._generate_recommendation(target, percentiles)
+            recommendation = self._generate_recommendation(target, implied)
 
             return CompsResult(
                 target_symbol=symbol,
@@ -274,6 +274,13 @@ class CompsAnalyzer:
                 implied_ev_ebitda_high=implied["ev_ebitda"]["high"],
                 recommendation=recommendation["rating"],
                 confidence=recommendation["confidence"],
+                peer_selection_method="hardcoded_industry_peer_map",
+                peer_universe=comps_symbols,
+                peer_selection_limitations=[
+                    "Peer set is selected from a static industry map",
+                    "Peer universe may omit relevant companies or include stale tickers",
+                    "Recommendation is based on implied valuation direction, not full analyst-style judgment",
+                ],
             )
 
         except Exception as e:
@@ -581,49 +588,33 @@ class CompsAnalyzer:
         return implied
 
     def _generate_recommendation(
-        self, target: CompCompany, percentiles: PercentileAnalysis
+        self, target: CompCompany, implied: Dict[str, Dict[str, float]]
     ) -> Dict[str, str]:
-        """生成投资建议"""
-        # 基于多个维度评估
-        score = 0
-        factors = 0
+        """生成与隐含估值方向一致的投资建议。"""
+        ratios: List[float] = []
 
-        # P/E 相对估值
-        if target.pe_ratio > 0 and percentiles.pe_50th > 0:
-            factors += 1
-            if target.pe_ratio < percentiles.pe_25th:
-                score += 1  # 被低估
-            elif target.pe_ratio > percentiles.pe_75th:
-                score -= 1  # 被高估
+        if target.market_cap > 0:
+            if implied["pe"]["mid"] > 0:
+                ratios.append(implied["pe"]["mid"] / target.market_cap)
+            if implied["ps"]["mid"] > 0:
+                ratios.append(implied["ps"]["mid"] / target.market_cap)
 
-        # EV/EBITDA 相对估值
-        if target.ev_ebitda > 0 and percentiles.ev_ebitda_50th > 0:
-            factors += 1
-            if target.ev_ebitda < percentiles.ev_ebitda_25th:
-                score += 1
-            elif target.ev_ebitda > percentiles.ev_ebitda_75th:
-                score -= 1
+        if target.enterprise_value > 0 and implied["ev_ebitda"]["mid"] > 0:
+            ratios.append(implied["ev_ebitda"]["mid"] / target.enterprise_value)
 
-        # 增长率相对评估
-        if target.revenue_growth and percentiles.revenue_growth_50th > 0:
-            factors += 1
-            if target.revenue_growth > percentiles.revenue_growth_75th:
-                score += 1  # 高增长
-            elif target.revenue_growth < percentiles.revenue_growth_25th:
-                score -= 1
+        valid_ratios = [ratio for ratio in ratios if ratio > 0]
+        if not valid_ratios:
+            return {"rating": "FAIR", "confidence": "LOW"}
 
-        # 确定评级
-        if factors == 0:
-            rating = "HOLD"
-            confidence = "LOW"
-        elif score >= 1:
+        median_ratio = float(np.median(valid_ratios))
+        spread = max(valid_ratios) - min(valid_ratios) if len(valid_ratios) > 1 else 0.0
+
+        if median_ratio >= 1.15:
             rating = "UNDERVALUED"
-            confidence = "MEDIUM"
-        elif score <= -1:
+        elif median_ratio <= 0.85:
             rating = "OVERVALUED"
-            confidence = "MEDIUM"
         else:
             rating = "FAIR"
-            confidence = "HIGH"
 
+        confidence = "HIGH" if len(valid_ratios) >= 3 and spread <= 0.5 else "MEDIUM"
         return {"rating": rating, "confidence": confidence}

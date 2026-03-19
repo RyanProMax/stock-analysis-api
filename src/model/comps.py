@@ -173,6 +173,11 @@ class CompsResult:
     recommendation: str = "HOLD"  # UNDERVALUED / FAIR / OVERVALUED
     confidence: str = "MEDIUM"  # HIGH / MEDIUM / LOW
 
+    # 元数据
+    peer_selection_method: str = "heuristic"
+    peer_universe: List[str] = field(default_factory=list)
+    peer_selection_limitations: List[str] = field(default_factory=list)
+
     # 错误信息
     error: Optional[str] = None
 
@@ -290,5 +295,8 @@ class CompsResult:
             },
             "recommendation": self.recommendation,
             "confidence": self.confidence,
+            "peer_selection_method": self.peer_selection_method,
+            "peer_universe": self.peer_universe,
+            "peer_selection_limitations": self.peer_selection_limitations,
             "error": self.error,
         }

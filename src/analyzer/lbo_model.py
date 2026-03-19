@@ -175,6 +175,9 @@ class LBOModel:
                     "mezz_debt_pct": self.mezz_debt_pct,
                     "mezz_debt_rate": self.mezz_debt_rate,
                 },
+                model_type="scenario",
+                derived_from_assumptions=True,
+                assumptions_source="entry_exit_multiples_leverage_and_margin_assumptions",
             )
 
             return result

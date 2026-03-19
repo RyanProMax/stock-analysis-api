@@ -40,7 +40,11 @@ mcp = FastMCP("stock-analysis")
 
 
 @mcp.tool()
-def get_stock_list(market: Optional[str] = None, refresh: bool = False) -> dict:
+def get_stock_list(
+    market: Optional[str] = None,
+    refresh: bool = False,
+    limit: Optional[int] = None,
+) -> dict:
     """获取股票列表
 
     Args:
@@ -48,10 +52,12 @@ def get_stock_list(market: Optional[str] = None, refresh: bool = False) -> dict:
         refresh: 是否刷新缓存
 
     Returns:
-        包含股票列表的字典 (限制返回前100条)
+        包含股票列表的字典。默认不截断；如需限制请显式传入 limit。
     """
     stocks = stock_service.get_stock_list(market, refresh)
-    return {"total": len(stocks), "stocks": stocks[:100]}
+    if limit is not None and limit >= 0:
+        stocks = stocks[:limit]
+    return {"total": len(stocks), "stocks": stocks}
 
 
 @mcp.tool()
