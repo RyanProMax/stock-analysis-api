@@ -1,86 +1,112 @@
 """
-Offline contract tests for Phase 3 updates.
-
-These tests avoid network access and verify:
-- HTTP/MCP stock list limit behavior is explicit and aligned
-- newly added metadata fields exist in model outputs
+Offline HTTP-only contract tests for the structured response adapters.
 """
 
-from src.mcp_server import server as mcp_server_module
-from src.api.routes import stock as stock_routes
-from src.model.comps import CompsResult
-from src.model.dcf import DCFResult
-from src.model.lbo import LBOResult
+from src.analyzer.normalizers import (
+    comps_contract,
+    dcf_contract,
+    earnings_contract,
+    stock_analysis_contract,
+    stock_record,
+    three_statement_contract,
+)
 
 
-class TestStockListLimitContract:
-    def test_http_stock_list_limit_is_explicit(self, monkeypatch):
-        sample = [
-            {"ts_code": "AAA.US", "symbol": "AAA", "name": "AAA", "market": "美股"},
-            {"ts_code": "BBB.US", "symbol": "BBB", "name": "BBB", "market": "美股"},
-            {"ts_code": "CCC.US", "symbol": "CCC", "name": "CCC", "market": "美股"},
-        ]
+class TestHTTPOnlyStructuredContracts:
+    def test_stock_record_adds_meta(self):
+        payload = stock_record({"ts_code": "NVDA.US", "symbol": "NVDA", "name": "NVIDIA"})
+        assert payload["meta"]["source"] == "stock_list_provider"
+        assert payload["symbol"] == "NVDA"
 
-        monkeypatch.setattr(stock_routes.stock_service, "get_stock_list", lambda market, refresh: sample)
-        response = stock_routes.get_stock_list(market="美股", limit=2)
-        data = response.data
-        assert data.total == 2
-        assert [item.symbol for item in data.stocks] == ["AAA", "BBB"]
-
-    def test_mcp_stock_list_limit_is_explicit(self, monkeypatch):
-        sample = [
-            {"ts_code": "AAA.US", "symbol": "AAA", "name": "AAA", "market": "美股"},
-            {"ts_code": "BBB.US", "symbol": "BBB", "name": "BBB", "market": "美股"},
-            {"ts_code": "CCC.US", "symbol": "CCC", "name": "CCC", "market": "美股"},
-        ]
-
-        monkeypatch.setattr(mcp_server_module.stock_service, "get_stock_list", lambda market, refresh: sample)
-
-        result = mcp_server_module.get_stock_list(market="美股", limit=2)
-        assert result["total"] == 2
-        assert [item["symbol"] for item in result["stocks"]] == ["AAA", "BBB"]
-
-
-class TestModelMetadataContract:
-    def test_dcf_result_to_dict_exposes_metadata(self):
-        result = DCFResult(
-            symbol="NVDA",
-            model_type="quick_model",
-            data_completeness="partial",
-            assumptions_source="historical_cashflow_plus_model_assumptions",
-            fcf_source="cashflow_statement",
-            as_of="2025-01-31",
+    def test_stock_analysis_contract_uses_structured_shape(self):
+        payload = stock_analysis_contract(
+            {
+                "symbol": "NVDA",
+                "stock_name": "NVIDIA",
+                "price": 100.0,
+                "as_of": "2026-03-20",
+                "fear_greed": {"index": 50.0, "label": "中性"},
+                "technical": {"factors": [], "data_source": "US_yfinance"},
+                "fundamental": {"factors": [], "data_source": "yfinance", "raw_data": {"info": {}}},
+                "qlib": {"factors": []},
+                "trend_analysis": None,
+            }
         )
+        assert payload["meta"]["interface_type"] == "mixed"
+        assert payload["meta"]["schema_version"] == "2.0.0"
 
-        payload = result.to_dict()
-        assert payload["model_type"] == "quick_model"
-        assert payload["data_completeness"] == "partial"
-        assert payload["assumptions_source"] == "historical_cashflow_plus_model_assumptions"
-        assert payload["fcf_source"] == "cashflow_statement"
-        assert payload["as_of"] == "2025-01-31"
-
-    def test_comps_result_to_dict_exposes_peer_selection_metadata(self):
-        result = CompsResult(
-            target_symbol="NVDA",
-            peer_selection_method="hardcoded_industry_peer_map",
-            peer_universe=["AMD", "AVGO"],
-            peer_selection_limitations=["Static peer universe"],
+    def test_earnings_contract_exposes_period_meta(self):
+        payload = earnings_contract(
+            {
+                "symbol": "NVDA",
+                "company_name": "NVIDIA",
+                "quarter": "Q4",
+                "fiscal_year": 2026,
+                "fiscal_period": "Q4 FY2026",
+                "report_date": "2026-01-31",
+                "as_of": "2026-01-31",
+                "earnings_summary": {
+                    "revenue": {"actual": "$68.13B"},
+                    "net_income": {"actual": "$42.96B"},
+                    "ebitda": {"actual": "$51.28B"},
+                    "earnings_per_share": {"eps": "$1.76"},
+                },
+                "beat_miss_analysis": {"status": "unavailable"},
+                "segment_performance": [],
+                "guidance": {},
+                "key_metrics": {},
+                "trends": {},
+                "sources": [],
+            }
         )
+        assert payload["meta"]["report_date"] == "2026-01-31"
+        assert payload["facts"]["consensus_comparison"]["status"] == "unavailable"
 
-        payload = result.to_dict()
-        assert payload["peer_selection_method"] == "hardcoded_industry_peer_map"
-        assert payload["peer_universe"] == ["AMD", "AVGO"]
-        assert payload["peer_selection_limitations"] == ["Static peer universe"]
-
-    def test_lbo_result_to_dict_exposes_model_metadata(self):
-        result = LBOResult(
-            symbol="NVDA",
-            model_type="scenario",
-            derived_from_assumptions=True,
-            assumptions_source="entry_exit_multiples_leverage_and_margin_assumptions",
+    def test_dcf_contract_marks_model_interface(self):
+        payload = dcf_contract(
+            {
+                "symbol": "NVDA",
+                "company_name": "NVIDIA",
+                "currency": "USD",
+                "current_price": 100.0,
+                "wacc": 8.5,
+                "fcf_source": "cashflow_statement",
+                "data_completeness": "partial",
+                "assumptions_source": "heuristic",
+                "as_of": "2026-01-31",
+            }
         )
+        assert payload["meta"]["interface_type"] == "model"
 
-        payload = result.to_dict()
-        assert payload["model_type"] == "scenario"
-        assert payload["derived_from_assumptions"] is True
-        assert payload["assumptions_source"] == "entry_exit_multiples_leverage_and_margin_assumptions"
+    def test_comps_contract_keeps_peer_selection_meta(self):
+        payload = comps_contract(
+            {
+                "target_symbol": "NVDA",
+                "target_name": "NVIDIA",
+                "sector": "Technology",
+                "industry": "Semiconductors",
+                "comps": [],
+                "operating_metrics": {},
+                "valuation_multiples": {},
+                "percentiles": {},
+                "implied_valuation": {},
+                "recommendation": "FAIR",
+                "confidence": "MEDIUM",
+                "peer_selection_method": "hardcoded_industry_peer_map",
+                "peer_universe": ["AMD"],
+                "peer_selection_limitations": ["Static peer set"],
+            }
+        )
+        assert payload["meta"]["peer_selection"]["method"] == "hardcoded_industry_peer_map"
+
+    def test_three_statement_contract_marks_model_interface(self):
+        payload = three_statement_contract(
+            {
+                "symbol": "NVDA",
+                "company_name": "NVIDIA",
+                "historical_source": "yfinance financial statements",
+                "as_of": "2026-01-31",
+                "limitations": [],
+            }
+        )
+        assert payload["meta"]["interface_type"] == "model"

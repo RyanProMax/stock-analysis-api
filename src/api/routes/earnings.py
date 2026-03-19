@@ -7,14 +7,15 @@ from fastapi import APIRouter, Query
 from typing import Optional
 
 from ...analyzer.earnings_analyzer import EarningsAnalyzer
-from ..schemas import StandardResponse
+from ...analyzer.normalizers import earnings_contract
+from ..schemas import StandardResponse, StructuredInterfaceResponse
 
 router = APIRouter()
 
 
 @router.get(
     "/earnings",
-    response_model=StandardResponse[dict],
+    response_model=StandardResponse[StructuredInterfaceResponse],
     summary="季报分析",
 )
 def analyze_earnings(
@@ -60,17 +61,18 @@ def analyze_earnings(
             quarter=quarter,
             fiscal_year=fiscal_year,
         )
+        response_data = earnings_contract(result.to_dict())
 
         if result.error:
             return StandardResponse(
                 status_code=400,
-                data=result.to_dict(),
+                data=response_data,
                 err_msg=result.error,
             )
 
         return StandardResponse(
             status_code=200,
-            data=result.to_dict(),
+            data=response_data,
             err_msg=None,
         )
 

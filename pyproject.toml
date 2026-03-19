@@ -23,7 +23,6 @@ dependencies = [
     "tenacity (>=8.2.0,<9.0.0)",
     "efinance (>=0.5.5.2,<0.6.0.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
-    "mcp (>=1.0.0,<2.0.0)",
 ]
 
 [dependency-groups]
@@ -38,7 +37,6 @@ dev = [
 
 [project.scripts]
 start = "src.main:start"
-mcp = "src.mcp_server.server:mcp"
 
 [build-system]
 requires = ["setuptools>=61.0"]
