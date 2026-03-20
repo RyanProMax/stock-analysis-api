@@ -20,6 +20,8 @@ import yfinance as yf
 from typing import List, Dict, Any, Tuple
 import pandas as pd
 
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
 from ..model.lbo import ThreeStatementResult
 
 
@@ -94,6 +96,7 @@ class ThreeStatementModel:
 
             # 基本信息
             company_name = info.get("longName", info.get("shortName", symbol))
+            normalized_fields = YfinanceDataSource._build_normalized_fields(stock, info)
 
             baseline = self._load_historical_baseline(stock)
             revenue = baseline["revenue"]
@@ -101,6 +104,13 @@ class ThreeStatementModel:
             total_debt = baseline["total_debt"]
             total_equity = baseline["total_equity"]
             cash = baseline["cash"]
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=info,
+                latest_price=info.get("currentPrice") or info.get("regularMarketPrice"),
+                as_of=baseline["as_of"],
+                normalized_fields=normalized_fields,
+            )
 
             if revenue <= 0:
                 return ThreeStatementResult(
@@ -157,6 +167,7 @@ class ThreeStatementModel:
                     "Forecast model based on historical financial statement baseline",
                     "Output should not be interpreted as reported financial statements",
                 ],
+                fundamental_context=fundamental_context,
             )
 
         except Exception as e:
