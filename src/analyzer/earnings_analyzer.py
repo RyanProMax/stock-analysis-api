@@ -19,6 +19,8 @@ from ..data_provider.fundamental_adapter import (
     build_dividend_payload_from_series,
     enrich_dividend_payload_with_yield,
 )
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
 from .normalizers import format_ratio_as_percent
 
 
@@ -34,6 +36,7 @@ class EarningsAnalysisResult:
         fiscal_period: Optional[str] = None,
         report_date: Optional[str] = None,
         as_of: Optional[str] = None,
+        fundamental_context: Optional[Dict[str, Any]] = None,
         earnings_summary: Optional[Dict] = None,
         beat_miss_analysis: Optional[Dict] = None,
         segment_performance: Optional[List[Dict]] = None,
@@ -50,6 +53,7 @@ class EarningsAnalysisResult:
         self.fiscal_period = fiscal_period
         self.report_date = report_date
         self.as_of = as_of
+        self.fundamental_context = fundamental_context or {}
         self.earnings_summary = earnings_summary or {}
         self.beat_miss_analysis = beat_miss_analysis or {}
         self.segment_performance = segment_performance or []
@@ -68,6 +72,7 @@ class EarningsAnalysisResult:
             "fiscal_period": self.fiscal_period,
             "report_date": self.report_date,
             "as_of": self.as_of,
+            "fundamental_context": self.fundamental_context,
             "earnings_summary": self.earnings_summary,
             "beat_miss_analysis": self.beat_miss_analysis,
             "segment_performance": self.segment_performance,
@@ -139,6 +144,14 @@ class EarningsAnalyzer:
             fiscal_period = report_context["fiscal_period"]
             report_date = report_context["report_date"]
             as_of = report_context["as_of"]
+            normalized_fields = YfinanceDataSource._build_normalized_fields(stock, info)
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=info,
+                latest_price=info.get("currentPrice") or info.get("regularMarketPrice"),
+                as_of=as_of,
+                normalized_fields=normalized_fields,
+            )
 
             # 构建分析结果
             return EarningsAnalysisResult(
@@ -149,6 +162,7 @@ class EarningsAnalyzer:
                 fiscal_period=fiscal_period,
                 report_date=report_date,
                 as_of=as_of,
+                fundamental_context=fundamental_context,
                 earnings_summary=self._build_earnings_summary(info, quarter_data),
                 beat_miss_analysis=self._analyze_beat_miss(),
                 segment_performance=self._analyze_segments(info, quarter_data),
