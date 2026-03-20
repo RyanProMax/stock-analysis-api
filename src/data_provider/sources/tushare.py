@@ -11,6 +11,7 @@ import pandas as pd
 import tushare as ts
 
 from ..base import BaseStockDataSource
+from ...model.contracts import normalize_percent_to_ratio
 
 load_dotenv()
 
@@ -184,6 +185,14 @@ class TushareDataSource(BaseStockDataSource):
                     # 资产负债率
                     if pd.notna(latest.get("debt_to_assets")):
                         financial_data["debt_ratio"] = float(latest["debt_to_assets"])
+                    raw_data["fina_indicator_meta"] = {
+                        "ann_date": latest.get("ann_date"),
+                        "end_date": latest.get("end_date"),
+                        "roe_ratio": normalize_percent_to_ratio(latest.get("roe")),
+                        "debt_to_assets_ratio": normalize_percent_to_ratio(
+                            latest.get("debt_to_assets")
+                        ),
+                    }
             except Exception as e:
                 print(f"⚠️ 获取财务指标失败: {e}")
 
@@ -194,19 +203,10 @@ class TushareDataSource(BaseStockDataSource):
                 )
                 if df_income is not None and not df_income.empty:
                     raw_data["income"] = df_income.head(2).to_dict("records")
-                    # 计算营收增长率
-                    if len(df_income) >= 2:
-                        latest_revenue = df_income.iloc[0].get("revenue")
-                        prev_revenue = df_income.iloc[1].get("revenue")
-                        if (
-                            pd.notna(latest_revenue)
-                            and pd.notna(prev_revenue)
-                            and prev_revenue > 0
-                        ):
-                            revenue_growth = (
-                                (latest_revenue - prev_revenue) / prev_revenue
-                            ) * 100
-                            financial_data["revenue_growth"] = float(revenue_growth)
+                    revenue_growth = cls._compute_same_period_revenue_growth(df_income)
+                    if revenue_growth is not None:
+                        financial_data["revenue_growth"] = float(revenue_growth * 100.0)
+                    raw_data["income_meta"] = cls._extract_income_meta(df_income, revenue_growth)
             except Exception as e:
                 print(f"⚠️ 获取利润表失败: {e}")
 
@@ -217,3 +217,55 @@ class TushareDataSource(BaseStockDataSource):
             traceback.print_exc()
 
         return financial_data if financial_data else None, raw_data
+
+    @staticmethod
+    def _compute_same_period_revenue_growth(df_income: pd.DataFrame) -> Optional[float]:
+        if df_income is None or df_income.empty:
+            return None
+        df = df_income.copy()
+        df["end_date"] = df["end_date"].astype(str)
+        latest = df.iloc[0]
+        latest_end = latest.get("end_date")
+        latest_revenue = latest.get("revenue")
+        if pd.isna(latest_end) or pd.isna(latest_revenue):
+            return None
+        latest_end_str = str(latest_end)
+        if len(latest_end_str) != 8:
+            return None
+        latest_md = latest_end_str[4:]
+        latest_year = int(latest_end_str[:4])
+
+        comparable = df[df["end_date"].astype(str).str.endswith(latest_md)]
+        comparable = comparable[comparable["end_date"].astype(str) != latest_end_str]
+        if comparable.empty:
+            return None
+
+        def _distance(end_date: str) -> int:
+            try:
+                return abs(int(str(end_date)[:4]) - (latest_year - 1))
+            except Exception:
+                return 9999
+
+        comparable = comparable.assign(_distance=comparable["end_date"].astype(str).map(_distance))
+        comparable = comparable.sort_values(["_distance", "end_date"])
+        previous = comparable.iloc[0]
+        prev_revenue = previous.get("revenue")
+        if pd.isna(prev_revenue) or float(prev_revenue) <= 0:
+            return None
+        return (float(latest_revenue) - float(prev_revenue)) / float(prev_revenue)
+
+    @staticmethod
+    def _extract_income_meta(
+        df_income: pd.DataFrame, revenue_growth_ratio: Optional[float]
+    ) -> Dict[str, Any]:
+        if df_income is None or df_income.empty:
+            return {"status": "unavailable"}
+        latest = df_income.iloc[0]
+        meta = {
+            "latest_ann_date": latest.get("ann_date"),
+            "latest_end_date": latest.get("end_date"),
+            "revenue_growth_status": "available" if revenue_growth_ratio is not None else "unavailable",
+        }
+        if revenue_growth_ratio is not None:
+            meta["revenue_growth_ratio"] = revenue_growth_ratio
+        return meta

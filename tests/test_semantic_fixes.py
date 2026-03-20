@@ -17,6 +17,14 @@ from src.analyzer.comps_analyzer import CompsAnalyzer
 from src.analyzer.dcf_model import DCFModel
 from src.analyzer.earnings_analyzer import EarningsAnalyzer
 from src.analyzer.fundamental_factors import _format_percent, _format_yahoo_dividend_yield
+from src.analyzer.normalizers import (
+    compute_trailing_dividend_yield,
+    format_ratio_as_percent,
+    select_latest_metric_column,
+)
+from src.data_provider.sources.akshare import AkShareDataSource
+from src.data_provider.sources.tushare import TushareDataSource
+from src.data_provider.sources.yfinance import YfinanceDataSource
 from src.analyzer.three_statement_model import ThreeStatementModel
 from src.model.comps import CompCompany
 from src.model.report import AnalysisReport, FactorAnalysis, FearGreed
@@ -45,10 +53,16 @@ class TestEarningsSemanticFixes:
             2026,
         )
 
-    def test_small_yahoo_percentages_do_not_expand_by_100x(self):
-        analyzer = EarningsAnalyzer()
-        assert analyzer._normalize_ratio(0.02) == 0.0002
-        assert _format_yahoo_dividend_yield(0.02) == "0.02%"
+    def test_dividend_yield_uses_trailing_cash_dividends_not_info_thresholds(self):
+        dividends = pd.Series(
+            [0.25, 0.25, 0.25, 0.25],
+            index=pd.to_datetime(["2025-02-01", "2025-05-01", "2025-08-01", "2025-11-01"]),
+        )
+        ratio = compute_trailing_dividend_yield(dividends, 100.0, as_of="2025-12-31")
+
+        assert ratio == 0.01
+        assert _format_yahoo_dividend_yield(ratio) == "1.00%"
+        assert format_ratio_as_percent(ratio) == "1.00%"
         assert _format_percent(0.04211) == "4.21%"
 
 
@@ -176,3 +190,55 @@ class TestCompetitiveSemanticFixes:
         assert amd_point["y"] == 20.0
         assert amd_row["market_cap"] == 500 / 1e9
         assert amd_row["revenue"] == 200 / 1e9
+
+
+class TestSourceFieldNormalizationFixes:
+    def test_yfinance_normalized_fields_use_canonical_names(self):
+        class TickerStub:
+            dividends = pd.Series(
+                [0.1, 0.1, 0.1, 0.1],
+                index=pd.to_datetime(["2025-03-01", "2025-06-01", "2025-09-01", "2025-12-01"]),
+            )
+
+        normalized = YfinanceDataSource._build_normalized_fields(
+            TickerStub(),
+            {
+                "currentPrice": 50.0,
+                "payoutRatio": 0.2,
+                "bookValue": 6.5,
+                "heldPercentInsiders": 0.04,
+            },
+        )
+
+        assert normalized["dividend_yield"]["value"] == 0.008
+        assert normalized["dividend_yield"]["field"] == "dividend_yield"
+        assert normalized["book_value_per_share"]["unit"] == "currency_per_share"
+        assert normalized["payout_ratio"]["display_value"] == "20.00%"
+
+    def test_tushare_revenue_growth_uses_same_period_comparable_reports(self):
+        df = pd.DataFrame(
+            [
+                {"end_date": "20250930", "revenue": 1500, "ann_date": "20251101"},
+                {"end_date": "20250630", "revenue": 1000, "ann_date": "20250801"},
+                {"end_date": "20240930", "revenue": 1200, "ann_date": "20241101"},
+            ]
+        )
+        growth = TushareDataSource._compute_same_period_revenue_growth(df)
+
+        assert round(growth, 4) == 0.25
+
+    def test_akshare_uses_latest_named_metric_column_not_position(self):
+        df = pd.DataFrame(
+            {
+                "选项": ["常用指标"],
+                "指标": ["净资产收益率(ROE)"],
+                "2024-12-31": ["12.5%"],
+                "2025-03-31": ["15.0%"],
+            }
+        )
+
+        latest_col = select_latest_metric_column(df)
+        value = AkShareDataSource._coerce_metric_value(df.iloc[0][latest_col])
+
+        assert latest_col == "2025-03-31"
+        assert value == 15.0

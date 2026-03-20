@@ -25,11 +25,8 @@ def _format_percent(value: float) -> str:
 
 
 def _format_yahoo_dividend_yield(value: float) -> str:
-    """格式化 Yahoo dividendYield，兼容 0.02 => 0.02% 的特殊口径。"""
-    numeric = float(value)
-    if 0 < abs(numeric) <= 0.1:
-        return f"{numeric:.2f}%"
-    return f"{numeric * 100:.2f}%"
+    """兼容旧调用，当前只接受已归一化后的 ratio。"""
+    return _format_percent(float(value))
 
 
 def _format_number(value: float) -> str:
@@ -68,7 +65,6 @@ YFINANCE_FIELD_MAP = {
     "totalCash": ("现金", _format_market_cap),
     "totalDebt": ("总债务", _format_market_cap),
     "totalRevenue": ("总收入", _format_market_cap),
-    "bookValue": ("每股账面价值", _format_number),
     # 现金流
     "operatingCashflow": ("经营现金流", _format_market_cap),
     "freeCashflow": ("自由现金流", _format_market_cap),
@@ -80,8 +76,6 @@ YFINANCE_FIELD_MAP = {
     "trailingEps": ("每股收益(TTM)", _format_number),
     "forwardEps": ("远期每股收益", _format_number),
     "revenuePerShare": ("每股营收", _format_number),
-    "dividendYield": ("股息率", _format_yahoo_dividend_yield),
-    "payoutRatio": ("派息比率", _format_percent),
     # 分析师预期
     "targetMeanPrice": ("分析师目标价均值", _format_number),
     "targetHighPrice": ("分析师目标价上限", _format_number),
@@ -90,9 +84,16 @@ YFINANCE_FIELD_MAP = {
     # 股本结构
     "sharesOutstanding": ("流通股本", lambda v: f"{v / 1e8:.2f}亿股"),
     "floatShares": ("自由流通股本", lambda v: f"{v / 1e8:.2f}亿股"),
-    "heldPercentInsiders": ("内部人持股比例", _format_percent),
-    "heldPercentInstitutions": ("机构持股比例", _format_percent),
-    "sharesPercentSharesOut": ("做空比例", _format_percent),
+}
+
+
+NORMALIZED_FIELD_MAP = {
+    "dividend_yield": ("股息率", _format_percent),
+    "payout_ratio": ("派息比率", _format_percent),
+    "book_value_per_share": ("每股账面价值", _format_number),
+    "held_percent_insiders": ("内部人持股比例", _format_percent),
+    "held_percent_institutions": ("机构持股比例", _format_percent),
+    "shares_percent_shares_out": ("做空比例", _format_percent),
 }
 
 
@@ -136,6 +137,24 @@ class FundamentalFactorLibrary(FactorLibrary):
         factors = []
         raw_data = financial_data.get("raw_data", {})
         info_data = raw_data.get("info", {})
+        normalized_fields = raw_data.get("normalized_fields", {})
+
+        for field, (name, formatter) in NORMALIZED_FIELD_MAP.items():
+            entry = normalized_fields.get(field)
+            if not isinstance(entry, dict):
+                continue
+            value = entry.get("value")
+            if value is None or value == 0:
+                continue
+            factors.append(
+                FactorDetail(
+                    key=field,
+                    name=name,
+                    status=formatter(float(value)),
+                    bullish_signals=[],
+                    bearish_signals=[],
+                )
+            )
 
         # 1. 处理 raw_data.info（美股 yfinance）
         for field, (name, formatter) in YFINANCE_FIELD_MAP.items():

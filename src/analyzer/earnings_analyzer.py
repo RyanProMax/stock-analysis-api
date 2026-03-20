@@ -15,6 +15,8 @@ import requests
 from typing import Dict, List, Any, Optional
 import pandas as pd
 
+from .normalizers import compute_trailing_dividend_yield, format_ratio_as_percent
+
 
 class EarningsAnalysisResult:
     """季报分析结果"""
@@ -112,6 +114,7 @@ class EarningsAnalyzer:
                 )
 
             company_name = info.get("longName", info.get("shortName", symbol))
+            dividend_metrics = self._extract_dividend_metrics(stock, info)
 
             # 获取历史财务数据
             financials = self._get_financials(stock)
@@ -146,7 +149,7 @@ class EarningsAnalyzer:
                 beat_miss_analysis=self._analyze_beat_miss(),
                 segment_performance=self._analyze_segments(info, quarter_data),
                 guidance=self._analyze_guidance(info),
-                key_metrics=self._extract_key_metrics(info),
+                key_metrics=self._extract_key_metrics(info, dividend_metrics),
                 trends=self._analyze_trends(financials),
                 sources=self._collect_sources(
                     symbol, quarter, fiscal_year, report_date
@@ -579,7 +582,7 @@ class EarningsAnalyzer:
 
         return guidance
 
-    def _extract_key_metrics(self, info: Dict) -> Dict:
+    def _extract_key_metrics(self, info: Dict, dividend_metrics: Dict[str, Any]) -> Dict:
         """提取关键指标"""
         return {
             "profitability": {
@@ -603,9 +606,28 @@ class EarningsAnalyzer:
                 "revenue_quarterly_growth": f"{(info.get('revenueQuarterlyGrowth') or 0) * 100:.1f}%",
             },
             "dividends": {
-                "dividend_yield": f"{self._normalize_ratio(info.get('dividendYield')) * 100:.2f}%",
+                "dividend_yield": dividend_metrics.get("dividend_yield", "N/A"),
+                "dividend_yield_source": dividend_metrics.get("source", "unavailable"),
                 "payout_ratio": f"{(info.get('payoutRatio') or 0) * 100:.1f}%",
             },
+        }
+
+    def _extract_dividend_metrics(self, stock: Any, info: Dict[str, Any]) -> Dict[str, Any]:
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        try:
+            dividends = stock.dividends
+        except Exception:
+            dividends = None
+        dividend_yield = compute_trailing_dividend_yield(dividends, price)
+        if dividend_yield is None:
+            return {
+                "dividend_yield": "N/A",
+                "source": "unavailable",
+            }
+        return {
+            "dividend_yield": format_ratio_as_percent(dividend_yield, decimals=2),
+            "source": "yfinance.dividends+market_price",
+            "value": dividend_yield,
         }
 
     def _normalize_ratio(self, value: Any) -> float:

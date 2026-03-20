@@ -9,6 +9,7 @@ import pandas as pd
 import akshare as ak
 
 from ..base import BaseStockDataSource
+from ...model.contracts import normalize_percent_to_ratio, select_latest_metric_column
 
 
 class AkShareDataSource(BaseStockDataSource):
@@ -185,31 +186,74 @@ class AkShareDataSource(BaseStockDataSource):
                     # 从常用指标中提取数据
                     common = cast(pd.DataFrame, df_abstract[df_abstract["选项"] == "常用指标"])
                     if not common.empty:
+                        latest_metric_col = select_latest_metric_column(common)
                         # ROE（净资产收益率）
                         roe_row = cast(pd.DataFrame, common[common["指标"] == "净资产收益率(ROE)"])
-                        if len(roe_row) > 0:
-                            latest_value = roe_row.iloc[0, 2]
+                        if len(roe_row) > 0 and latest_metric_col is not None:
+                            latest_value = cls._coerce_metric_value(
+                                roe_row.iloc[0][latest_metric_col]
+                            )
                             if pd.notna(latest_value):
                                 financial_data["roe"] = float(latest_value)
 
                         # 资产负债率
                         debt_row = cast(pd.DataFrame, common[common["指标"] == "资产负债率"])
-                        if len(debt_row) > 0:
-                            latest_value = debt_row.iloc[0, 2]
+                        if len(debt_row) > 0 and latest_metric_col is not None:
+                            latest_value = cls._coerce_metric_value(
+                                debt_row.iloc[0][latest_metric_col]
+                            )
                             if pd.notna(latest_value):
                                 financial_data["debt_ratio"] = float(latest_value)
+                        raw_data["financial_abstract_common_meta"] = {
+                            "latest_metric_column": latest_metric_col,
+                            "roe_ratio": normalize_percent_to_ratio(
+                                cls._coerce_metric_value(roe_row.iloc[0][latest_metric_col])
+                            )
+                            if len(roe_row) > 0 and latest_metric_col is not None
+                            else None,
+                            "debt_to_assets_ratio": normalize_percent_to_ratio(
+                                cls._coerce_metric_value(debt_row.iloc[0][latest_metric_col])
+                            )
+                            if len(debt_row) > 0 and latest_metric_col is not None
+                            else None,
+                        }
 
                     # 营收增长率
                     growth = cast(pd.DataFrame, df_abstract[df_abstract["选项"] == "成长能力"])
                     if len(growth) > 0:
+                        latest_growth_col = select_latest_metric_column(growth)
                         revenue_row = cast(
                             pd.DataFrame,
-                            growth[growth["指标"].str.contains("营业收入", na=False)],
+                            growth[
+                                growth["指标"].isin(
+                                    [
+                                        "营业收入同比增长",
+                                        "营业总收入同比增长",
+                                        "营业收入增长率",
+                                        "营业总收入增长率",
+                                    ]
+                                )
+                            ],
                         )
-                        if len(revenue_row) > 0:
-                            latest_value = revenue_row.iloc[0, 2]
+                        if len(revenue_row) > 0 and latest_growth_col is not None:
+                            latest_value = cls._coerce_metric_value(
+                                revenue_row.iloc[0][latest_growth_col]
+                            )
                             if pd.notna(latest_value):
                                 financial_data["revenue_growth"] = float(latest_value)
+                        raw_data["financial_abstract_growth_meta"] = {
+                            "latest_metric_column": latest_growth_col,
+                            "matched_metric": (
+                                revenue_row.iloc[0]["指标"]
+                                if len(revenue_row) > 0
+                                else None
+                            ),
+                            "revenue_growth_ratio": normalize_percent_to_ratio(
+                                cls._coerce_metric_value(revenue_row.iloc[0][latest_growth_col])
+                            )
+                            if len(revenue_row) > 0 and latest_growth_col is not None
+                            else None,
+                        }
 
             except Exception as e:
                 print(f"⚠️ 获取财务摘要失败: {e}")
@@ -221,3 +265,15 @@ class AkShareDataSource(BaseStockDataSource):
             traceback.print_exc()
 
         return financial_data if financial_data else None, raw_data
+
+    @staticmethod
+    def _coerce_metric_value(value: Any) -> Optional[float]:
+        if pd.isna(value):
+            return None
+        text = str(value).strip().replace("%", "").replace(",", "")
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None

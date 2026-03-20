@@ -1,6 +1,15 @@
 from typing import Any, Dict, List, Optional
 
-from ..model.contracts import InterfaceMeta, InterfacePayload, StandardField
+from ..model.contracts import (
+    InterfaceMeta,
+    InterfacePayload,
+    StandardField,
+    build_standard_field,
+    compute_trailing_dividend_yield,
+    format_ratio_as_percent,
+    normalize_percent_to_ratio,
+    select_latest_metric_column,
+)
 
 
 def _parse_percent(display_value: Any) -> Optional[float]:
@@ -87,15 +96,19 @@ def stock_record(record: Dict[str, Any], source: str = "stock_list_provider") ->
 def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
     as_of = report.get("as_of")
     raw_info = report.get("fundamental", {}).get("raw_data", {}).get("info", {})
+    normalized_fields = report.get("fundamental", {}).get("raw_data", {}).get("normalized_fields", {})
     fields = {}
     for factor in report.get("fundamental", {}).get("factors", []):
         key = factor.get("key")
         status = factor.get("status")
+        if key in normalized_fields:
+            fields[key] = normalized_fields[key]
+            continue
         source = "yfinance.info"
         unit = "string"
         value = status
         period_type = "spot"
-        if key in {"dividendYield", "heldPercentInsiders", "heldPercentInstitutions", "sharesPercentSharesOut", "payoutRatio"}:
+        if key in {"heldPercentInsiders", "heldPercentInstitutions", "sharesPercentSharesOut", "payoutRatio"}:
             unit = "ratio"
             value = _parse_percent(status)
         elif key in {"marketCap", "enterpriseValue", "totalCash", "totalDebt", "totalRevenue", "operatingCashflow", "freeCashflow", "ebitda", "netIncomeToCommon", "grossProfits"}:
@@ -192,6 +205,24 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         }
     )
     return data
+
+
+def normalized_snapshot_field(
+    canonical_field: str,
+    value: Any,
+    display_value: Any,
+    as_of: Optional[str] = None,
+    status: str = "available",
+    notes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    return build_standard_field(
+        canonical_field=canonical_field,
+        value=value,
+        display_value=display_value,
+        as_of=as_of,
+        status=status,
+        notes=notes,
+    )
 
 
 def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
