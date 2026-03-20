@@ -146,6 +146,7 @@ class DCFResult:
     assumptions_source: str = "heuristic"
     fcf_source: str = ""
     as_of: Optional[str] = None
+    fundamental_context: Dict[str, Any] = field(default_factory=dict)
 
     # 错误信息
     error: Optional[str] = None
@@ -241,5 +242,6 @@ class DCFResult:
             "assumptions_source": self.assumptions_source,
             "fcf_source": self.fcf_source,
             "as_of": self.as_of,
+            "fundamental_context": self.fundamental_context,
             "error": self.error,
         }

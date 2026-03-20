@@ -9,6 +9,8 @@ import yfinance as yf
 from typing import List, Tuple, Any, Optional
 import pandas as pd
 
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
 from ..model import (
     DCFResult,
     WACCComponents,
@@ -76,6 +78,14 @@ class DCFModel:
             company_name = info.get("longName", info.get("shortName", symbol))
             current_price = info.get("currentPrice") or info.get("regularMarketPrice", 0)
             currency = info.get("currency", "USD")
+            normalized_fields = YfinanceDataSource._build_normalized_fields(stock, info)
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=info,
+                latest_price=current_price,
+                as_of=None,
+                normalized_fields=normalized_fields,
+            )
 
             # 1. 计算 WACC
             wacc_components = self._calculate_wacc(info)
@@ -106,6 +116,7 @@ class DCFModel:
                     assumptions_source="heuristic",
                     fcf_source=fcf_source,
                     as_of=as_of,
+                    fundamental_context=fundamental_context,
                     error="无法获取有效的自由现金流数据",
                 )
 
@@ -182,6 +193,7 @@ class DCFModel:
                 assumptions_source="historical_cashflow_plus_model_assumptions",
                 fcf_source=fcf_source,
                 as_of=as_of,
+                fundamental_context=fundamental_context,
             )
 
             return result

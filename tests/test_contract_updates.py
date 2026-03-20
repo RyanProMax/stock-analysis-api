@@ -121,9 +121,12 @@ class TestHTTPOnlyStructuredContracts:
                 "data_completeness": "partial",
                 "assumptions_source": "heuristic",
                 "as_of": "2026-01-31",
+                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
             }
         )
         assert payload["meta"]["interface_type"] == "model"
+        assert payload["facts"]["fundamentals"]["market"] == "us"
+        assert "yfinance.info" in payload["meta"]["sources"]
 
     def test_comps_contract_keeps_peer_selection_meta(self):
         payload = comps_contract(
@@ -142,9 +145,11 @@ class TestHTTPOnlyStructuredContracts:
                 "peer_selection_method": "hardcoded_industry_peer_map",
                 "peer_universe": ["AMD"],
                 "peer_selection_limitations": ["Static peer set"],
+                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
             }
         )
         assert payload["meta"]["peer_selection"]["method"] == "hardcoded_industry_peer_map"
+        assert payload["facts"]["fundamentals"]["market"] == "us"
 
     def test_competitive_contract_uses_dsa_style_peer_fields_and_normalized_sources(self):
         payload = competitive_contract(

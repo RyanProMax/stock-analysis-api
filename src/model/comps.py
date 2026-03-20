@@ -177,6 +177,7 @@ class CompsResult:
     peer_selection_method: str = "heuristic"
     peer_universe: List[str] = field(default_factory=list)
     peer_selection_limitations: List[str] = field(default_factory=list)
+    fundamental_context: Dict[str, Any] = field(default_factory=dict)
 
     # 错误信息
     error: Optional[str] = None
@@ -298,5 +299,6 @@ class CompsResult:
             "peer_selection_method": self.peer_selection_method,
             "peer_universe": self.peer_universe,
             "peer_selection_limitations": self.peer_selection_limitations,
+            "fundamental_context": self.fundamental_context,
             "error": self.error,
         }
