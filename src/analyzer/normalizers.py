@@ -97,57 +97,28 @@ def stock_record(record: Dict[str, Any], source: str = "stock_list_provider") ->
 
 def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
     as_of = report.get("as_of")
-    raw_info = report.get("fundamental", {}).get("raw_data", {}).get("info", {})
-    normalized_fields = report.get("fundamental", {}).get("raw_data", {}).get("normalized_fields", {})
     fundamental_context = build_fundamental_context(
         symbol=report.get("symbol", ""),
         financial_data={"raw_data": report.get("fundamental", {}).get("raw_data", {})},
         latest_price=report.get("price"),
         as_of=as_of,
     )
-    fields = {}
-    for factor in report.get("fundamental", {}).get("factors", []):
-        key = factor.get("key")
-        status = factor.get("status")
-        if key in normalized_fields:
-            fields[key] = normalized_fields[key]
-            continue
-        source = "yfinance.info"
-        unit = "string"
-        value = status
-        period_type = "spot"
-        if key in {"heldPercentInsiders", "heldPercentInstitutions", "sharesPercentSharesOut", "payoutRatio"}:
-            unit = "ratio"
-            value = _parse_percent(status)
-        elif key in {"marketCap", "enterpriseValue", "totalCash", "totalDebt", "totalRevenue", "operatingCashflow", "freeCashflow", "ebitda", "netIncomeToCommon", "grossProfits"}:
-            unit = "currency"
-            value = raw_info.get(key)
-        elif key in {"trailingPE", "forwardPE", "priceToBook", "priceToSalesTrailing12Months", "enterpriseToEbitda", "enterpriseToRevenue", "trailingEps", "forwardEps", "revenuePerShare", "beta", "currentRatio", "quickRatio", "debtToEquity"}:
-            unit = "number"
-            value = _parse_number(status)
-        elif key in {"profitMargins", "grossMargins", "operatingMargins", "ebitdaMargins", "returnOnAssets", "returnOnEquity", "revenueGrowth", "earningsGrowth", "earningsQuarterlyGrowth"}:
-            unit = "ratio"
-            value = _parse_percent(status)
-            period_type = "ttm"
-        fields[key] = make_field(
-            field=key,
-            value=value,
-            display_value=status,
-            unit=unit,
-            period_type=period_type,
-            data_type="reported",
-            source=source,
-            as_of=as_of,
-        )
-
     facts = {
         "market_snapshot": {
-            "price": make_field("price", report.get("price"), report.get("price"), "currency", "spot", "reported", "market_data", as_of),
+            "price": make_field(
+                "price",
+                report.get("price"),
+                report.get("price"),
+                "currency",
+                "spot",
+                "reported",
+                "market_data",
+                as_of,
+            ),
         },
-        "fundamentals": fields,
+        "fundamentals": fundamental_context,
     }
     analysis = {
-        "fundamental_context": fundamental_context,
         "fear_greed": {
             "index": make_field("fear_greed_index", report.get("fear_greed", {}).get("index"), report.get("fear_greed", {}).get("label"), "score", "spot", "derived", "technical_analysis", as_of),
         },
