@@ -10,6 +10,8 @@ from ..model.contracts import (
     normalize_percent_to_ratio,
     select_latest_metric_column,
 )
+from ..data_provider.fundamental_context import build_fundamental_context
+from .research_strategy import build_earnings_research_strategy
 
 
 def _parse_percent(display_value: Any) -> Optional[float]:
@@ -97,6 +99,12 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
     as_of = report.get("as_of")
     raw_info = report.get("fundamental", {}).get("raw_data", {}).get("info", {})
     normalized_fields = report.get("fundamental", {}).get("raw_data", {}).get("normalized_fields", {})
+    fundamental_context = build_fundamental_context(
+        symbol=report.get("symbol", ""),
+        financial_data={"raw_data": report.get("fundamental", {}).get("raw_data", {})},
+        latest_price=report.get("price"),
+        as_of=as_of,
+    )
     fields = {}
     for factor in report.get("fundamental", {}).get("factors", []):
         key = factor.get("key")
@@ -139,6 +147,7 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
         "fundamentals": fields,
     }
     analysis = {
+        "fundamental_context": fundamental_context,
         "fear_greed": {
             "index": make_field("fear_greed_index", report.get("fear_greed", {}).get("index"), report.get("fear_greed", {}).get("label"), "score", "spot", "derived", "technical_analysis", as_of),
         },
@@ -176,6 +185,7 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     if result.get("beat_miss_analysis", {}).get("status") == "unavailable":
         facts["consensus_comparison"]["status"] = "unavailable"
     analysis = {
+        "research_strategy": build_earnings_research_strategy(result),
         "estimated_segments": result.get("segment_performance", []),
         "guidance_interpretation": result.get("guidance", {}),
         "key_metrics": result.get("key_metrics", {}),

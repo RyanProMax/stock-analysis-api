@@ -15,7 +15,11 @@ import requests
 from typing import Dict, List, Any, Optional
 import pandas as pd
 
-from .normalizers import compute_trailing_dividend_yield, format_ratio_as_percent
+from ..data_provider.fundamental_adapter import (
+    build_dividend_payload_from_series,
+    enrich_dividend_payload_with_yield,
+)
+from .normalizers import format_ratio_as_percent
 
 
 class EarningsAnalysisResult:
@@ -608,6 +612,11 @@ class EarningsAnalyzer:
             "dividends": {
                 "dividend_yield": dividend_metrics.get("dividend_yield", "N/A"),
                 "dividend_yield_source": dividend_metrics.get("source", "unavailable"),
+                "ttm_cash_dividend_per_share": dividend_metrics.get(
+                    "ttm_cash_dividend_per_share", "N/A"
+                ),
+                "ttm_event_count": dividend_metrics.get("ttm_event_count", "N/A"),
+                "yield_formula": dividend_metrics.get("yield_formula", "N/A"),
                 "payout_ratio": f"{(info.get('payoutRatio') or 0) * 100:.1f}%",
             },
         }
@@ -618,16 +627,25 @@ class EarningsAnalyzer:
             dividends = stock.dividends
         except Exception:
             dividends = None
-        dividend_yield = compute_trailing_dividend_yield(dividends, price)
-        if dividend_yield is None:
+        payload = enrich_dividend_payload_with_yield(
+            build_dividend_payload_from_series(dividends),
+            price,
+        )
+        ttm_yield_pct = payload.get("ttm_dividend_yield_pct")
+        if ttm_yield_pct is None:
             return {
                 "dividend_yield": "N/A",
                 "source": "unavailable",
             }
+        dividend_yield = float(ttm_yield_pct) / 100.0
         return {
             "dividend_yield": format_ratio_as_percent(dividend_yield, decimals=2),
             "source": "yfinance.dividends+market_price",
             "value": dividend_yield,
+            "ttm_cash_dividend_per_share": payload.get("ttm_cash_dividend_per_share"),
+            "ttm_event_count": payload.get("ttm_event_count"),
+            "yield_formula": payload.get("yield_formula"),
+            "events": payload.get("events", []),
         }
 
     def _normalize_ratio(self, value: Any) -> float:

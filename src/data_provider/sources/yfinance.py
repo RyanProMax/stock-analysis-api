@@ -8,9 +8,12 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 
 from ..base import BaseStockDataSource
+from ..fundamental_adapter import (
+    build_dividend_payload_from_series,
+    enrich_dividend_payload_with_yield,
+)
 from ...model.contracts import (
     build_standard_field,
-    compute_trailing_dividend_yield,
     format_ratio_as_percent,
 )
 
@@ -116,13 +119,24 @@ class YfinanceDataSource(BaseStockDataSource):
         except Exception:
             dividends = None
 
-        dividend_yield = compute_trailing_dividend_yield(dividends, price)
-        if dividend_yield is not None:
+        dividend_payload = enrich_dividend_payload_with_yield(
+            build_dividend_payload_from_series(dividends),
+            price,
+        )
+        ttm_dividend_yield_pct = dividend_payload.get("ttm_dividend_yield_pct")
+        if dividend_payload:
+            normalized["dividend_metrics"] = dividend_payload
+        if ttm_dividend_yield_pct is not None:
+            dividend_yield = float(ttm_dividend_yield_pct) / 100.0
             normalized["dividend_yield"] = build_standard_field(
                 "dividend_yield",
                 value=dividend_yield,
                 display_value=format_ratio_as_percent(dividend_yield, decimals=2),
-                as_of=as_of,
+                as_of=dividend_payload.get("as_of"),
+                notes=[
+                    f"ttm_cash_dividend_per_share={dividend_payload.get('ttm_cash_dividend_per_share')}",
+                    dividend_payload.get("yield_formula", ""),
+                ],
             )
 
         payout_ratio = info.get("payoutRatio")

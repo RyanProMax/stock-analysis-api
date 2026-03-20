@@ -25,10 +25,16 @@ from src.analyzer.normalizers import (
 from src.data_provider.sources.akshare import AkShareDataSource
 from src.data_provider.sources.tushare import TushareDataSource
 from src.data_provider.sources.yfinance import YfinanceDataSource
+from src.data_provider.fundamental_adapter import (
+    build_dividend_payload_from_series,
+    enrich_dividend_payload_with_yield,
+)
 from src.analyzer.three_statement_model import ThreeStatementModel
 from src.model.comps import CompCompany
 from src.model.report import AnalysisReport, FactorAnalysis, FearGreed
 from src.model.trend import TrendAnalysisResult, TrendStatus
+from src.data_provider.fundamental_context import build_fundamental_context
+from src.analyzer.research_strategy import build_earnings_research_strategy
 
 
 class TestEarningsSemanticFixes:
@@ -59,8 +65,14 @@ class TestEarningsSemanticFixes:
             index=pd.to_datetime(["2025-02-01", "2025-05-01", "2025-08-01", "2025-11-01"]),
         )
         ratio = compute_trailing_dividend_yield(dividends, 100.0, as_of="2025-12-31")
+        payload = enrich_dividend_payload_with_yield(
+            build_dividend_payload_from_series(dividends, as_of=pd.Timestamp("2025-12-31")),
+            100.0,
+        )
 
         assert ratio == 0.01
+        assert payload["ttm_cash_dividend_per_share"] == 1.0
+        assert payload["ttm_dividend_yield_pct"] == 1.0
         assert _format_yahoo_dividend_yield(ratio) == "1.00%"
         assert format_ratio_as_percent(ratio) == "1.00%"
         assert _format_percent(0.04211) == "4.21%"
@@ -197,7 +209,7 @@ class TestSourceFieldNormalizationFixes:
         class TickerStub:
             dividends = pd.Series(
                 [0.1, 0.1, 0.1, 0.1],
-                index=pd.to_datetime(["2025-03-01", "2025-06-01", "2025-09-01", "2025-12-01"]),
+                index=pd.to_datetime(["2025-04-01", "2025-07-01", "2025-10-01", "2026-01-01"]),
             )
 
         normalized = YfinanceDataSource._build_normalized_fields(
@@ -211,6 +223,7 @@ class TestSourceFieldNormalizationFixes:
         )
 
         assert normalized["dividend_yield"]["value"] == 0.008
+        assert normalized["dividend_metrics"]["ttm_cash_dividend_per_share"] == 0.4
         assert normalized["dividend_yield"]["field"] == "dividend_yield"
         assert normalized["book_value_per_share"]["unit"] == "currency_per_share"
         assert normalized["payout_ratio"]["display_value"] == "20.00%"
@@ -242,3 +255,65 @@ class TestSourceFieldNormalizationFixes:
 
         assert latest_col == "2025-03-31"
         assert value == 15.0
+
+    def test_fundamental_context_matches_daily_stock_analysis_bundle_shape(self):
+        context = build_fundamental_context(
+            symbol="AAPL",
+            financial_data={
+                "raw_data": {
+                    "info": {
+                        "trailingPE": 30.0,
+                        "priceToBook": 40.0,
+                        "marketCap": 1000,
+                        "enterpriseValue": 1100,
+                        "revenueGrowth": 0.1,
+                        "earningsGrowth": 0.2,
+                        "returnOnEquity": 1.0,
+                        "grossMargins": 0.4,
+                        "totalRevenue": 500,
+                        "netIncomeToCommon": 100,
+                        "operatingCashflow": 120,
+                    },
+                    "normalized_fields": {
+                        "dividend_metrics": {"ttm_cash_dividend_per_share": 1.0, "ttm_dividend_yield_pct": 0.5},
+                        "held_percent_insiders": {"value": 0.01},
+                    },
+                }
+            },
+            latest_price=200.0,
+            as_of="2026-03-19",
+        )
+
+        assert context["market"] == "us"
+        assert set(context.keys()) >= {
+            "coverage",
+            "valuation",
+            "growth",
+            "earnings",
+            "institution",
+            "capital_flow",
+            "dragon_tiger",
+            "boards",
+        }
+        assert context["earnings"]["data"]["dividend"]["ttm_cash_dividend_per_share"] == 1.0
+
+    def test_research_strategy_uses_plugin_style_sections(self):
+        strategy = build_earnings_research_strategy(
+            {
+                "earnings_summary": {
+                    "revenue": {"actual": "$10.00B"},
+                    "earnings_per_share": {"eps": "$1.00"},
+                },
+                "key_metrics": {
+                    "growth": {"revenue_growth": "10.0%", "earnings_growth": "12.0%"},
+                    "profitability": {"gross_margin": "40.0%", "operating_margin": "20.0%"},
+                    "dividends": {"dividend_yield": "1.00%"},
+                },
+                "guidance": {"direction": "Maintaining"},
+                "beat_miss_analysis": {"status": "unavailable"},
+            }
+        )
+
+        assert "earnings_summary_box" in strategy
+        assert "thesis_scorecard" in strategy
+        assert strategy["investment_impact"]["guidance_direction"] == "Maintaining"

@@ -34,6 +34,8 @@ class TestHTTPOnlyStructuredContracts:
         )
         assert payload["meta"]["interface_type"] == "mixed"
         assert payload["meta"]["schema_version"] == "2.0.0"
+        assert payload["analysis"]["fundamental_context"]["valuation"]["status"] in {"partial", "ok", "not_supported"}
+        assert "coverage" in payload["analysis"]["fundamental_context"]
 
     def test_earnings_contract_exposes_period_meta(self):
         payload = earnings_contract(
@@ -61,6 +63,7 @@ class TestHTTPOnlyStructuredContracts:
         )
         assert payload["meta"]["report_date"] == "2026-01-31"
         assert payload["facts"]["consensus_comparison"]["status"] == "unavailable"
+        assert payload["analysis"]["research_strategy"]["framework"].startswith("financial-services-plugins")
 
     def test_dcf_contract_marks_model_interface(self):
         payload = dcf_contract(
