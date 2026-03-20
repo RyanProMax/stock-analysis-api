@@ -78,6 +78,30 @@ def make_field(
     ).to_dict()
 
 
+def _normalize_sources(*source_groups: Any) -> List[str]:
+    normalized: List[str] = []
+    for group in source_groups:
+        if isinstance(group, str):
+            text = group.strip()
+            if text and text not in normalized:
+                normalized.append(text)
+            continue
+        if isinstance(group, dict):
+            provider = str(group.get("provider") or "").strip()
+            result = str(group.get("result") or "").strip().lower()
+            if result in {"not_supported", "failed"}:
+                continue
+            if provider and provider not in normalized:
+                normalized.append(provider)
+            continue
+        if isinstance(group, (list, tuple)):
+            for item in group:
+                for source in _normalize_sources(item):
+                    if source not in normalized:
+                        normalized.append(source)
+    return normalized
+
+
 def stock_record(record: Dict[str, Any], source: str = "stock_list_provider") -> Dict[str, Any]:
     return {
         "ts_code": record.get("ts_code", ""),
@@ -132,7 +156,11 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
         analysis=analysis,
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=[report.get("technical", {}).get("data_source", ""), report.get("fundamental", {}).get("data_source", "")],
+            sources=_normalize_sources(
+                report.get("technical", {}).get("data_source", ""),
+                report.get("qlib", {}).get("data_source", ""),
+                fundamental_context.get("source_chain", []),
+            ),
             data_completeness="partial",
             limitations=["Derived technical signals are not reported facts"],
             interface_type="mixed",
@@ -168,7 +196,7 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         analysis=analysis,
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=result.get("sources", []),
+            sources=_normalize_sources(result.get("sources", [])),
             data_completeness="partial",
             limitations=["Segment data may be estimated when company-level segment disclosure is unavailable"],
             interface_type="mixed",
@@ -214,9 +242,9 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "symbol": item.get("symbol"),
                 "name": item.get("name"),
-                "market_cap": make_field("market_cap", item.get("market_cap", 0) * 1e9, item.get("market_cap"), "currency", "spot", "reported", "yfinance.info", as_of),
+                "total_mv": make_field("total_mv", item.get("market_cap", 0) * 1e9, item.get("market_cap"), "currency", "spot", "reported", "yfinance.info", as_of),
                 "revenue": make_field("revenue", item.get("revenue", 0) * 1e9, item.get("revenue"), "currency", "ttm", "reported", "yfinance.info", as_of),
-                "growth": make_field("growth", (item.get("growth", 0) / 100.0), item.get("growth"), "ratio", "ttm", "reported", "yfinance.info", as_of),
+                "revenue_yoy": make_field("revenue_yoy", (item.get("growth", 0) / 100.0), item.get("growth"), "ratio", "ttm", "reported", "yfinance.info", as_of),
             }
         )
     payload = InterfacePayload(
@@ -235,7 +263,11 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=["yfinance.info"],
+            sources=_normalize_sources(
+                "yfinance.info",
+                result.get("market_context", {}).get("methodology"),
+                result.get("market_context", {}).get("estimated_market_context", {}).get("methodology"),
+            ),
             data_completeness="partial",
             limitations=["Market context, moat, and scenario outputs are heuristic analysis"],
             interface_type="mixed",
@@ -277,7 +309,7 @@ def dcf_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=[result.get("fcf_source", ""), result.get("assumptions_source", "")],
+            sources=_normalize_sources(result.get("fcf_source", ""), result.get("assumptions_source", "")),
             data_completeness=result.get("data_completeness", "partial"),
             limitations=["DCF output is a model estimate, not a reported market fact"],
             interface_type="model",
@@ -308,7 +340,7 @@ def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=None,
-            sources=["yfinance.info"],
+            sources=_normalize_sources("yfinance.info"),
             data_completeness="partial",
             limitations=result.get("peer_selection_limitations", []),
             interface_type="mixed",
@@ -329,7 +361,7 @@ def lbo_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         analysis={"outputs": result},
         meta=InterfaceMeta(
             as_of=None,
-            sources=[result.get("assumptions_source", "")],
+            sources=_normalize_sources(result.get("assumptions_source", "")),
             data_completeness="partial",
             limitations=["LBO output is scenario modeling based on assumptions"],
             interface_type="model",
@@ -345,7 +377,7 @@ def three_statement_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         analysis={"outputs": result},
         meta=InterfaceMeta(
             as_of=result.get("as_of"),
-            sources=[result.get("historical_source", "")],
+            sources=_normalize_sources(result.get("historical_source", "")),
             data_completeness="partial",
             limitations=result.get("limitations", []),
             interface_type="model",

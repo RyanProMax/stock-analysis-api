@@ -4,6 +4,7 @@ Offline HTTP-only contract tests for the structured response adapters.
 
 from src.analyzer.normalizers import (
     comps_contract,
+    competitive_contract,
     dcf_contract,
     earnings_contract,
     stock_analysis_contract,
@@ -41,6 +42,8 @@ class TestHTTPOnlyStructuredContracts:
         }
         assert "coverage" in payload["facts"]["fundamentals"]
         assert "fundamental_context" not in payload["analysis"]
+        assert "yfinance.info" in payload["meta"]["sources"]
+        assert "fundamental_pipeline" not in payload["meta"]["sources"]
 
     def test_stock_analysis_contract_removes_legacy_scattered_fundamental_fields(self):
         payload = stock_analysis_contract(
@@ -142,6 +145,34 @@ class TestHTTPOnlyStructuredContracts:
             }
         )
         assert payload["meta"]["peer_selection"]["method"] == "hardcoded_industry_peer_map"
+
+    def test_competitive_contract_uses_dsa_style_peer_fields_and_normalized_sources(self):
+        payload = competitive_contract(
+            {
+                "symbol": "NVDA",
+                "company_name": "NVIDIA",
+                "target_profile": {},
+                "comparative": {
+                    "comparison_table": [
+                        {"symbol": "AMD", "name": "AMD", "market_cap": 500, "revenue": 200, "growth": 20}
+                    ]
+                },
+                "market_context": {
+                    "estimated_market_context": {"methodology": "heuristic_market_context_v1"}
+                },
+                "positioning": {},
+                "moat_assessment": {},
+                "industry_metrics": {},
+                "scenario_analysis": {},
+            }
+        )
+
+        peer = payload["facts"]["peer_set"][0]
+        assert "total_mv" in peer
+        assert "revenue_yoy" in peer
+        assert "market_cap" not in peer
+        assert "growth" not in peer
+        assert "heuristic_market_context_v1" in payload["meta"]["sources"]
 
     def test_three_statement_contract_marks_model_interface(self):
         payload = three_statement_contract(
