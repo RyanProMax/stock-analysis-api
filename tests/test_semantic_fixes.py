@@ -309,6 +309,11 @@ class TestSourceFieldNormalizationFixes:
             "dragon_tiger",
             "boards",
         }
+        valuation_data = context["valuation"]["data"]
+        assert valuation_data["total_mv"] == 1000
+        assert valuation_data["circ_mv"] is None
+        assert "market_cap" not in valuation_data
+        assert valuation_data["valuation_extensions"]["enterprise_value"] == 1100
         assert context["earnings"]["data"]["dividend"]["ttm_cash_dividend_per_share"] == 1.0
 
     def test_research_strategy_uses_plugin_style_sections(self):
