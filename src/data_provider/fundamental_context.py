@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 
+def _format_ratio_summary(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    return f"{value * 100:.2f}%"
+
+
 def _market_tag(symbol: str) -> str:
     text = str(symbol or "").strip().upper()
     return "us" if any(ch.isalpha() for ch in text) else "cn"
@@ -109,8 +115,24 @@ def build_fundamental_context(
             "net_profit_yoy": info.get("earningsGrowth"),
             "roe": info.get("returnOnEquity"),
             "gross_margin": info.get("grossMargins"),
+            "summary": "",
         }
         dividend_payload = normalized_fields.get("dividend_metrics", {})
+        insider_ratio = (
+            normalized_fields.get("held_percent_insiders", {}).get("value")
+            if isinstance(normalized_fields.get("held_percent_insiders"), dict)
+            else None
+        )
+        institution_ratio = (
+            normalized_fields.get("held_percent_institutions", {}).get("value")
+            if isinstance(normalized_fields.get("held_percent_institutions"), dict)
+            else None
+        )
+        short_interest_ratio = (
+            normalized_fields.get("shares_percent_shares_out", {}).get("value")
+            if isinstance(normalized_fields.get("shares_percent_shares_out"), dict)
+            else None
+        )
         earnings_payload = {
             "financial_report": {
                 "report_date": as_of,
@@ -122,20 +144,29 @@ def build_fundamental_context(
             "dividend": dividend_payload if isinstance(dividend_payload, dict) else {},
         }
         institution_payload = {
-            "held_percent_insiders": (
-                normalized_fields.get("held_percent_insiders", {}).get("value")
-                if isinstance(normalized_fields.get("held_percent_insiders"), dict)
-                else None
-            ),
-            "held_percent_institutions": (
-                normalized_fields.get("held_percent_institutions", {}).get("value")
-                if isinstance(normalized_fields.get("held_percent_institutions"), dict)
-                else None
-            ),
-            "shares_percent_shares_out": (
-                normalized_fields.get("shares_percent_shares_out", {}).get("value")
-                if isinstance(normalized_fields.get("shares_percent_shares_out"), dict)
-                else None
+            "insider_holding_ratio": insider_ratio,
+            "institution_holding_ratio": institution_ratio,
+            "short_interest_ratio": short_interest_ratio,
+            "summary": ", ".join(
+                part
+                for part in (
+                    (
+                        f"insiders={_format_ratio_summary(insider_ratio)}"
+                        if insider_ratio is not None
+                        else None
+                    ),
+                    (
+                        f"institutions={_format_ratio_summary(institution_ratio)}"
+                        if institution_ratio is not None
+                        else None
+                    ),
+                    (
+                        f"short_interest={_format_ratio_summary(short_interest_ratio)}"
+                        if short_interest_ratio is not None
+                        else None
+                    ),
+                )
+                if part
             ),
         }
     else:
@@ -148,6 +179,7 @@ def build_fundamental_context(
             "revenue_yoy": financial_data.get("revenue_growth"),
             "roe": financial_data.get("roe"),
             "debt_to_assets": financial_data.get("debt_ratio"),
+            "summary": "",
         }
         income_meta = raw_data.get("income_meta", {}) if isinstance(raw_data.get("income_meta"), dict) else {}
         institution_payload = {}
