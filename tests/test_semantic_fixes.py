@@ -291,6 +291,8 @@ class TestSourceFieldNormalizationFixes:
                     "normalized_fields": {
                         "dividend_metrics": {"ttm_cash_dividend_per_share": 1.0, "ttm_dividend_yield_pct": 0.5},
                         "held_percent_insiders": {"value": 0.01},
+                        "held_percent_institutions": {"value": 0.65},
+                        "shares_percent_shares_out": {"value": 0.02},
                     },
                 }
             },
@@ -314,6 +316,12 @@ class TestSourceFieldNormalizationFixes:
         assert valuation_data["circ_mv"] is None
         assert "market_cap" not in valuation_data
         assert valuation_data["valuation_extensions"]["enterprise_value"] == 1100
+        institution_data = context["institution"]["data"]
+        assert institution_data["insider_holding_ratio"] == 0.01
+        assert institution_data["institution_holding_ratio"] == 0.65
+        assert institution_data["short_interest_ratio"] == 0.02
+        assert "held_percent_insiders" not in institution_data
+        assert "insiders=1.00%" in institution_data["summary"]
         assert context["earnings"]["data"]["dividend"]["ttm_cash_dividend_per_share"] == 1.0
 
     def test_research_strategy_uses_plugin_style_sections(self):
