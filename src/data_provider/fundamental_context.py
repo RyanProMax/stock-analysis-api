@@ -45,6 +45,15 @@ def _non_empty_dict(value: Any) -> Optional[Dict[str, Any]]:
     return value if value else None
 
 
+def _block_data(fundamental_ctx: Optional[Dict[str, Any]], block_name: str) -> Optional[Dict[str, Any]]:
+    if not isinstance(fundamental_ctx, dict):
+        return None
+    block = fundamental_ctx.get(block_name)
+    if not isinstance(block, dict):
+        return None
+    return _non_empty_dict(block.get("data"))
+
+
 def build_fundamental_block(
     status: str,
     payload: Optional[Dict[str, Any]] = None,
@@ -153,14 +162,72 @@ def extract_fundamental_detail_fields(
     if not isinstance(fundamental_ctx, dict):
         return {"financial_report": None, "dividend_metrics": None}
 
-    earnings_block = fundamental_ctx.get("earnings")
-    earnings_data = earnings_block.get("data") if isinstance(earnings_block, dict) else None
+    earnings_data = _block_data(fundamental_ctx, "earnings")
+    valuation_data = _block_data(fundamental_ctx, "valuation")
+    growth_data = _block_data(fundamental_ctx, "growth")
+    institution_data = _block_data(fundamental_ctx, "institution")
     if not isinstance(earnings_data, dict):
-        return {"financial_report": None, "dividend_metrics": None}
+        return {
+            "financial_report": None,
+            "dividend_metrics": None,
+            "valuation_metrics": valuation_data,
+            "growth_metrics": growth_data,
+            "institution_metrics": institution_data,
+        }
 
     return {
         "financial_report": _non_empty_dict(earnings_data.get("financial_report")),
         "dividend_metrics": _non_empty_dict(earnings_data.get("dividend")),
+        "valuation_metrics": valuation_data,
+        "growth_metrics": growth_data,
+        "institution_metrics": institution_data,
+    }
+
+
+def extract_company_profile_fields(
+    context_snapshot: Any,
+    fallback_fundamental_payload: Any = None,
+    extra_metrics: Optional[Dict[str, Any]] = None,
+    symbol: Optional[str] = None,
+    company_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    extra_metrics = extra_metrics or {}
+    details = extract_fundamental_detail_fields(
+        context_snapshot=context_snapshot,
+        fallback_fundamental_payload=fallback_fundamental_payload,
+    )
+    valuation = details.get("valuation_metrics") or {}
+    growth = details.get("growth_metrics") or {}
+
+    return {
+        "symbol": symbol,
+        "name": company_name,
+        "sector": extra_metrics.get("sector"),
+        "industry": extra_metrics.get("industry"),
+        "overview": {
+            "current_price": valuation.get("price"),
+            "total_mv": valuation.get("total_mv"),
+            "revenue": (details.get("financial_report") or {}).get("revenue"),
+            "revenue_yoy": growth.get("revenue_yoy"),
+        },
+        "financials": {
+            "gross_margin": growth.get("gross_margin"),
+            "ebitda_margin": extra_metrics.get("ebitdaMargins"),
+            "operating_margin": extra_metrics.get("operatingMargins"),
+            "net_margin": extra_metrics.get("profitMargins"),
+        },
+        "valuation": {
+            "pe_ratio": valuation.get("pe_ratio"),
+            "forward_pe": extra_metrics.get("forwardPE"),
+            "peg_ratio": extra_metrics.get("pegRatio"),
+            "pb_ratio": valuation.get("pb_ratio"),
+            "price_to_sales": (valuation.get("extensions") or {}).get("price_to_sales"),
+        },
+        "analyst_consensus": {
+            "rating": extra_metrics.get("recommendationKey"),
+            "target_mean_price": extra_metrics.get("targetMeanPrice"),
+            "analyst_count": extra_metrics.get("numberOfAnalystOpinions"),
+        },
     }
 
 
