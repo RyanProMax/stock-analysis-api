@@ -35,6 +35,8 @@ from src.model.report import AnalysisReport, FactorAnalysis, FearGreed
 from src.model.trend import TrendAnalysisResult, TrendStatus
 from src.data_provider.fundamental_context import build_fundamental_context
 from src.analyzer.research_strategy import build_earnings_research_strategy
+from src.core.pipeline import StockService
+from src.model.report import ANALYSIS_REPORT_CACHE_VERSION
 
 
 class TestEarningsSemanticFixes:
@@ -96,7 +98,19 @@ class TestStockAnalyzeSerializationFixes:
         json.dumps(payload, ensure_ascii=False)
 
         assert payload["as_of"] == "2026-03-20"
+        assert payload["cache_version"] == ANALYSIS_REPORT_CACHE_VERSION
         assert payload["trend_analysis"]["trend_status"] == "多头排列"
+
+    def test_stock_service_rejects_stale_cached_report_versions(self):
+        service = StockService()
+        stale_report = {
+            "cache_version": "stale",
+            "symbol": "NVDA",
+            "stock_name": "NVIDIA",
+            "price": 100.0,
+        }
+
+        assert service._rebuild_report_from_dict(stale_report, "NVDA") is None
 
 
 class TestCompsSemanticFixes:

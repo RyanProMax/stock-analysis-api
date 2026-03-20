@@ -17,6 +17,7 @@ from ..data_provider import data_manager, StockListService
 from ..storage import CacheUtil
 from ..config import is_development
 from ..model import AnalysisReport, FactorAnalysis, FactorDetail, FearGreed
+from ..model.report import ANALYSIS_REPORT_CACHE_VERSION
 
 
 class StockService:
@@ -28,7 +29,7 @@ class StockService:
 
     def _build_cache_key(self, symbol: str) -> str:
         """构建缓存键"""
-        return f"{CacheUtil.get_cst_date_key()}_{symbol.upper()}"
+        return f"{CacheUtil.get_cst_date_key()}_{ANALYSIS_REPORT_CACHE_VERSION}_{symbol.upper()}"
 
     # ==================== 基础数据获取 ====================
 
@@ -259,6 +260,13 @@ class StockService:
             分析报告对象
         """
         try:
+            if report_dict.get("cache_version") != ANALYSIS_REPORT_CACHE_VERSION:
+                print(
+                    f"⚠️ 分析报告缓存版本不匹配: {symbol} "
+                    f"({report_dict.get('cache_version')} != {ANALYSIS_REPORT_CACHE_VERSION})"
+                )
+                return None
+
             # 重建 FearGreed 对象
             fear_greed_data = report_dict.get("fear_greed", {})
             fear_greed = FearGreed(

@@ -34,8 +34,49 @@ class TestHTTPOnlyStructuredContracts:
         )
         assert payload["meta"]["interface_type"] == "mixed"
         assert payload["meta"]["schema_version"] == "2.0.0"
-        assert payload["analysis"]["fundamental_context"]["valuation"]["status"] in {"partial", "ok", "not_supported"}
-        assert "coverage" in payload["analysis"]["fundamental_context"]
+        assert payload["facts"]["fundamentals"]["valuation"]["status"] in {
+            "partial",
+            "ok",
+            "not_supported",
+        }
+        assert "coverage" in payload["facts"]["fundamentals"]
+        assert "fundamental_context" not in payload["analysis"]
+
+    def test_stock_analysis_contract_removes_legacy_scattered_fundamental_fields(self):
+        payload = stock_analysis_contract(
+            {
+                "symbol": "AAPL",
+                "stock_name": "Apple",
+                "price": 200.0,
+                "as_of": "2026-03-20",
+                "fear_greed": {"index": 55.0, "label": "中性"},
+                "technical": {"factors": [], "data_source": "US_yfinance"},
+                "fundamental": {
+                    "factors": [
+                        {"key": "trailingPE", "status": "30.0x"},
+                        {"key": "totalRevenue", "status": "$100B"},
+                        {"key": "bookValue", "status": "$4.00"},
+                    ],
+                    "data_source": "yfinance",
+                    "raw_data": {
+                        "info": {
+                            "trailingPE": 30.0,
+                            "totalRevenue": 100_000_000_000,
+                            "bookValue": 4.0,
+                            "marketCap": 3_000_000_000_000,
+                        }
+                    },
+                },
+                "qlib": {"factors": []},
+                "trend_analysis": None,
+            }
+        )
+
+        assert set(payload["facts"].keys()) == {"market_snapshot", "fundamentals"}
+        assert "trailingPE" not in payload["facts"]["fundamentals"]
+        assert "totalRevenue" not in payload["facts"]["fundamentals"]
+        assert "bookValue" not in payload["facts"]["fundamentals"]
+        assert payload["facts"]["fundamentals"]["market"] == "us"
 
     def test_earnings_contract_exposes_period_meta(self):
         payload = earnings_contract(

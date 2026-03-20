@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Optional
 
 from .trend import TrendAnalysisResult
 
+ANALYSIS_REPORT_CACHE_VERSION = "2026-03-20-dsa-v1"
+
 
 @dataclass
 class FactorDetail:
@@ -82,6 +84,7 @@ class AnalysisReport:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "cache_version": ANALYSIS_REPORT_CACHE_VERSION,
             "symbol": self.symbol,
             "stock_name": self.stock_name,
             "price": self.price,
