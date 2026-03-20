@@ -320,9 +320,14 @@ class TestSourceFieldNormalizationFixes:
         assert institution_data["insider_holding_ratio"] == 0.01
         assert institution_data["institution_holding_ratio"] == 0.65
         assert institution_data["short_interest_ratio"] == 0.02
+        assert institution_data["institution_holding_change"] is None
+        assert institution_data["top10_holder_change"] is None
         assert "held_percent_insiders" not in institution_data
         assert "insiders=1.00%" in institution_data["summary"]
-        assert context["earnings"]["data"]["dividend"]["ttm_cash_dividend_per_share"] == 1.0
+        earnings_data = context["earnings"]["data"]
+        assert earnings_data["forecast_summary"] == ""
+        assert earnings_data["quick_report_summary"] == ""
+        assert earnings_data["dividend"]["ttm_cash_dividend_per_share"] == 1.0
 
     def test_research_strategy_uses_plugin_style_sections(self):
         strategy = build_earnings_research_strategy(
