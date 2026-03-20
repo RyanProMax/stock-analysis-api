@@ -142,11 +142,15 @@ def build_fundamental_context(
                 "roe": info.get("returnOnEquity"),
             },
             "dividend": dividend_payload if isinstance(dividend_payload, dict) else {},
+            "forecast_summary": "",
+            "quick_report_summary": "",
         }
         institution_payload = {
             "insider_holding_ratio": insider_ratio,
             "institution_holding_ratio": institution_ratio,
             "short_interest_ratio": short_interest_ratio,
+            "institution_holding_change": None,
+            "top10_holder_change": None,
             "summary": ", ".join(
                 part
                 for part in (
@@ -193,7 +197,15 @@ def build_fundamental_context(
                     if isinstance(raw_data.get("fina_indicator_meta"), dict)
                     else None
                 ),
-            }
+            },
+            "dividend": {},
+            "forecast_summary": "",
+            "quick_report_summary": "",
+        }
+        institution_payload = {
+            "institution_holding_change": None,
+            "top10_holder_change": None,
+            "summary": "",
         }
 
     unsupported_chain = [_source_item("fundamental_pipeline", "not_supported")]
