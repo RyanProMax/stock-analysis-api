@@ -170,6 +170,7 @@ class TestHTTPOnlyStructuredContracts:
         assert payload["facts"]["fundamentals"]["market"] == "us"
         assert payload["facts"]["target"]["financial_report"]["revenue"] == 1000
         assert payload["facts"]["target"]["valuation_metrics"]["price"] == 100
+        assert payload["facts"]["target"]["company_profile"]["overview"]["total_mv"]["field"] == "total_mv"
 
     def test_competitive_contract_uses_dsa_style_peer_fields_and_normalized_sources(self):
         payload = competitive_contract(
