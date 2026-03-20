@@ -18,6 +18,8 @@
 - 让 `stock/analyze`、`earnings`、`competitive`、`dcf`、`comps`、`lbo`、`three-statement` 都围绕共享事实上下文输出
 - 将 `competitive.company_profile` 与 `comps.target.company_profile` 收敛到同一套 builder
 - 整理 `docs/`，保留在线审计、字段规范审计和参考仓库对照文档
+- 收窄 `README.md`，去除工程进度表述，仅保留架构设计、能力模块和使用说明
+- 进一步收窄 `README.md`，移除 `docs/` 和迭代计划相关暴露信息
 
 ## 当前状态
 
