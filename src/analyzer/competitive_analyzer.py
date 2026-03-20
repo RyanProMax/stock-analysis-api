@@ -14,6 +14,9 @@ Competitive Analysis 分析器
 import yfinance as yf
 from typing import Dict, List, Any, Optional
 
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
+
 
 class CompetitiveAnalysisResult:
     """竞争分析结果"""
@@ -23,6 +26,7 @@ class CompetitiveAnalysisResult:
         symbol: str,
         company_name: str = "",
         target_metrics: Optional[Dict[str, Any]] = None,
+        fundamental_context: Optional[Dict[str, Any]] = None,
         market_context: Optional[Dict[str, Any]] = None,
         target_profile: Optional[Dict[str, Any]] = None,
         competitors: Optional[List[Dict[str, Any]]] = None,
@@ -36,6 +40,7 @@ class CompetitiveAnalysisResult:
         self.symbol = symbol
         self.company_name = company_name
         self.target_metrics = target_metrics or {}
+        self.fundamental_context = fundamental_context or {}
         self.market_context = market_context or {}
         self.target_profile = target_profile or {}
         self.competitors = competitors or []
@@ -51,6 +56,7 @@ class CompetitiveAnalysisResult:
             "symbol": self.symbol,
             "company_name": self.company_name,
             "target_metrics": self.target_metrics,
+            "fundamental_context": self.fundamental_context,
             "market_context": self.market_context,
             "target_profile": self.target_profile,
             "competitors": self.competitors,
@@ -110,6 +116,15 @@ class CompetitiveAnalyzer:
                 )
 
             company_name = target_info.get("longName", symbol)
+            raw_info = target_info.get("_raw_info", {})
+            normalized_fields = target_info.get("_normalized_fields", {})
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=raw_info,
+                latest_price=target_info.get("currentPrice") or raw_info.get("regularMarketPrice"),
+                as_of=None,
+                normalized_fields=normalized_fields,
+            )
 
             # 如果没有指定竞争对手，自动识别
             if not competitors:
@@ -129,6 +144,7 @@ class CompetitiveAnalyzer:
                 symbol=symbol,
                 company_name=company_name,
                 target_metrics=target_info,
+                fundamental_context=fundamental_context,
                 market_context=self._analyze_market_context(target_info, industry),
                 target_profile=self._format_target_profile(target_info),
                 competitors=competitor_profiles,
@@ -159,6 +175,8 @@ class CompetitiveAnalyzer:
 
             return {
                 "symbol": symbol,
+                "_raw_info": info,
+                "_normalized_fields": YfinanceDataSource._build_normalized_fields(stock, info),
                 "longName": info.get("longName", info.get("shortName", symbol)),
                 "sector": info.get("sector", "Unknown"),
                 "industry": info.get("industry", "Unknown"),

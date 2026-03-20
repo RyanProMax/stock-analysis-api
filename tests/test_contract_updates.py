@@ -99,6 +99,16 @@ class TestHTTPOnlyStructuredContracts:
                     "earnings_per_share": {"eps": "$1.76"},
                 },
                 "beat_miss_analysis": {"status": "unavailable"},
+                "fundamental_context": {
+                    "earnings": {
+                        "data": {
+                            "dividend": {
+                                "ttm_cash_dividend_per_share": 0.04,
+                                "ttm_dividend_yield_pct": 0.02,
+                            }
+                        }
+                    }
+                },
                 "segment_performance": [],
                 "guidance": {},
                 "key_metrics": {},
@@ -109,6 +119,7 @@ class TestHTTPOnlyStructuredContracts:
         assert payload["meta"]["report_date"] == "2026-01-31"
         assert payload["facts"]["consensus_comparison"]["status"] == "unavailable"
         assert payload["analysis"]["research_strategy"]["framework"].startswith("financial-services-plugins")
+        assert payload["analysis"]["key_metrics"]["dividend_metrics"]["ttm_cash_dividend_per_share"] == 0.04
 
     def test_dcf_contract_marks_model_interface(self):
         payload = dcf_contract(
@@ -146,17 +157,40 @@ class TestHTTPOnlyStructuredContracts:
                 "peer_selection_method": "hardcoded_industry_peer_map",
                 "peer_universe": ["AMD"],
                 "peer_selection_limitations": ["Static peer set"],
-                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
+                "fundamental_context": {
+                    "market": "us",
+                    "source_chain": [{"provider": "yfinance.info", "result": "ok"}],
+                    "earnings": {"data": {"financial_report": {"revenue": 1000}}},
+                    "valuation": {"data": {"price": 100, "total_mv": 10000}},
+                    "growth": {"data": {"revenue_yoy": 0.2}},
+                },
             }
         )
         assert payload["meta"]["peer_selection"]["method"] == "hardcoded_industry_peer_map"
         assert payload["facts"]["fundamentals"]["market"] == "us"
+        assert payload["facts"]["target"]["financial_report"]["revenue"] == 1000
+        assert payload["facts"]["target"]["valuation_metrics"]["price"] == 100
 
     def test_competitive_contract_uses_dsa_style_peer_fields_and_normalized_sources(self):
         payload = competitive_contract(
             {
                 "symbol": "NVDA",
                 "company_name": "NVIDIA",
+                "fundamental_context": {
+                    "market": "us",
+                    "source_chain": [{"provider": "yfinance.info", "result": "ok"}],
+                    "valuation": {
+                        "data": {
+                            "price": 100.0,
+                            "total_mv": 1_000_000_000_000,
+                            "pb_ratio": 10.0,
+                            "pe_ratio": 30.0,
+                            "extensions": {"price_to_sales": 5.0},
+                        }
+                    },
+                    "growth": {"data": {"revenue_yoy": 0.2, "gross_margin": 0.7}},
+                    "earnings": {"data": {"financial_report": {"revenue": 200_000_000_000}}},
+                },
                 "target_metrics": {
                     "sector": "Technology",
                     "industry": "Semiconductors",
@@ -195,6 +229,7 @@ class TestHTTPOnlyStructuredContracts:
 
         peer = payload["facts"]["peer_set"][0]
         profile = payload["facts"]["company_profile"]
+        assert payload["facts"]["fundamentals"]["market"] == "us"
         assert profile["overview"]["total_mv"]["field"] == "total_mv"
         assert profile["overview"]["revenue_yoy"]["field"] == "revenue_yoy"
         assert profile["valuation"]["pb_ratio"]["field"] == "pb_ratio"
