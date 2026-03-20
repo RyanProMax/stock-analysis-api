@@ -172,6 +172,11 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
 def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     as_of = result.get("as_of")
     summary = result.get("earnings_summary", {})
+    fundamental_context = (
+        result.get("fundamental_context", {})
+        if isinstance(result.get("fundamental_context"), dict)
+        else {}
+    )
     facts = {
         "quarterly": {
             "revenue": make_field("revenue", _parse_number(summary.get("revenue", {}).get("actual")), summary.get("revenue", {}).get("actual"), "currency", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
@@ -180,6 +185,7 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
             "eps": make_field("eps", _parse_number(summary.get("earnings_per_share", {}).get("eps")), summary.get("earnings_per_share", {}).get("eps"), "currency_per_share", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
         },
         "consensus_comparison": result.get("beat_miss_analysis"),
+        "fundamentals": fundamental_context,
     }
     if result.get("beat_miss_analysis", {}).get("status") == "unavailable":
         facts["consensus_comparison"]["status"] = "unavailable"
@@ -196,7 +202,7 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         analysis=analysis,
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=_normalize_sources(result.get("sources", [])),
+            sources=_normalize_sources(result.get("sources", []), fundamental_context.get("source_chain", [])),
             data_completeness="partial",
             limitations=["Segment data may be estimated when company-level segment disclosure is unavailable"],
             interface_type="mixed",

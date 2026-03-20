@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 
@@ -25,6 +26,23 @@ def _market_tag(symbol: str) -> str:
 
 def _source_item(provider: str, result: str, duration_ms: int = 0) -> Dict[str, Any]:
     return {"provider": provider, "result": result, "duration_ms": duration_ms}
+
+
+def parse_json_field(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return value
+    return value
+
+
+def _non_empty_dict(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    return value if value else None
 
 
 def build_fundamental_block(
@@ -83,6 +101,66 @@ def build_market_not_supported_context(market: str, reason: str) -> Dict[str, An
         "source_chain": chain,
         "errors": [reason],
         **blocks,
+    }
+
+
+def build_us_fundamental_context_from_info(
+    symbol: str,
+    info: Dict[str, Any],
+    latest_price: Optional[float],
+    as_of: Optional[str],
+    normalized_fields: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return build_fundamental_context(
+        symbol=symbol,
+        financial_data={
+            "raw_data": {
+                "info": info or {},
+                "normalized_fields": normalized_fields or {},
+            }
+        },
+        latest_price=latest_price,
+        as_of=as_of,
+    )
+
+
+def extract_fundamental_context(
+    context_snapshot: Any,
+    fallback_fundamental_payload: Any = None,
+) -> Optional[Dict[str, Any]]:
+    snapshot_obj = parse_json_field(context_snapshot)
+    if isinstance(snapshot_obj, dict):
+        enhanced = snapshot_obj.get("enhanced_context")
+        if isinstance(enhanced, dict):
+            fundamental = enhanced.get("fundamental_context")
+            if isinstance(fundamental, dict):
+                return fundamental
+
+    fallback_obj = parse_json_field(fallback_fundamental_payload)
+    if isinstance(fallback_obj, dict):
+        return fallback_obj
+    return None
+
+
+def extract_fundamental_detail_fields(
+    context_snapshot: Any,
+    fallback_fundamental_payload: Any = None,
+) -> Dict[str, Optional[Dict[str, Any]]]:
+    fundamental_ctx = extract_fundamental_context(
+        context_snapshot=context_snapshot,
+        fallback_fundamental_payload=fallback_fundamental_payload,
+    )
+    if not isinstance(fundamental_ctx, dict):
+        return {"financial_report": None, "dividend_metrics": None}
+
+    earnings_block = fundamental_ctx.get("earnings")
+    earnings_data = earnings_block.get("data") if isinstance(earnings_block, dict) else None
+    if not isinstance(earnings_data, dict):
+        return {"financial_report": None, "dividend_metrics": None}
+
+    return {
+        "financial_report": _non_empty_dict(earnings_data.get("financial_report")),
+        "dividend_metrics": _non_empty_dict(earnings_data.get("dividend")),
     }
 
 
