@@ -97,9 +97,12 @@ def build_fundamental_context(
             "pe_ratio": info.get("trailingPE"),
             "forward_pe": info.get("forwardPE"),
             "pb_ratio": info.get("priceToBook"),
-            "market_cap": info.get("marketCap"),
-            "enterprise_value": info.get("enterpriseValue"),
-            "price_to_sales": info.get("priceToSalesTrailing12Months"),
+            "total_mv": info.get("marketCap"),
+            "circ_mv": None,
+            "valuation_extensions": {
+                "enterprise_value": info.get("enterpriseValue"),
+                "price_to_sales": info.get("priceToSalesTrailing12Months"),
+            },
         }
         growth_payload = {
             "revenue_yoy": info.get("revenueGrowth"),
