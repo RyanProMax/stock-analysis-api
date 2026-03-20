@@ -13,6 +13,8 @@ LBO (Leveraged Buyout) Model 分析器
 import yfinance as yf
 from typing import List
 
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
 from ..model.lbo import (
     LBOResult,
     SourcesAndUses,
@@ -109,6 +111,14 @@ class LBOModel:
             # 基本信息
             company_name = info.get("longName", info.get("shortName", symbol))
             current_price = info.get("currentPrice", 0)
+            normalized_fields = YfinanceDataSource._build_normalized_fields(stock, info)
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=info,
+                latest_price=current_price,
+                as_of=None,
+                normalized_fields=normalized_fields,
+            )
 
             # 获取财务数据
             revenue = info.get("totalRevenue", 0) or 0
@@ -178,6 +188,7 @@ class LBOModel:
                 model_type="scenario",
                 derived_from_assumptions=True,
                 assumptions_source="entry_exit_multiples_leverage_and_margin_assumptions",
+                fundamental_context=fundamental_context,
             )
 
             return result

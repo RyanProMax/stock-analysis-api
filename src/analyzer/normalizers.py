@@ -536,13 +536,27 @@ def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def lbo_contract(result: Dict[str, Any]) -> Dict[str, Any]:
+    fundamental_context = (
+        result.get("fundamental_context", {})
+        if isinstance(result.get("fundamental_context"), dict)
+        else {}
+    )
     payload = InterfacePayload(
         entity={"symbol": result.get("symbol"), "name": result.get("company_name")},
-        facts={"baseline": {"purchase_price": result.get("purchase_price"), "current_price": result.get("current_price")}},
+        facts={
+            "fundamentals": fundamental_context,
+            "baseline": {
+                "purchase_price": result.get("purchase_price"),
+                "current_price": result.get("current_price"),
+            },
+        },
         analysis={"outputs": result},
         meta=InterfaceMeta(
             as_of=None,
-            sources=_normalize_sources(result.get("assumptions_source", "")),
+            sources=_normalize_sources(
+                result.get("assumptions_source", ""),
+                fundamental_context.get("source_chain", []),
+            ),
             data_completeness="partial",
             limitations=["LBO output is scenario modeling based on assumptions"],
             interface_type="model",
@@ -552,13 +566,27 @@ def lbo_contract(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def three_statement_contract(result: Dict[str, Any]) -> Dict[str, Any]:
+    fundamental_context = (
+        result.get("fundamental_context", {})
+        if isinstance(result.get("fundamental_context"), dict)
+        else {}
+    )
     payload = InterfacePayload(
         entity={"symbol": result.get("symbol"), "name": result.get("company_name")},
-        facts={"baseline": {"historical_source": result.get("historical_source"), "as_of": result.get("as_of")}},
+        facts={
+            "fundamentals": fundamental_context,
+            "baseline": {
+                "historical_source": result.get("historical_source"),
+                "as_of": result.get("as_of"),
+            },
+        },
         analysis={"outputs": result},
         meta=InterfaceMeta(
             as_of=result.get("as_of"),
-            sources=_normalize_sources(result.get("historical_source", "")),
+            sources=_normalize_sources(
+                result.get("historical_source", ""),
+                fundamental_context.get("source_chain", []),
+            ),
             data_completeness="partial",
             limitations=result.get("limitations", []),
             interface_type="model",

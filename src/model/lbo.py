@@ -127,6 +127,7 @@ class LBOResult:
     model_type: str = "scenario"
     derived_from_assumptions: bool = True
     assumptions_source: str = "user_parameters_and_heuristics"
+    fundamental_context: Dict[str, Any] = field(default_factory=dict)
 
     # 错误信息
     error: Optional[str] = None
@@ -188,6 +189,7 @@ class LBOResult:
             "model_type": self.model_type,
             "derived_from_assumptions": self.derived_from_assumptions,
             "assumptions_source": self.assumptions_source,
+            "fundamental_context": self.fundamental_context,
             "error": self.error,
         }
 
@@ -223,6 +225,7 @@ class ThreeStatementResult:
     historical_source: str = ""
     as_of: Optional[str] = None
     limitations: List[str] = field(default_factory=list)
+    fundamental_context: Dict[str, Any] = field(default_factory=dict)
 
     # 错误信息
     error: Optional[str] = None
@@ -241,5 +244,6 @@ class ThreeStatementResult:
             "historical_source": self.historical_source,
             "as_of": self.as_of,
             "limitations": self.limitations,
+            "fundamental_context": self.fundamental_context,
             "error": self.error,
         }

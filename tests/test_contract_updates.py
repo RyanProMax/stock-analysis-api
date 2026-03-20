@@ -7,6 +7,7 @@ from src.analyzer.normalizers import (
     competitive_contract,
     dcf_contract,
     earnings_contract,
+    lbo_contract,
     stock_analysis_contract,
     stock_record,
     three_statement_contract,
@@ -212,6 +213,22 @@ class TestHTTPOnlyStructuredContracts:
                 "historical_source": "yfinance financial statements",
                 "as_of": "2026-01-31",
                 "limitations": [],
+                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
             }
         )
         assert payload["meta"]["interface_type"] == "model"
+        assert payload["facts"]["fundamentals"]["market"] == "us"
+
+    def test_lbo_contract_includes_shared_fundamental_context(self):
+        payload = lbo_contract(
+            {
+                "symbol": "NVDA",
+                "company_name": "NVIDIA",
+                "purchase_price": 1000,
+                "current_price": 100,
+                "assumptions_source": "entry_exit_multiples_leverage_and_margin_assumptions",
+                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
+            }
+        )
+        assert payload["facts"]["fundamentals"]["market"] == "us"
+        assert "yfinance.info" in payload["meta"]["sources"]
