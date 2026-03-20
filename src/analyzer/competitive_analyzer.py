@@ -22,6 +22,7 @@ class CompetitiveAnalysisResult:
         self,
         symbol: str,
         company_name: str = "",
+        target_metrics: Optional[Dict[str, Any]] = None,
         market_context: Optional[Dict[str, Any]] = None,
         target_profile: Optional[Dict[str, Any]] = None,
         competitors: Optional[List[Dict[str, Any]]] = None,
@@ -34,6 +35,7 @@ class CompetitiveAnalysisResult:
     ):
         self.symbol = symbol
         self.company_name = company_name
+        self.target_metrics = target_metrics or {}
         self.market_context = market_context or {}
         self.target_profile = target_profile or {}
         self.competitors = competitors or []
@@ -48,6 +50,7 @@ class CompetitiveAnalysisResult:
         return {
             "symbol": self.symbol,
             "company_name": self.company_name,
+            "target_metrics": self.target_metrics,
             "market_context": self.market_context,
             "target_profile": self.target_profile,
             "competitors": self.competitors,
@@ -125,6 +128,7 @@ class CompetitiveAnalyzer:
             return CompetitiveAnalysisResult(
                 symbol=symbol,
                 company_name=company_name,
+                target_metrics=target_info,
                 market_context=self._analyze_market_context(target_info, industry),
                 target_profile=self._format_target_profile(target_info),
                 competitors=competitor_profiles,

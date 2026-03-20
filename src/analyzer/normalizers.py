@@ -236,6 +236,7 @@ def normalized_snapshot_field(
 
 def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     as_of = None
+    target_metrics = result.get("target_metrics", {}) if isinstance(result.get("target_metrics"), dict) else {}
     peers = []
     for item in result.get("comparative", {}).get("comparison_table", []):
         peers.append(
@@ -247,10 +248,168 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
                 "revenue_yoy": make_field("revenue_yoy", (item.get("growth", 0) / 100.0), item.get("growth"), "ratio", "ttm", "reported", "yfinance.info", as_of),
             }
         )
+    company_profile = result.get("target_profile", {})
+    if target_metrics:
+        company_profile = {
+            "symbol": result.get("symbol"),
+            "name": result.get("company_name"),
+            "sector": target_metrics.get("sector"),
+            "industry": target_metrics.get("industry"),
+            "overview": {
+                "current_price": make_field(
+                    "current_price",
+                    target_metrics.get("currentPrice"),
+                    target_metrics.get("currentPrice"),
+                    "currency",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "total_mv": make_field(
+                    "total_mv",
+                    target_metrics.get("marketCap"),
+                    target_metrics.get("marketCap"),
+                    "currency",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "revenue": make_field(
+                    "revenue",
+                    target_metrics.get("revenue"),
+                    target_metrics.get("revenue"),
+                    "currency",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "revenue_yoy": make_field(
+                    "revenue_yoy",
+                    target_metrics.get("revenueGrowth"),
+                    target_metrics.get("revenueGrowth"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+            },
+            "financials": {
+                "gross_margin": make_field(
+                    "gross_margin",
+                    target_metrics.get("grossMargins"),
+                    target_metrics.get("grossMargins"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "ebitda_margin": make_field(
+                    "ebitda_margin",
+                    target_metrics.get("ebitdaMargins"),
+                    target_metrics.get("ebitdaMargins"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "operating_margin": make_field(
+                    "operating_margin",
+                    target_metrics.get("operatingMargins"),
+                    target_metrics.get("operatingMargins"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "net_margin": make_field(
+                    "net_margin",
+                    target_metrics.get("profitMargins"),
+                    target_metrics.get("profitMargins"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+            },
+            "valuation": {
+                "pe_ratio": make_field(
+                    "pe_ratio",
+                    target_metrics.get("peRatio"),
+                    target_metrics.get("peRatio"),
+                    "number",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "forward_pe": make_field(
+                    "forward_pe",
+                    target_metrics.get("forwardPE"),
+                    target_metrics.get("forwardPE"),
+                    "number",
+                    "forward",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "peg_ratio": make_field(
+                    "peg_ratio",
+                    target_metrics.get("pegRatio"),
+                    target_metrics.get("pegRatio"),
+                    "number",
+                    "forward",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "pb_ratio": make_field(
+                    "pb_ratio",
+                    target_metrics.get("priceToBook"),
+                    target_metrics.get("priceToBook"),
+                    "number",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "price_to_sales": make_field(
+                    "price_to_sales",
+                    target_metrics.get("priceToSales"),
+                    target_metrics.get("priceToSales"),
+                    "number",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+            },
+            "analyst_consensus": {
+                "rating": target_metrics.get("recommendationKey"),
+                "target_mean_price": make_field(
+                    "target_mean_price",
+                    target_metrics.get("targetMeanPrice"),
+                    target_metrics.get("targetMeanPrice"),
+                    "currency",
+                    "forward",
+                    "consensus",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "analyst_count": target_metrics.get("numberOfAnalystOpinions"),
+            },
+        }
     payload = InterfacePayload(
         entity={"symbol": result.get("symbol"), "name": result.get("company_name")},
         facts={
-            "company_profile": result.get("target_profile", {}),
+            "company_profile": company_profile,
             "peer_set": peers,
         },
         analysis={

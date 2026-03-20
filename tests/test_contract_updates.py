@@ -151,6 +151,26 @@ class TestHTTPOnlyStructuredContracts:
             {
                 "symbol": "NVDA",
                 "company_name": "NVIDIA",
+                "target_metrics": {
+                    "sector": "Technology",
+                    "industry": "Semiconductors",
+                    "currentPrice": 100.0,
+                    "marketCap": 1_000_000_000_000,
+                    "revenue": 200_000_000_000,
+                    "revenueGrowth": 0.2,
+                    "grossMargins": 0.7,
+                    "ebitdaMargins": 0.5,
+                    "operatingMargins": 0.4,
+                    "profitMargins": 0.3,
+                    "peRatio": 30.0,
+                    "forwardPE": 20.0,
+                    "pegRatio": 1.5,
+                    "priceToBook": 10.0,
+                    "priceToSales": 5.0,
+                    "recommendationKey": "buy",
+                    "targetMeanPrice": 120.0,
+                    "numberOfAnalystOpinions": 10,
+                },
                 "target_profile": {},
                 "comparative": {
                     "comparison_table": [
@@ -168,6 +188,11 @@ class TestHTTPOnlyStructuredContracts:
         )
 
         peer = payload["facts"]["peer_set"][0]
+        profile = payload["facts"]["company_profile"]
+        assert profile["overview"]["total_mv"]["field"] == "total_mv"
+        assert profile["overview"]["revenue_yoy"]["field"] == "revenue_yoy"
+        assert profile["valuation"]["pb_ratio"]["field"] == "pb_ratio"
+        assert profile["analyst_consensus"]["target_mean_price"]["field"] == "target_mean_price"
         assert "total_mv" in peer
         assert "revenue_yoy" in peer
         assert "market_cap" not in peer
