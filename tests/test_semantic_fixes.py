@@ -315,7 +315,9 @@ class TestSourceFieldNormalizationFixes:
         assert valuation_data["total_mv"] == 1000
         assert valuation_data["circ_mv"] is None
         assert "market_cap" not in valuation_data
-        assert valuation_data["valuation_extensions"]["enterprise_value"] == 1100
+        assert valuation_data["extensions"]["enterprise_value"] == 1100
+        assert context["growth"]["data"]["summary"] == "revenue_yoy=10.00%, net_profit_yoy=20.00%"
+        assert context["earnings"]["source_chain"][1]["provider"] == "yfinance.dividends"
         institution_data = context["institution"]["data"]
         assert institution_data["insider_holding_ratio"] == 0.01
         assert institution_data["institution_holding_ratio"] == 0.65

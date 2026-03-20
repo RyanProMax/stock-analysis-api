@@ -9,6 +9,15 @@ def _format_ratio_summary(value: Optional[float]) -> Optional[str]:
     return f"{value * 100:.2f}%"
 
 
+def _build_growth_summary(revenue_yoy: Optional[float], net_profit_yoy: Optional[float]) -> str:
+    parts = []
+    if revenue_yoy is not None:
+        parts.append(f"revenue_yoy={_format_ratio_summary(revenue_yoy)}")
+    if net_profit_yoy is not None:
+        parts.append(f"net_profit_yoy={_format_ratio_summary(net_profit_yoy)}")
+    return ", ".join(parts)
+
+
 def _market_tag(symbol: str) -> str:
     text = str(symbol or "").strip().upper()
     return "us" if any(ch.isalpha() for ch in text) else "cn"
@@ -91,13 +100,24 @@ def build_fundamental_context(
     normalized_fields = raw_data.get("normalized_fields", {}) if isinstance(raw_data.get("normalized_fields"), dict) else {}
     info = raw_data.get("info", {}) if isinstance(raw_data.get("info"), dict) else {}
 
-    valuation_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
     valuation_payload = {}
     growth_payload = {}
     earnings_payload = {}
     institution_payload = {}
+    valuation_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
+    growth_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
+    earnings_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
+    institution_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
 
     if market == "us":
+        dividend_payload = normalized_fields.get("dividend_metrics", {})
+        earnings_source = [
+            _source_item("yfinance.info", "ok"),
+            _source_item(
+                "yfinance.dividends" if dividend_payload else "yfinance.dividends",
+                "ok" if dividend_payload else "partial",
+            ),
+        ]
         valuation_payload = {
             "price": latest_price,
             "pe_ratio": info.get("trailingPE"),
@@ -105,7 +125,7 @@ def build_fundamental_context(
             "pb_ratio": info.get("priceToBook"),
             "total_mv": info.get("marketCap"),
             "circ_mv": None,
-            "valuation_extensions": {
+            "extensions": {
                 "enterprise_value": info.get("enterpriseValue"),
                 "price_to_sales": info.get("priceToSalesTrailing12Months"),
             },
@@ -115,9 +135,8 @@ def build_fundamental_context(
             "net_profit_yoy": info.get("earningsGrowth"),
             "roe": info.get("returnOnEquity"),
             "gross_margin": info.get("grossMargins"),
-            "summary": "",
+            "summary": _build_growth_summary(info.get("revenueGrowth"), info.get("earningsGrowth")),
         }
-        dividend_payload = normalized_fields.get("dividend_metrics", {})
         insider_ratio = (
             normalized_fields.get("held_percent_insiders", {}).get("value")
             if isinstance(normalized_fields.get("held_percent_insiders"), dict)
@@ -174,6 +193,9 @@ def build_fundamental_context(
             ),
         }
     else:
+        growth_source = [_source_item("tushare.income", "ok")]
+        earnings_source = [_source_item("tushare.income", "ok")]
+        institution_source = [_source_item("financial_provider", "partial")]
         valuation_payload = {
             "pe_ratio": financial_data.get("pe_ratio"),
             "pb_ratio": financial_data.get("pb_ratio"),
@@ -183,7 +205,7 @@ def build_fundamental_context(
             "revenue_yoy": financial_data.get("revenue_growth"),
             "roe": financial_data.get("roe"),
             "debt_to_assets": financial_data.get("debt_ratio"),
-            "summary": "",
+            "summary": _build_growth_summary(financial_data.get("revenue_growth"), None),
         }
         income_meta = raw_data.get("income_meta", {}) if isinstance(raw_data.get("income_meta"), dict) else {}
         institution_payload = {}
@@ -219,19 +241,19 @@ def build_fundamental_context(
         "growth": build_fundamental_block(
             infer_block_status(growth_payload, "partial"),
             growth_payload,
-            valuation_source,
+            growth_source,
             [],
         ),
         "earnings": build_fundamental_block(
             infer_block_status(earnings_payload, "partial"),
             earnings_payload,
-            valuation_source,
+            earnings_source,
             [],
         ),
         "institution": build_fundamental_block(
             infer_block_status(institution_payload, "partial"),
             institution_payload,
-            valuation_source,
+            institution_source,
             [],
         ),
         "capital_flow": build_fundamental_block("not_supported", {}, unsupported_chain, ["not implemented"]),
