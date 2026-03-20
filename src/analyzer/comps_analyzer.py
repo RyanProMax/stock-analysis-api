@@ -9,6 +9,8 @@ import yfinance as yf
 import numpy as np
 from typing import List, Dict, Optional
 
+from ..data_provider.fundamental_context import build_us_fundamental_context_from_info
+from ..data_provider.sources.yfinance import YfinanceDataSource
 from ..model import (
     CompsResult,
     CompCompany,
@@ -253,6 +255,19 @@ class CompsAnalyzer:
 
             # 生成建议
             recommendation = self._generate_recommendation(target, implied)
+            target_stock = yf.Ticker(symbol)
+            target_info = target_stock.info or {}
+            target_price = target_info.get("currentPrice") or target_info.get("regularMarketPrice")
+            target_normalized_fields = YfinanceDataSource._build_normalized_fields(
+                target_stock, target_info
+            )
+            fundamental_context = build_us_fundamental_context_from_info(
+                symbol=symbol,
+                info=target_info,
+                latest_price=target_price,
+                as_of=None,
+                normalized_fields=target_normalized_fields,
+            )
 
             return CompsResult(
                 target_symbol=symbol,
@@ -281,6 +296,7 @@ class CompsAnalyzer:
                     "Peer universe may omit relevant companies or include stale tickers",
                     "Recommendation is based on implied valuation direction, not full analyst-style judgment",
                 ],
+                fundamental_context=fundamental_context,
             )
 
         except Exception as e:

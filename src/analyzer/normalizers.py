@@ -448,9 +448,15 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
 
 def dcf_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     as_of = result.get("as_of")
+    fundamental_context = (
+        result.get("fundamental_context", {})
+        if isinstance(result.get("fundamental_context"), dict)
+        else {}
+    )
     payload = InterfacePayload(
         entity={"symbol": result.get("symbol"), "name": result.get("company_name"), "currency": result.get("currency")},
         facts={
+            "fundamentals": fundamental_context,
             "inputs": {
                 "current_price": make_field("current_price", result.get("current_price"), result.get("current_price"), "currency", "spot", "reported", "yfinance.info", as_of),
                 "wacc": make_field("wacc", result.get("wacc") / 100.0 if result.get("wacc") is not None else None, result.get("wacc"), "ratio", "forward", "derived", "dcf_model", as_of),
@@ -474,7 +480,11 @@ def dcf_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=_normalize_sources(result.get("fcf_source", ""), result.get("assumptions_source", "")),
+            sources=_normalize_sources(
+                result.get("fcf_source", ""),
+                result.get("assumptions_source", ""),
+                fundamental_context.get("source_chain", []),
+            ),
             data_completeness=result.get("data_completeness", "partial"),
             limitations=["DCF output is a model estimate, not a reported market fact"],
             interface_type="model",
@@ -484,9 +494,15 @@ def dcf_contract(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
+    fundamental_context = (
+        result.get("fundamental_context", {})
+        if isinstance(result.get("fundamental_context"), dict)
+        else {}
+    )
     payload = InterfacePayload(
         entity={"symbol": result.get("target_symbol"), "name": result.get("target_name"), "sector": result.get("sector"), "industry": result.get("industry")},
         facts={
+            "fundamentals": fundamental_context,
             "target": {
                 "symbol": result.get("target_symbol"),
                 "name": result.get("target_name"),
@@ -505,7 +521,7 @@ def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=None,
-            sources=_normalize_sources("yfinance.info"),
+            sources=_normalize_sources("yfinance.info", fundamental_context.get("source_chain", [])),
             data_completeness="partial",
             limitations=result.get("peer_selection_limitations", []),
             interface_type="mixed",
