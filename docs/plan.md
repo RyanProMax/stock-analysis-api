@@ -1,53 +1,50 @@
 # 当前任务计划
 
-更新时间：2026-03-20
+更新时间：2026-03-22
 
 ## 当前目标
 
-- 继续把当前 HTTP-only 服务向 `daily_stock_analysis` 的工程化数据上下文设计收敛
-- 继续把分析输出向 `financial-services-plugins` 的 workflow 化方法收敛
-- 在保持 `facts / analysis` 分层的前提下，补强 compact snapshot、workflow contract、evidence 和 quality check
+- 将 `harness` 的 AI Friendly 工程改造持续收敛到稳定文档结构
+- 保持当前任务统一收敛到 `docs/plan.md`
+- 保持架构约束统一收敛到 `docs/architecture.md`
+- 保持未完成需求和整改项统一收敛到 `docs/specs/`
 
 ## 最近完成项
 
-- 移除 MCP 能力，项目收敛为纯 HTTP 服务
-- 建立统一 contract 层，复杂接口统一返回 `entity / facts / analysis / meta`
-- 修复 `earnings` 的季度期别识别与季度事实字段来源
-- 修复 `stock/analyze` 股息率归一化与缓存版本问题
-- 建立并扩展共享 `fundamental_context`
-- 让 `stock/analyze`、`earnings`、`competitive`、`dcf`、`comps`、`lbo`、`three-statement` 都围绕共享事实上下文输出
-- 将 `competitive.company_profile` 与 `comps.target.company_profile` 收敛到同一套 builder
-- 整理 `docs/`，保留在线审计、字段规范审计和参考仓库对照文档
-- 收窄 `README.md`，去除工程进度表述，仅保留架构设计、能力模块和使用说明
-- 进一步收窄 `README.md`，移除 `docs/` 和迭代计划相关暴露信息
+- 完成 `docs` 三层结构重组：
+  - `docs/plan.md` 承载任务和进展
+  - `docs/architecture.md` 承载架构约束
+  - `docs/specs/` 承载未完成规格与整改项
+- 已删除重复职责的旧文档：
+  - `docs/architecture-benchmark-notes.md`
+  - `docs/data-source-field-spec-audit.md`
+  - `docs/http-api-online-audit.md`
+- 已将旧文档中的有效内容迁移为新的权威文档结构
+- 明确 `harness` 在本项目中指 AI Friendly 工程改造，而不是独立目录
 
 ## 当前状态
 
-- HTTP 服务为唯一对外协议
-- 主链路数据结构已基本对齐 `daily_stock_analysis` 的共享 context 设计
-- `earnings` 已初步引入 `financial-services-plugins` 风格的 research strategy 结构
-- 当前仍缺：
-  - compact/detail snapshot 层
-  - 更完整的 workflow contract
-  - evidence / methodology / quality checks
-  - 更细的 source-chain / fallback / provenance 测试
+- HTTP 服务仍是唯一对外协议
+- `facts / analysis / meta` 分层仍是当前输出 contract 基线
+- `docs` 结构重组已经完成
+- 当前保留的 `docs/specs/` 文件都应代表尚未完成的执行规格
+- 当前剩余工作不再是文档迁移，而是按规格继续做 AI Friendly 工程整改
 
 ## 下一步计划
 
 ### P0
 
-- 为共享 `fundamental_context` 增加 compact/detail snapshot 层
-- 为复杂接口补 `methodology / evidence / limitations`
-- 增加 source chain、fallback、provenance 的语义测试
+- 继续清理 `docs/specs/`，删除已完成的阶段性规格
+- 先推进 `data-source-field-governance` 中的 P0 项
+- 先推进 `http-api-accuracy` 中的 P0 项
 
 ### P1
 
-- 为 `competitive`、`dcf`、`three-statement`、`lbo` 补 workflow 文档与结构化 schema
-- 增强 cache key、budget bucket 和降级策略
-- 引入 evidence refs、quality checks、assumption delta
+- 按 `docs/specs/` 的整改项继续推进 compact/detail snapshot
+- 增加 source chain、fallback、provenance 的语义测试
+- 为 `competitive`、`dcf`、`three-statement`、`lbo` 补 workflow schema 与 evidence 约束
 
 ## 已知风险与阻塞
 
-- `docs/` 默认被 `.gitignore` 忽略，新增文档时需要显式跟踪
-- 本地 live 验证依赖服务重启到最新代码，后台 `nohup uv run start` 偶发未成功挂起，需要必要时前台持有进程
 - `comps` 仍存在跨市场 peer 单位/币种异常问题，属于后续准确性修复重点
+- 若后续把“迁移说明”或“已完成审计快照”继续留在 `docs/specs/`，文档会再次膨胀和漂移
