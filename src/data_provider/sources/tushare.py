@@ -127,7 +127,7 @@ class TushareDataSource(BaseStockDataSource):
             包含日线数据的 DataFrame，失败返回 None
         """
         instance = cls()
-        return instance.get_daily_data(symbol)
+        return BaseStockDataSource.get_daily_data(instance, symbol)
 
     @classmethod
     def get_cn_financial_data(cls, symbol: str) -> tuple[Optional[dict], dict]:
