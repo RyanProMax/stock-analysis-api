@@ -52,6 +52,48 @@ class FakeSource:
 
 
 class TestMarketDataStorage:
+    def test_initialize_drops_legacy_symbols_and_daily_bars_tables(self, tmp_path):
+        db_path = tmp_path / "market.sqlite"
+        storage = MarketDataStorage(str(db_path))
+
+        with storage.connect() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS symbols (
+                    symbol TEXT PRIMARY KEY,
+                    name TEXT
+                );
+                CREATE TABLE IF NOT EXISTS daily_bars (
+                    symbol TEXT NOT NULL,
+                    trade_date TEXT NOT NULL,
+                    close REAL,
+                    PRIMARY KEY (symbol, trade_date)
+                );
+                CREATE INDEX IF NOT EXISTS idx_daily_bars_symbol_date
+                ON daily_bars(symbol, trade_date DESC);
+                """
+            )
+
+        storage.initialize()
+
+        with storage.connect() as conn:
+            names = {
+                row["name"]
+                for row in conn.execute(
+                    "select name from sqlite_master where type = 'table'"
+                ).fetchall()
+            }
+            index_names = {
+                row["name"]
+                for row in conn.execute(
+                    "select name from sqlite_master where type = 'index'"
+                ).fetchall()
+            }
+
+        assert "symbols" not in names
+        assert "daily_bars" not in names
+        assert "idx_daily_bars_symbol_date" not in index_names
+
     def test_upsert_and_load_cn_daily_bars_with_extra_json(self, tmp_path):
         storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
         storage.upsert_symbols(
