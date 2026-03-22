@@ -110,6 +110,10 @@ class MarketDataStorage:
         with self.connect() as conn:
             conn.executescript(
                 """
+                DROP INDEX IF EXISTS idx_daily_bars_symbol_date;
+                DROP TABLE IF EXISTS daily_bars;
+                DROP TABLE IF EXISTS symbols;
+
                 CREATE TABLE IF NOT EXISTS a_share_symbols (
                     symbol TEXT PRIMARY KEY,
                     ts_code TEXT,
