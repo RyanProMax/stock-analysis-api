@@ -98,6 +98,12 @@ class YfinanceDataSource(BaseStockDataSource):
             info = ticker.info
             if info and isinstance(info, dict):
                 raw_data["info"] = info
+                calendar = cls._extract_calendar_payload(ticker)
+                if calendar:
+                    raw_data["calendar"] = calendar
+                earnings_dates = cls._extract_earnings_dates_payload(ticker)
+                if earnings_dates:
+                    raw_data["earnings_dates"] = earnings_dates
                 normalized_fields = cls._build_normalized_fields(ticker, info)
                 if normalized_fields:
                     raw_data["normalized_fields"] = normalized_fields
@@ -107,6 +113,54 @@ class YfinanceDataSource(BaseStockDataSource):
             print(f"⚠️ yfinance 获取美股财务数据失败 [{symbol}]: {e}")
 
         return financial_data if financial_data else None, raw_data
+
+    @classmethod
+    def _extract_calendar_payload(cls, ticker: Any) -> Optional[Dict[str, Any]]:
+        try:
+            calendar = ticker.calendar
+        except Exception:
+            return None
+
+        if calendar is None:
+            return None
+        if isinstance(calendar, dict):
+            return dict(calendar)
+        if isinstance(calendar, pd.DataFrame):
+            if calendar.empty:
+                return None
+            if len(calendar.index) == 1:
+                return calendar.iloc[0].to_dict()
+            return {
+                str(index): row.dropna().to_dict()
+                for index, row in calendar.iterrows()
+                if hasattr(row, "dropna")
+            }
+        if hasattr(calendar, "to_dict"):
+            try:
+                payload = calendar.to_dict()
+                return payload if isinstance(payload, dict) else None
+            except Exception:
+                return None
+        return None
+
+    @classmethod
+    def _extract_earnings_dates_payload(cls, ticker: Any) -> Optional[List[str]]:
+        try:
+            earnings_dates = ticker.earnings_dates
+        except Exception:
+            return None
+
+        if earnings_dates is None or getattr(earnings_dates, "empty", False):
+            return None
+        if isinstance(earnings_dates, pd.DataFrame):
+            values = []
+            for idx in earnings_dates.index.tolist():
+                try:
+                    values.append(pd.Timestamp(idx).isoformat())
+                except Exception:
+                    continue
+            return values or None
+        return None
 
     @classmethod
     def _build_normalized_fields(cls, ticker: Any, info: Dict[str, Any]) -> Dict[str, Any]:

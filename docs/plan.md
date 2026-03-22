@@ -20,6 +20,8 @@
 - 明确 `quote.mode` 与 `meta.degradation` 语义，区分 realtime / daily_fallback / unavailable
 - 将美股日线降级统一标记为 `partial`，避免将 fallback 结果误判为 realtime `ok`
 - 补充 `source_chain`、降级信息和 watch contract 语义测试
+- 扩展美股 `next_earnings_date` 提取路径，支持 `info`、`calendar` 和 `earnings_dates` 回填
+- 补充财报日期提取与 `earnings_watch` 回填单测
 
 ## 当前状态
 
@@ -39,7 +41,7 @@
 
 ### P0
 
-- 增强美股 next earnings date 和 quote 降级质量
+- 继续增强美股 next earnings date 和 quote 降级质量
 - 继续补充 source chain / partial / failure 语义测试
 - 细化 alert 阈值和 evidence 说明，减少误报
 
