@@ -205,6 +205,13 @@ class TestCompetitiveSemanticFixes:
 
 
 class TestSourceFieldNormalizationFixes:
+    def test_tushare_cn_ts_code_maps_bse_symbols_to_bj_suffix(self):
+        assert TushareDataSource._build_cn_ts_code("920000") == "920000.BJ"
+        assert TushareDataSource._build_cn_ts_code("430001") == "430001.BJ"
+        assert TushareDataSource._build_cn_ts_code("600519") == "600519.SH"
+        assert TushareDataSource._build_cn_ts_code("000001") == "000001.SZ"
+        assert TushareDataSource._infer_exchange_from_ts_code("920000.BJ") == "BSE"
+
     def test_yfinance_normalized_fields_use_canonical_names(self):
         class TickerStub:
             dividends = pd.Series(
