@@ -354,6 +354,28 @@ class TushareDataSource(BaseStockDataSource):
         ]
         return daily_basic_df[keep_columns].copy()
 
+    @classmethod
+    def fetch_cn_suspend_dates(
+        cls,
+        symbol: str,
+        *,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> set[str]:
+        pro = cls.get_pro()
+        if pro is None:
+            return set()
+
+        ts_symbol = cls._build_cn_ts_code(symbol)
+        suspend_df = cls._safe_query_dataframe(
+            pro,
+            "suspend_d",
+            ts_code=ts_symbol,
+            start_date=cls._format_tushare_date(start_date),
+            end_date=cls._format_tushare_date(end_date),
+        )
+        return cls._extract_suspend_dates(suspend_df)
+
     @staticmethod
     def _safe_query_dataframe(pro: Any, method_name: str, **kwargs: Any) -> Optional[pd.DataFrame]:
         try:

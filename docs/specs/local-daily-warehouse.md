@@ -21,6 +21,8 @@
   - `exchange`
   - `cnspell` (`cn_symbols`)
   - `list_date`
+  - `daily_start_date`
+  - `daily_end_date`
   - `updated_at`
   - `extra`
 - `cn_daily` / `us_daily`
@@ -98,6 +100,9 @@
 - SQLite 只保存数据源返回的必要信息与事实型扩展字段，不保存分析报告缓存，也不保存 watch baseline
 - `cn_symbols` 只保存当前上市 A 股最新快照；刷新列表时按市场快照覆盖写入
 - `cn_symbols` 当前 listed 口径固定为 `Tushare stock_basic(exchange='', list_status='L')`
+- `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚 `trade_date`
+- 这两个字段是本地覆盖摘要，不是上市区间，不是交易所日历，也不是 source truth
+- 写入 `cn_daily` 后必须回写对应 symbol 的覆盖摘要；仅做 `daily_basic` 回填时不改变覆盖摘要
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - API 查询历史日线时，应优先读 SQLite 仓；若最近一条数据超过 7 个自然日，则回退外部源并回写仓库
 - `/watch/poll` 与 `/stock/analyze` 不改对外 contract，只改内部历史日线路径
@@ -118,18 +123,22 @@
   - symbol 缺口补齐
   - stale 日线补齐
   - 历史窗口补齐
+- `sync-market-data` 必须先用 `cn_symbols` 覆盖摘要做粗筛，再对候选 symbol 做 `cn_daily` 精确校验
 - stale 判定采用 freshness grace，不要求每个 symbol 都精确等于市场最新交易日；同一状态重复执行应进入 `skipped`
+- 若窗口内的无新增日线可被 `suspend_d` 解释，则该 symbol 不计入普通 stale，`is_data_current` 允许保持为真
 - A 股主字段承接规则固定为：
   - `stock_basic` -> `cn_symbols` 主列 + `extra`
   - `daily` -> OHLCV / 涨跌幅主列
   - `daily_basic` -> 标准化日级市场事实主列
   - `adj_factor` -> `adj_factor`
   - `stk_limit` -> `up_limit` / `down_limit`
-  - `suspend_d` -> `is_suspended`
+  - `suspend_d` -> 仅在同步阶段辅助标注已有 `cn_daily` row 的 `is_suspended`
+- `cn_daily.is_suspended` 只表示“这条已有日线 row 对应到停复牌事件”
+- `cn_daily` 不为停牌日期生成 synthetic row；无 row 不等于非停牌
+- `suspend_d` 当前不单独落表
 - `extra` 仅保存非标准或暂不标准化的事实字段，如 `vwap`
 
-## 当前观察项
+## 已知限制
 
-- 现网已完成 `sync_runs` 状态快照升级、`cn_daily` 的 `daily_basic` 主列落地，以及旧行回填
-- 截至 `2026-03-22`，A 股 listed universe 为 `5000`，`cn_daily` 行数为 `244475`，`total_mv` 缺口为 `0`
-- 当前仍有 `4` 只 source-limited symbol 的最新日线早于 market latest，需要后续评估是否单独建模“停牌 / 无成交 / source latest available”语义
+- 当前不持久化完整停牌区间，因此无法仅靠 `cn_daily` 回答“中间无 row 的日期是否整段停牌”
+- 若后续需要区间级停牌语义，应单独设计停牌持久化表，而不是复用 `is_suspended`
