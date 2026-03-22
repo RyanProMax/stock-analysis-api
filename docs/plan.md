@@ -17,6 +17,9 @@
 - 输出 compact snapshot、delta、alerts 的统一 contract
 - 删除旧 specs，新增唯一规格文档 `docs/specs/watch-polling-api.md`
 - 补齐 watch contract 测试、HTTP route 测试和轮询逻辑单测
+- 明确 `quote.mode` 与 `meta.degradation` 语义，区分 realtime / daily_fallback / unavailable
+- 将美股日线降级统一标记为 `partial`，避免将 fallback 结果误判为 realtime `ok`
+- 补充 `source_chain`、降级信息和 watch contract 语义测试
 
 ## 当前状态
 
@@ -29,13 +32,15 @@
   - delta / alerts
   - symbol 级 baseline cache
   - A 股实时优先、美股降级可用
+  - quote 降级模式显式暴露
+  - US daily fallback 不再伪装为 realtime `ok`
 
 ## 下一步计划
 
 ### P0
 
 - 增强美股 next earnings date 和 quote 降级质量
-- 补充 source chain / partial / failure 语义测试
+- 继续补充 source chain / partial / failure 语义测试
 - 细化 alert 阈值和 evidence 说明，减少误报
 
 ### P1

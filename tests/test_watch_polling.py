@@ -119,3 +119,90 @@ class TestWatchPollingService:
         assert "breakout_up" in codes
         assert "near_day_high" in codes
         assert "earnings_soon" in codes
+
+    def test_build_current_snapshot_marks_us_daily_fallback_partial(self, monkeypatch):
+        service = WatchPollingService()
+
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_stock_info",
+            lambda symbol: {"name": "NVIDIA"},
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_stock_daily",
+            lambda symbol: (None, "NVIDIA", "US_yfinance"),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_realtime_quote",
+            lambda symbol: (None, ""),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_financial_data",
+            lambda symbol: ({}, ""),
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_quote_payload",
+            lambda **kwargs: {
+                "price": 100.0,
+                "change_pct": 0.01,
+                "change_amount": 1.0,
+                "open": 99.0,
+                "high": 101.0,
+                "low": 98.0,
+                "pre_close": 99.0,
+                "volume": 1000.0,
+                "amount": 100000.0,
+                "turnover_rate": None,
+                "amplitude": 0.03,
+                "volume_ratio": 1.1,
+                "source": "US_yfinance",
+                "as_of": "2026-03-22T10:00:00+00:00",
+                "mode": "daily_fallback",
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_technical_payload",
+            lambda **kwargs: {
+                "trend": "盘整",
+                "ma_alignment": "数据不足",
+                "breakout_state": "none",
+                "volume_ratio": 1.1,
+                "volume_ratio_state": "normal",
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_fundamentals_payload",
+            lambda **kwargs: {
+                "pe_ratio": 20.0,
+                "pb_ratio": 5.0,
+                "market_cap": 1000000000.0,
+                "dividend_yield": 0.01,
+                "revenue_ttm": 500000000.0,
+                "source": "yfinance.info",
+                "partial": False,
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_earnings_watch",
+            lambda **kwargs: {
+                "next_earnings_date": None,
+                "earnings_proximity_days": None,
+                "partial": False,
+            },
+        )
+
+        result = service._build_current_snapshot("NVDA")
+
+        assert result["status"] == "partial"
+        assert result["partial"] is True
+        assert result["degradation"]["quote_mode"] == "daily_fallback"
+        assert result["degradation"]["quote_is_realtime"] is False
+        assert result["degradation"]["quote_fallback_used"] is True
+        assert any(
+            source.get("provider") == "US_yfinance" and source.get("mode") == "daily_fallback"
+            for source in result["source_chain"]
+            if isinstance(source, dict)
+        )

@@ -355,6 +355,7 @@ def watch_poll_contract(item: Dict[str, Any]) -> Dict[str, Any]:
             "poll_interval_hint": "5-10m",
             "status": item.get("status"),
             "partial": item.get("partial", False),
+            "degradation": item.get("degradation", {}),
         }
     )
     return data
