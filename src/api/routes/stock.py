@@ -71,21 +71,18 @@ def analyze_stocks(payload: StockAnalysisRequest):
 )
 def get_stock_list(
     market: Optional[str] = None,
-    refresh: bool = False,
     limit: Optional[int] = None,
 ):
     """
-    获取股票列表（按tushare格式返回，按日缓存）
+    获取股票列表（按 tushare 风格字段返回）
 
     Args:
         market: 市场类型，可选值：'A股'、'美股'，如果为 None 则返回所有市场
-        refresh: 是否强制刷新缓存
-
     Returns:
         StandardResponse[StockListResponse]: 股票列表（tushare格式）
     """
     try:
-        stocks = stock_service.get_stock_list(market, refresh)
+        stocks = stock_service.get_stock_list(market)
         if limit is not None and limit >= 0:
             stocks = stocks[:limit]
 
@@ -97,7 +94,7 @@ def get_stock_list(
             data=StockListResponse(
                 stocks=stock_responses,
                 total=len(stock_responses),
-                meta={"source": "stock_list_provider", "status": "available", "as_of": None},
+                meta={"source": "stock_list_sqlite", "status": "available", "as_of": None},
             ),
             err_msg=None,
         )
@@ -116,7 +113,7 @@ def get_stock_list(
 )
 def search_stocks(payload: StockSearchRequest):
     """
-    搜索股票（从缓存列表中搜索，按tushare格式返回）
+    搜索股票（从 SQLite symbol 仓中搜索，按 tushare 风格字段返回）
 
     Args:
         payload: 搜索请求，包含关键词和市场类型
@@ -142,7 +139,7 @@ def search_stocks(payload: StockSearchRequest):
             data=StockListResponse(
                 stocks=stock_responses,
                 total=len(stock_responses),
-                meta={"source": "stock_list_cache", "status": "available", "as_of": None},
+                meta={"source": "stock_list_sqlite", "status": "available", "as_of": None},
             ),
             err_msg=None,
         )

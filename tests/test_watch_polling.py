@@ -65,21 +65,20 @@ class TestWatchPollingService:
     def test_poll_deduplicates_and_preserves_order(self, monkeypatch):
         service = WatchPollingService()
 
-        def fake_poll_symbol(symbol: str, refresh: bool = False):
-            return {"symbol": symbol, "refresh": refresh}
+        def fake_poll_symbol(symbol: str):
+            return {"symbol": symbol}
 
         monkeypatch.setattr(service, "_poll_symbol", fake_poll_symbol)
 
-        items = service.poll([" nvda ", "AAPL", "NVDA", "600519"], refresh=True)
+        items = service.poll([" nvda ", "AAPL", "NVDA", "600519"])
 
         assert [item["symbol"] for item in items] == ["NVDA", "AAPL", "600519"]
-        assert all(item["refresh"] is True for item in items)
 
     def test_initial_poll_marks_delta_initial(self, monkeypatch):
         service = WatchPollingService()
         current = _snapshot()
 
-        monkeypatch.setattr(service, "_build_current_snapshot", lambda symbol, refresh=False: current)
+        monkeypatch.setattr(service, "_build_current_snapshot", lambda symbol: current)
         monkeypatch.setattr(service, "_load_baseline", lambda symbol: None)
         monkeypatch.setattr(service, "_save_baseline", lambda symbol, payload: None)
 
@@ -102,7 +101,7 @@ class TestWatchPollingService:
             trend="多头排列",
         )
 
-        monkeypatch.setattr(service, "_build_current_snapshot", lambda symbol, refresh=False: current)
+        monkeypatch.setattr(service, "_build_current_snapshot", lambda symbol: current)
         monkeypatch.setattr(service, "_load_baseline", lambda symbol: previous)
         monkeypatch.setattr(service, "_save_baseline", lambda symbol, payload: None)
 

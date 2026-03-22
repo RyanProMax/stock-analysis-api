@@ -15,15 +15,14 @@
 请求体：
 
 - `symbols: string[]`
-- `refresh?: boolean = false`
 
 处理规则：
 
 - 统一清洗、去重、保序
 - 支持 A 股和美股同时轮询
-- 服务端按 `symbol` 维护最近一次 snapshot 作为 baseline
+- 服务端按 `symbol` 在进程内内存中维护最近一次 snapshot 作为 baseline
 - 首次无 baseline 时返回 `delta.status = initial`
-- `refresh = true` 仅强制重拉当前数据，不清除 baseline
+- baseline 不落 SQLite，服务重启后重新进入 `initial`
 
 返回结构：
 
@@ -94,7 +93,7 @@
 - 只保留一个公共盯盘接口，不新增 cursor / monitor_id / health / rules 公共接口
 - 盯盘 route 层不复用 `/stock/analyze`、`/earnings`、`/competitive` 的整包输出
 - baseline cache 以 `symbol` 为 key，TTL 为 24 小时
-- A 股历史日线优先使用本地 SQLite canonical 日线仓，实时行情仍优先使用现有实时行情链路
+- A 股历史日线优先使用本地 SQLite canonical 日线仓，缺失时回退外部源并回写；实时行情仍优先使用现有实时行情链路
 - 美股允许降级为 latest available daily snapshot
 - 缺失字段显式返回 `null`，不得伪造实时性
 

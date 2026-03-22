@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.core.market_data_service import DailyMarketDataService
 from src.core.market_data_sync import DailyWarehouseSyncService
+from src.data_provider.stock_list import StockListService
 from src.storage.market_data import MarketDataStorage
 
 
@@ -108,7 +109,7 @@ class TestDailyMarketDataService:
             ],
         )
 
-        df, name, source = service.get_stock_daily("600519", refresh=True)
+        df, name, source = service.get_stock_daily("600519")
         loaded = storage.load_daily_bars("600519")
 
         assert len(df) == 6
@@ -130,7 +131,7 @@ class TestDailyWarehouseSyncService:
 
         monkeypatch.setattr(
             "src.core.market_data_sync.StockListService.get_a_stock_list",
-            lambda refresh=False: [
+            lambda: [
                 {
                     "symbol": "600519",
                     "ts_code": "600519.SH",
@@ -158,3 +159,56 @@ class TestDailyWarehouseSyncService:
         assert row["success_count"] == 1
         assert row["failure_count"] == 0
 
+
+class TestStockListServiceWithSQLite:
+    def test_prefers_sqlite_symbol_store_for_a_shares(self, tmp_path, monkeypatch):
+        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage.upsert_symbols(
+            [
+                {
+                    "symbol": "600519",
+                    "ts_code": "600519.SH",
+                    "name": "贵州茅台",
+                    "market": "主板",
+                    "list_date": "2001-08-27",
+                }
+            ]
+        )
+
+        monkeypatch.setattr("src.data_provider.stock_list.market_data_storage", storage)
+        monkeypatch.setattr(
+            "src.data_provider.stock_list.StockListService._a_stock_sources",
+            [FakeSource("ShouldNotFetch", _sample_daily_df())],
+        )
+
+        stocks = StockListService.get_a_stock_list()
+
+        assert len(stocks) == 1
+        assert stocks[0]["symbol"] == "600519"
+        assert stocks[0]["name"] == "贵州茅台"
+
+    def test_search_cold_starts_and_persists_to_sqlite(self, tmp_path, monkeypatch):
+        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        rows = [
+            {
+                "symbol": "NVDA",
+                "ts_code": "NVDA",
+                "name": "NVIDIA",
+                "market": "美股",
+                "list_date": None,
+            }
+        ]
+
+        monkeypatch.setattr("src.data_provider.stock_list.market_data_storage", storage)
+
+        def fake_get_us_stock_list(use_tushare: bool = True):
+            storage.upsert_symbols(rows)
+            return rows
+
+        monkeypatch.setattr(StockListService, "get_us_stock_list", fake_get_us_stock_list)
+
+        results = StockListService.search_stocks("NVDA", "美股")
+
+        assert len(results) == 1
+        assert results[0]["symbol"] == "NVDA"
+        assert storage.search_symbols("NVDA", market="us")[0]["name"] == "NVIDIA"

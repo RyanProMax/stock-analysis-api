@@ -21,12 +21,11 @@ class DailyMarketDataService:
     def get_stock_daily(
         self,
         symbol: str,
-        refresh: bool = False,
     ) -> Tuple[Optional[pd.DataFrame], str, str]:
         normalized = str(symbol).strip().upper()
         market = "us" if any(ch.isalpha() for ch in normalized) else "cn"
 
-        if market == "cn" and not refresh:
+        if market == "cn":
             local_df, local_name = self._load_cn_from_warehouse(normalized)
             if local_df is not None and not local_df.empty:
                 return local_df, local_name or normalized, "CN_SQLiteDailyWarehouse"
@@ -82,4 +81,3 @@ class DailyMarketDataService:
 
 
 daily_market_data_service = DailyMarketDataService()
-

@@ -32,16 +32,16 @@ class DailyWarehouseSyncService:
             ]
         )
 
-    def sync_a_share_symbols(self, refresh: bool = False) -> int:
-        stocks = StockListService.get_a_stock_list(refresh=refresh)
+    def sync_a_share_symbols(self) -> int:
+        stocks = StockListService.get_a_stock_list()
         return self.warehouse.upsert_symbols(stocks)
 
-    def backfill_a_share_history(self, years: int = 10, refresh_symbols: bool = False) -> dict:
-        stocks = StockListService.get_a_stock_list(refresh=refresh_symbols)
+    def backfill_a_share_history(self, years: int = 10) -> dict:
+        stocks = StockListService.get_a_stock_list()
         return self._sync_a_share(stocks, mode=f"backfill_{years}y", years=years)
 
-    def refresh_recent_a_share_daily(self, days: int = 30, refresh_symbols: bool = False) -> dict:
-        stocks = StockListService.get_a_stock_list(refresh=refresh_symbols)
+    def refresh_recent_a_share_daily(self, days: int = 30) -> dict:
+        stocks = StockListService.get_a_stock_list()
         return self._sync_a_share(stocks, mode=f"refresh_{days}d", days=days)
 
     def _sync_a_share(

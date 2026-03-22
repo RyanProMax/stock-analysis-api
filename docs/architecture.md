@@ -19,14 +19,14 @@ src/
 ├── core/             # 共享服务、工作流和管线
 ├── data_provider/    # 数据源接入、fallback 与字段采集
 ├── model/            # 领域模型与统一 contract
-├── storage/          # 缓存与本地 SQLite 行情仓
+├── storage/          # 本地 SQLite 行情仓
 └── utils/            # 工具
 ```
 
 - `api/` 只负责 HTTP 输入输出，不承载业务规则
 - `core/` 和 `analyzer/` 负责工作流、推导逻辑和分析编排
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护
-- `storage/` 负责文件缓存和单机 SQLite 行情仓，不承载分析规则
+- `storage/` 负责单机 SQLite 行情仓，不承载分析规则
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
 ## 输出 contract 约束
@@ -43,6 +43,7 @@ src/
 - `facts` 优先使用 statement/event 等具备明确期别和来源语义的数据
 - `snapshot` 型字段不得混充季度事实或报表期事实
 - A 股 canonical 日线历史优先沉淀到本地 SQLite 行情仓，作为 watch 与分析接口的首选历史数据来源
+- SQLite 只保存数据源返回的必要持久信息，不保存分析报告缓存，不保存 5-10 分钟级 watch baseline
 - SQLite 行情仓只承载单机、单写多读的 EOD/日线场景，不承载分钟线、tick 或多实例共享写入
 - 所有关键事实字段应逐步补齐 `source_chain`、`as_of`、`period_end_date`、`filing_or_release_date`
 - fallback 需要区分：
@@ -55,8 +56,9 @@ src/
 ## 工作流与质量约束
 
 - 各复杂分析接口应逐步补齐 workflow contract，而不是只定义最终返回字段
-- 盯盘接口优先服务 5-10 分钟轮询场景，服务端内部维护 symbol 级 baseline
+- 盯盘接口优先服务 5-10 分钟轮询场景，服务端内部维护 symbol 级内存 baseline，重启后不恢复
 - 定时同步任务通过独立命令入口执行，HTTP API 不直接承担全市场回填任务
+- 公共 HTTP 接口默认先读 SQLite，缺失时再回退外部源并回写，不暴露强制 `refresh`
 - workflow 至少覆盖：
   - 输入检查
   - 证据要求
