@@ -206,3 +206,41 @@ class TestWatchPollingService:
             for source in result["source_chain"]
             if isinstance(source, dict)
         )
+
+    def test_extract_next_earnings_date_prefers_future_calendar_candidates(self):
+        future_date = "2026-03-28T00:00:00+00:00"
+        payload = {
+            "raw_data": {
+                "info": {
+                    "earningsDate": ["2026-03-18", "2026-03-27"],
+                },
+                "calendar": {
+                    "Earnings Date": [future_date, "2026-03-29T00:00:00+00:00"],
+                },
+                "earnings_dates": [
+                    "2026-03-26T00:00:00+00:00",
+                    "2026-04-01T00:00:00+00:00",
+                ],
+            }
+        }
+
+        result = WatchPollingService._extract_next_earnings_date(payload)
+
+        assert result == "2026-03-26T00:00:00+00:00"
+
+    def test_build_earnings_watch_uses_calendar_backfill(self):
+        service = WatchPollingService()
+        payload = {
+            "raw_data": {
+                "info": {},
+                "calendar": {
+                    "Earnings Date": ["2026-03-30T00:00:00+00:00"],
+                },
+            }
+        }
+
+        result = service._build_earnings_watch(payload)
+
+        assert result["next_earnings_date"] == "2026-03-30T00:00:00+00:00"
+        assert result["earnings_proximity_days"] is not None
+        assert result["partial"] is False

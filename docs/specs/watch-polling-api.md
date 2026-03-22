@@ -62,6 +62,11 @@
   - `quote_fallback_used`
   - `fundamentals_partial`
   - `earnings_partial`
+- `analysis.earnings_watch.next_earnings_date` 的提取顺序应尽量覆盖：
+  - `raw_data.info`
+  - `raw_data.calendar`
+  - `raw_data.earnings_dates`
+- 多个候选财报日期同时存在时，应优先返回未来最近的日期
 
 ## 服务端规则
 

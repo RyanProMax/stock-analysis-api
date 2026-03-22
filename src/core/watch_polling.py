@@ -673,35 +673,67 @@ class WatchPollingService:
             return None
         info = raw_data.get("info", {})
         if not isinstance(info, dict):
-            return None
+            info = {}
 
-        candidates = [
+        candidates: List[Any] = [
             info.get("earningsTimestamp"),
             info.get("earningsTimestampStart"),
+            info.get("earningsTimestampEnd"),
             info.get("earningsDate"),
+            raw_data.get("calendar"),
+            raw_data.get("earnings_dates"),
         ]
 
+        parsed_candidates: List[datetime] = []
         for candidate in candidates:
-            if candidate is None:
-                continue
-            if isinstance(candidate, (int, float)):
-                try:
-                    return datetime.fromtimestamp(float(candidate), tz=timezone.utc).isoformat()
-                except Exception:
+            parsed_candidates.extend(WatchPollingService._parse_earnings_candidates(candidate))
+
+        if not parsed_candidates:
+            return None
+
+        today = datetime.now(timezone.utc).date()
+        future_candidates = sorted(ts for ts in parsed_candidates if ts.date() >= today)
+        if future_candidates:
+            return future_candidates[0].isoformat()
+
+        return sorted(parsed_candidates)[0].isoformat()
+
+    @staticmethod
+    def _parse_earnings_candidates(candidate: Any) -> List[datetime]:
+        parsed: List[datetime] = []
+        if candidate is None:
+            return parsed
+
+        if isinstance(candidate, dict):
+            for key, value in candidate.items():
+                if "earnings" not in str(key).lower():
                     continue
+                parsed.extend(WatchPollingService._parse_earnings_candidates(value))
+            return parsed
+
+        if isinstance(candidate, (list, tuple, set, pd.Index, pd.Series)):
+            for item in candidate:
+                parsed.extend(WatchPollingService._parse_earnings_candidates(item))
+            return parsed
+
+        if isinstance(candidate, (int, float)):
             try:
-                return pd.Timestamp(candidate).tz_localize(timezone.utc).isoformat()
-            except TypeError:
-                try:
-                    ts = pd.Timestamp(candidate)
-                    if ts.tzinfo is None:
-                        ts = ts.tz_localize(timezone.utc)
-                    return ts.isoformat()
-                except Exception:
-                    continue
+                return [datetime.fromtimestamp(float(candidate), tz=timezone.utc)]
             except Exception:
-                continue
-        return None
+                return []
+
+        try:
+            ts = pd.Timestamp(candidate)
+        except Exception:
+            return []
+
+        if pd.isna(ts):
+            return []
+        if ts.tzinfo is None:
+            ts = ts.tz_localize(timezone.utc)
+        else:
+            ts = ts.tz_convert(timezone.utc)
+        return [ts.to_pydatetime()]
 
 
 watch_polling_service = WatchPollingService()
