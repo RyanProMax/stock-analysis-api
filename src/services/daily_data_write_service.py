@@ -87,7 +87,17 @@ class DailyDataWriteService:
             if resolved:
                 self.repository.upsert_symbols([resolved], market=normalized_market)
 
-        state_before = self.repository.summarize_market_sync_state(
+        self.repository.backfill_symbol_daily_coverage(normalized_market)
+        if scope == "all":
+            stocks = self.repository.list_symbols(market=normalized_market)
+        else:
+            symbol_row = self.repository.get_symbol_record(
+                str(symbol or "").strip().upper(),
+                market=normalized_market,
+            )
+            stocks = [symbol_row] if symbol_row else []
+
+        state_before = self._summarize_sync_state(
             normalized_market,
             start_trade_date=target_start_trade_date or effective_start_date,
             target_latest_trade_date=target_latest_trade_date,
@@ -132,7 +142,7 @@ class DailyDataWriteService:
                 total_universe_symbols=len(stocks),
                 progress_callback=progress_callback,
             )
-            state_after = self.repository.summarize_market_sync_state(
+            state_after = self._summarize_sync_state(
                 normalized_market,
                 start_trade_date=target_start_trade_date or effective_start_date,
                 target_latest_trade_date=target_latest_trade_date,
@@ -194,7 +204,7 @@ class DailyDataWriteService:
                 universe_source=universe_source,
                 total_symbols=0,
             )
-            state_after = self.repository.summarize_market_sync_state(
+            state_after = self._summarize_sync_state(
                 normalized_market,
                 start_trade_date=target_start_trade_date or effective_start_date,
                 target_latest_trade_date=target_latest_trade_date,
@@ -314,7 +324,7 @@ class DailyDataWriteService:
                     }
                 )
 
-        state_after = self.repository.summarize_market_sync_state(
+        state_after = self._summarize_sync_state(
             normalized_market,
             start_trade_date=target_start_trade_date or effective_start_date,
             target_latest_trade_date=target_latest_trade_date,
@@ -458,7 +468,6 @@ class DailyDataWriteService:
         if not stocks:
             return []
 
-        date_ranges = self.repository.get_symbol_date_ranges(market)
         latest_trade_cutoff = self._compute_stale_cutoff(target_latest_trade_date)
         incomplete_symbols = set(
             self.repository.list_symbols_missing_standardized_daily_fields(
@@ -467,32 +476,105 @@ class DailyDataWriteService:
             )
         )
 
-        candidates = []
+        candidate_map: dict[str, dict] = {}
+        precise_check_stocks: list[dict] = []
+        summary_stale_rows: list[dict[str, str]] = []
+
         for stock in stocks:
             current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
             if not current_symbol:
                 continue
+            if current_symbol in incomplete_symbols:
+                candidate_map[current_symbol] = stock
+                continue
+
+            daily_start_date = self._normalize_trade_date_text((stock or {}).get("daily_start_date"))
+            daily_end_date = self._normalize_trade_date_text((stock or {}).get("daily_end_date"))
+
+            if (
+                daily_start_date is not None
+                and start_trade_date
+                and daily_start_date > start_trade_date
+            ):
+                candidate_map[current_symbol] = stock
+                continue
+            if (
+                daily_end_date is not None
+                and latest_trade_cutoff
+                and daily_end_date < latest_trade_cutoff
+            ):
+                summary_stale_rows.append(
+                    {"symbol": current_symbol, "latest_trade_date": daily_end_date}
+                )
+                continue
+            precise_check_stocks.append(stock)
+
+        summary_exempt_symbols = self._find_suspension_exempt_symbols(
+            market=market,
+            stale_rows=summary_stale_rows,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        summary_stale_symbols = {row["symbol"] for row in summary_stale_rows}
+        for stock in stocks:
+            current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
+            if (
+                current_symbol
+                and current_symbol in summary_stale_symbols
+                and current_symbol not in summary_exempt_symbols
+            ):
+                candidate_map[current_symbol] = stock
+
+        precise_check_symbols = [
+            str((stock or {}).get("symbol") or "").strip().upper()
+            for stock in precise_check_stocks
+            if str((stock or {}).get("symbol") or "").strip()
+        ]
+        date_ranges = self.repository.get_symbol_date_ranges(market, symbols=precise_check_symbols)
+        exact_stale_rows: list[dict[str, str]] = []
+
+        for stock in precise_check_stocks:
+            current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
+            if not current_symbol or current_symbol in candidate_map:
+                continue
 
             symbol_range = date_ranges.get(current_symbol)
-            needs_sync = symbol_range is None
+            if symbol_range is None:
+                candidate_map[current_symbol] = stock
+                continue
+
             if start_trade_date and (
-                symbol_range is None
-                or symbol_range.get("min_trade_date") is None
+                symbol_range.get("min_trade_date") is None
                 or symbol_range["min_trade_date"] > start_trade_date
             ):
-                needs_sync = True
+                candidate_map[current_symbol] = stock
+                continue
             if latest_trade_cutoff and (
-                symbol_range is None
-                or symbol_range.get("max_trade_date") is None
+                symbol_range.get("max_trade_date") is None
                 or symbol_range["max_trade_date"] < latest_trade_cutoff
             ):
-                needs_sync = True
-            if current_symbol in incomplete_symbols:
-                needs_sync = True
+                exact_stale_rows.append(
+                    {
+                        "symbol": current_symbol,
+                        "latest_trade_date": symbol_range.get("max_trade_date"),
+                    }
+                )
 
-            if needs_sync:
-                candidates.append(stock)
-        return candidates
+        exact_exempt_symbols = self._find_suspension_exempt_symbols(
+            market=market,
+            stale_rows=exact_stale_rows,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        exact_stale_symbols = {row["symbol"] for row in exact_stale_rows}
+        for stock in precise_check_stocks:
+            current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
+            if (
+                current_symbol
+                and current_symbol in exact_stale_symbols
+                and current_symbol not in exact_exempt_symbols
+            ):
+                candidate_map[current_symbol] = stock
+
+        return list(candidate_map.values())
 
     def _backfill_cn_daily_basic_only(
         self,
@@ -600,6 +682,104 @@ class DailyDataWriteService:
             "error_summary_list": error_summary_list,
             "error_details": error_details,
         }
+
+    def _summarize_sync_state(
+        self,
+        market: str,
+        *,
+        start_trade_date: Optional[str],
+        target_latest_trade_date: Optional[str],
+    ) -> dict:
+        state = self.repository.summarize_market_sync_state(
+            market,
+            start_trade_date=start_trade_date,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        if market != "cn" or not target_latest_trade_date:
+            return state
+
+        stale_cutoff = self._compute_stale_cutoff(target_latest_trade_date)
+        if not stale_cutoff:
+            return state
+
+        stale_rows = self.repository.list_stale_symbols(market, stale_cutoff=stale_cutoff)
+        if not stale_rows:
+            return state
+
+        exempt_symbols = self._find_suspension_exempt_symbols(
+            market=market,
+            stale_rows=stale_rows,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        if not exempt_symbols:
+            return state
+
+        adjusted_state = dict(state)
+        adjusted_state["stale_symbol_count"] = sum(
+            1 for row in stale_rows if row["symbol"] not in exempt_symbols
+        )
+        coverage_start_date = adjusted_state.get("coverage_start_date")
+        coverage_end_date = adjusted_state.get("coverage_end_date")
+        coverage_is_current = (
+            target_latest_trade_date is None
+            or coverage_end_date == target_latest_trade_date
+            or adjusted_state["stale_symbol_count"] == 0
+        )
+        has_required_history = True
+        if start_trade_date:
+            has_required_history = (
+                coverage_start_date is not None and coverage_start_date <= start_trade_date
+            )
+        adjusted_state["is_data_current"] = (
+            int(adjusted_state.get("symbol_snapshot_count") or 0) > 0
+            and has_required_history
+            and int(adjusted_state.get("missing_symbol_count") or 0) == 0
+            and int(adjusted_state.get("stale_symbol_count") or 0) == 0
+            and coverage_is_current
+        )
+        return adjusted_state
+
+    def _find_suspension_exempt_symbols(
+        self,
+        *,
+        market: str,
+        stale_rows: list[dict[str, str]],
+        target_latest_trade_date: Optional[str],
+    ) -> set[str]:
+        if market != "cn" or not target_latest_trade_date or not stale_rows:
+            return set()
+
+        exempt_symbols: set[str] = set()
+        for row in stale_rows:
+            current_symbol = str(row.get("symbol") or "").strip().upper()
+            latest_trade_date = self._normalize_trade_date_text(row.get("latest_trade_date"))
+            if not current_symbol or not latest_trade_date:
+                continue
+            try:
+                suspend_start_date = (
+                    pd.Timestamp(latest_trade_date) + pd.Timedelta(days=1)
+                ).strftime("%Y-%m-%d")
+            except Exception:
+                continue
+            if suspend_start_date > target_latest_trade_date:
+                continue
+            suspend_dates = TushareDataSource.fetch_cn_suspend_dates(
+                current_symbol,
+                start_date=suspend_start_date,
+                end_date=target_latest_trade_date,
+            )
+            if suspend_dates:
+                exempt_symbols.add(current_symbol)
+        return exempt_symbols
+
+    @staticmethod
+    def _normalize_trade_date_text(value: Any) -> Optional[str]:
+        if value in (None, ""):
+            return None
+        try:
+            return pd.Timestamp(value).strftime("%Y-%m-%d")
+        except Exception:
+            return None
 
     @staticmethod
     def _should_skip_run(

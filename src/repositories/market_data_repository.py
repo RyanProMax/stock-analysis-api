@@ -32,6 +32,8 @@ class MarketDataRepository:
         "exchange",
         "cnspell",
         "list_date",
+        "daily_start_date",
+        "daily_end_date",
         "updated_at",
         "extra",
     )
@@ -158,6 +160,8 @@ class MarketDataRepository:
                     exchange TEXT,
                     cnspell TEXT,
                     list_date TEXT,
+                    daily_start_date TEXT,
+                    daily_end_date TEXT,
                     updated_at TEXT NOT NULL,
                     extra TEXT
                 );
@@ -172,6 +176,8 @@ class MarketDataRepository:
                     exchange TEXT,
                     cnspell TEXT,
                     list_date TEXT,
+                    daily_start_date TEXT,
+                    daily_end_date TEXT,
                     updated_at TEXT NOT NULL,
                     extra TEXT
                 );
@@ -294,8 +300,24 @@ class MarketDataRepository:
                 );
                 """
             )
-            self._ensure_columns(conn, "cn_symbols", {"cnspell": "TEXT"})
-            self._ensure_columns(conn, "us_symbols", {"cnspell": "TEXT"})
+            self._ensure_columns(
+                conn,
+                "cn_symbols",
+                {
+                    "cnspell": "TEXT",
+                    "daily_start_date": "TEXT",
+                    "daily_end_date": "TEXT",
+                },
+            )
+            self._ensure_columns(
+                conn,
+                "us_symbols",
+                {
+                    "cnspell": "TEXT",
+                    "daily_start_date": "TEXT",
+                    "daily_end_date": "TEXT",
+                },
+            )
             self._ensure_columns(
                 conn,
                 "cn_daily",
@@ -389,6 +411,8 @@ class MarketDataRepository:
                     row.get("exchange") or self._infer_exchange(row.get("ts_code"), row_market),
                     row.get("cnspell"),
                     row.get("list_date"),
+                    row.get("daily_start_date"),
+                    row.get("daily_end_date"),
                     updated_at,
                     extra,
                 )
@@ -402,9 +426,10 @@ class MarketDataRepository:
                 conn.executemany(
                     f"""
                     INSERT INTO {self._symbols_table(row_market)}(
-                        symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                        symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                        daily_start_date, daily_end_date, updated_at, extra
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(symbol) DO UPDATE SET
                         ts_code=excluded.ts_code,
                         name=excluded.name,
@@ -414,6 +439,8 @@ class MarketDataRepository:
                         exchange=excluded.exchange,
                         cnspell=excluded.cnspell,
                         list_date=excluded.list_date,
+                        daily_start_date=COALESCE(excluded.daily_start_date, daily_start_date),
+                        daily_end_date=COALESCE(excluded.daily_end_date, daily_end_date),
                         updated_at=excluded.updated_at,
                         extra=excluded.extra
                     """,
@@ -426,8 +453,28 @@ class MarketDataRepository:
         normalized_market = self._normalize_market(market)
         table = self._symbols_table(normalized_market)
         with self.connect() as conn:
+            existing_summaries = {
+                str(row["symbol"]).strip().upper(): {
+                    "daily_start_date": row["daily_start_date"],
+                    "daily_end_date": row["daily_end_date"],
+                }
+                for row in conn.execute(
+                    f"SELECT symbol, daily_start_date, daily_end_date FROM {table}"
+                ).fetchall()
+            }
+
+        normalized_rows: list[Dict[str, Any]] = []
+        for row in rows:
+            current = dict(row)
+            summary = existing_summaries.get(str(current.get("symbol") or "").strip().upper(), {})
+            if summary.get("daily_start_date") and not current.get("daily_start_date"):
+                current["daily_start_date"] = summary["daily_start_date"]
+            if summary.get("daily_end_date") and not current.get("daily_end_date"):
+                current["daily_end_date"] = summary["daily_end_date"]
+            normalized_rows.append(current)
+        with self.connect() as conn:
             conn.execute(f"DELETE FROM {table}")
-        return self.upsert_symbols(rows, market=normalized_market)
+        return self.upsert_symbols(normalized_rows, market=normalized_market)
 
     def upsert_daily_bars(
         self,
@@ -577,6 +624,7 @@ class MarketDataRepository:
                 """,
                 payload,
             )
+        self.refresh_symbol_daily_coverage(normalized_symbol, market=normalized_market)
         return len(payload)
 
     def load_daily_bars(
@@ -700,13 +748,60 @@ class MarketDataRepository:
             )
         return int(cursor.rowcount or 0)
 
+    def refresh_symbol_daily_coverage(self, symbol: str, market: Optional[str] = None) -> None:
+        normalized_symbol = str(symbol).strip().upper()
+        normalized_market = self._normalize_market(market or normalized_symbol)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT MIN(trade_date) AS daily_start_date, MAX(trade_date) AS daily_end_date
+                FROM {self._daily_table(normalized_market)}
+                WHERE symbol = ?
+                """,
+                (normalized_symbol,),
+            ).fetchone()
+            conn.execute(
+                f"""
+                UPDATE {self._symbols_table(normalized_market)}
+                SET daily_start_date = ?, daily_end_date = ?, updated_at = ?
+                WHERE symbol = ?
+                """,
+                (
+                    row["daily_start_date"] if row else None,
+                    row["daily_end_date"] if row else None,
+                    self._now_iso(),
+                    normalized_symbol,
+                ),
+            )
+
+    def backfill_symbol_daily_coverage(self, market: Optional[str] = None) -> None:
+        markets = [self._normalize_market(market)] if market else ["cn", "us"]
+        with self.connect() as conn:
+            for normalized_market in markets:
+                conn.execute(
+                    f"""
+                    UPDATE {self._symbols_table(normalized_market)}
+                    SET daily_start_date = (
+                            SELECT MIN(d.trade_date)
+                            FROM {self._daily_table(normalized_market)} d
+                            WHERE d.symbol = {self._symbols_table(normalized_market)}.symbol
+                        ),
+                        daily_end_date = (
+                            SELECT MAX(d.trade_date)
+                            FROM {self._daily_table(normalized_market)} d
+                            WHERE d.symbol = {self._symbols_table(normalized_market)}.symbol
+                        )
+                    """
+                )
+
     def get_symbol_record(self, symbol: str, market: Optional[str] = None) -> Optional[Dict[str, Any]]:
         normalized_symbol = str(symbol).strip().upper()
         normalized_market = self._normalize_market(market or normalized_symbol)
         with self.connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                       daily_start_date, daily_end_date, updated_at, extra
                 FROM {self._symbols_table(normalized_market)}
                 WHERE symbol = ?
                 """,
@@ -731,10 +826,12 @@ class MarketDataRepository:
             limit_clause = "" if limit is None or limit < 0 else " LIMIT ?"
             query = f"""
                 SELECT * FROM (
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
                     FROM cn_symbols
                     UNION ALL
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
                     FROM us_symbols
                 ) ORDER BY symbol ASC{limit_clause}
             """
@@ -762,7 +859,8 @@ class MarketDataRepository:
 
         if normalized_market:
             query = f"""
-                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                       daily_start_date, daily_end_date, updated_at, extra
                 FROM {self._symbols_table(normalized_market)}
                 {where_clause}
                 ORDER BY symbol ASC
@@ -770,10 +868,12 @@ class MarketDataRepository:
         else:
             query = f"""
                 SELECT * FROM (
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
                     FROM cn_symbols
                     UNION ALL
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
                     FROM us_symbols
                 )
                 {where_clause}
@@ -1036,15 +1136,65 @@ class MarketDataRepository:
             "is_data_current": is_data_current,
         }
 
-    def get_symbol_date_ranges(self, market: str) -> Dict[str, Dict[str, Any]]:
+    def list_stale_symbols(
+        self,
+        market: str,
+        *,
+        stale_cutoff: str,
+    ) -> list[Dict[str, Any]]:
         normalized_market = self._normalize_market(market)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT symbol, latest_trade_date
+                FROM (
+                    SELECT s.symbol, MAX(d.trade_date) AS latest_trade_date
+                    FROM {self._symbols_table(normalized_market)} s
+                    LEFT JOIN {self._daily_table(normalized_market)} d ON d.symbol = s.symbol
+                    GROUP BY s.symbol
+                )
+                WHERE latest_trade_date IS NOT NULL AND latest_trade_date < ?
+                ORDER BY symbol ASC
+                """,
+                (stale_cutoff,),
+            ).fetchall()
+        return [
+            {
+                "symbol": str(row["symbol"]).strip().upper(),
+                "latest_trade_date": row["latest_trade_date"],
+            }
+            for row in rows
+        ]
+
+    def get_symbol_date_ranges(
+        self,
+        market: str,
+        *,
+        symbols: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        normalized_market = self._normalize_market(market)
+        normalized_symbols = sorted(
+            {
+                str(symbol).strip().upper()
+                for symbol in (symbols or [])
+                if str(symbol).strip()
+            }
+        )
+        where_clause = ""
+        params: list[Any] = []
+        if normalized_symbols:
+            placeholders = ", ".join("?" for _ in normalized_symbols)
+            where_clause = f"WHERE symbol IN ({placeholders})"
+            params.extend(normalized_symbols)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT symbol, MIN(trade_date) AS min_trade_date, MAX(trade_date) AS max_trade_date, COUNT(*) AS row_count
                 FROM {self._daily_table(normalized_market)}
+                {where_clause}
                 GROUP BY symbol
-                """
+                """,
+                params,
             ).fetchall()
         return {
             row["symbol"]: {
@@ -1218,7 +1368,8 @@ class MarketDataRepository:
     def _symbol_query(table: str, limit: Optional[int]) -> str:
         limit_clause = "" if limit is None or limit < 0 else " LIMIT ?"
         return f"""
-            SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
+            SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                   daily_start_date, daily_end_date, updated_at, extra
             FROM {table}
             ORDER BY symbol ASC{limit_clause}
         """

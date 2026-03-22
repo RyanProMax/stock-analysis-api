@@ -178,6 +178,8 @@ class TestMarketDataRepository:
 
         symbol_row = storage.get_symbol_record("300827", market="cn")
         assert symbol_row["name"] == "上能电气"
+        assert symbol_row["daily_start_date"] == str(loaded.iloc[0]["date"])[:10]
+        assert symbol_row["daily_end_date"] == str(loaded.iloc[-1]["date"])[:10]
         assert symbol_row["extra"]["fullname"] == "上能电气股份有限公司"
 
         with storage.connect() as conn:
@@ -210,6 +212,41 @@ class TestMarketDataRepository:
         assert len(all_rows) == 2
         assert us_rows[0]["symbol"] == "NVDA"
         assert cn_rows[0]["symbol"] == "300827"
+
+    def test_replace_symbols_preserves_daily_coverage_summary(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        storage.upsert_symbols(
+            [
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ],
+            market="cn",
+        )
+        storage.upsert_daily_bars("300827", _daily_df(), "CN_Tushare", market="cn")
+
+        storage.replace_symbols(
+            [
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ],
+            market="cn",
+        )
+
+        symbol_row = storage.get_symbol_record("300827", market="cn")
+        assert symbol_row["daily_start_date"] is not None
+        assert symbol_row["daily_end_date"] is not None
 
 
 class TestDailyDataReadService:
@@ -507,6 +544,57 @@ class TestDailyDataWriteService:
         assert loaded["total_mv"].notna().all()
         assert loaded["circ_mv"].notna().all()
         assert storage.list_symbols_missing_standardized_daily_fields("cn", start_trade_date=trade_dates[0]) == []
+        symbol_row_loaded = storage.get_symbol_record("300827", market="cn")
+        assert symbol_row_loaded["daily_start_date"] == trade_dates[0]
+        assert symbol_row_loaded["daily_end_date"] == trade_dates[-1]
+
+    def test_sync_market_data_skips_stale_symbol_when_suspend_signal_exists(self, tmp_path, monkeypatch):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        stale_df = _daily_df(end_offset_days=-30).assign(total_mv=1_000_000.0, circ_mv=800_000.0)
+        symbol_row = {
+            "symbol": "300827",
+            "ts_code": "300827.SZ",
+            "name": "上能电气",
+            "market": "创业板",
+            "exchange": "SZSE",
+            "list_date": "2020-04-10",
+        }
+        storage.upsert_symbols([symbol_row], market="cn")
+        storage.upsert_daily_bars("300827", stale_df, "CN_Tushare", market="cn", ts_code="300827.SZ")
+
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(symbol_row),
+            cn_daily_sources=[FakeSource("EmptySource", None)],
+            us_daily_sources=[],
+        )
+
+        monkeypatch.setattr(
+            service,
+            "_resolve_trade_window",
+            lambda market, start_date, end_date: (start_date, "2026-03-20"),
+        )
+        monkeypatch.setattr(
+            daily_data_write_service_module.TushareDataSource,
+            "fetch_cn_suspend_dates",
+            lambda symbol, start_date=None, end_date=None: {"2026-03-10"},
+        )
+
+        result = service.sync_market_data(
+            market="cn",
+            scope="symbol",
+            symbol="300827",
+            start_date=str(stale_df.iloc[0]["date"])[:10],
+        )
+
+        latest_run = storage.get_latest_sync_run(
+            f"cn_symbol_300827_since_{str(stale_df.iloc[0]['date'])[:10]}"
+        )
+        assert result["status"] == "skipped"
+        assert result["skipped_count"] == 1
+        assert latest_run is not None
+        assert latest_run["stale_symbol_count"] == 0
+        assert latest_run["is_data_current"] is True
 
 
 class TestSyncCli:

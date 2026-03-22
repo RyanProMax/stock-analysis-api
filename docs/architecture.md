@@ -5,6 +5,7 @@
 ## 系统边界
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
+- `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
 - 新增能力时只更新 HTTP 路由、schema、文档和测试
 - 业务逻辑放在 `src/services/`、`src/repositories/` 或 `src/analyzer/`
@@ -55,9 +56,14 @@ src/
   - `us_daily`
   - `sync_runs`
 - `cn_symbols` 只保存当前上市 A 股最新快照，不建模历史状态
+- `cn_symbols.daily_start_date` / `daily_end_date` 是本地 `cn_daily` 覆盖摘要，只表示本地已落库的最早 / 最晚交易日
+- 覆盖摘要用于同步前置剪枝和快速状态判断，但不能替代对 `cn_daily` 的精确校验
 - A 股 current universe 固定以 `Tushare stock_basic(exchange='', list_status='L')` 为准；截至 `2026-03-22` 当前实时计数为 `5000`
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
+- `cn_daily` 只保存真实存在的日线事实，不为停牌日期补 synthetic row
+- `cn_daily.is_suspended` 只表示“这条已有日线 row 命中了停复牌事件”，不是持续状态，也不能解释整段无 row 的停牌区间
+- `suspend_d` 当前只作为同步阶段的辅助事实源使用，不单独落业务表
 - `extra` 只保留非标准、低频或暂不标准化的事实字段，不承担长期核心市场事实
 - 所有关键事实字段应逐步补齐 `source_chain`、`as_of`、`period_end_date`、`filing_or_release_date`
 - fallback 需要区分：
@@ -82,11 +88,13 @@ src/
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日
-  - 判定是否存在 symbol 缺口、历史缺口或 stale 日线
+  - 先用 `cn_symbols` 覆盖摘要做粗筛
+  - 再用 `cn_daily` 精确判定 symbol 缺口、历史缺口或 stale 日线
   - 刷新 `cn_symbols`
   - 补齐 `cn_daily`
   - 回写本次运行后的全局状态快照
 - stale 判定使用 freshness grace，而不是强制每只股票都等于市场最新交易日；同一状态重复运行应直接 `skipped`
+- stale / current 判定必须引入停牌豁免：若 `suspend_d` 能解释窗口内无新日线，则不应把该 symbol 计入普通 stale
 - `sync_runs` 不只是运行日志，还必须表达：
   - 本次请求参数
   - 本次运行进度
