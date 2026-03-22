@@ -84,6 +84,10 @@ class SymbolCatalogService:
             self.repository.replace_symbols(fetched, market=normalized_market)
         return self.repository.list_symbols(market=normalized_market)
 
+    def fetch_live_market_snapshot(self, market: str) -> List[Dict[str, Any]]:
+        normalized_market = self._normalize_market(market)
+        return self._fetch_market_snapshot(normalized_market)
+
     def resolve_symbol(self, symbol: str, market: Optional[str] = None) -> Optional[Dict[str, Any]]:
         normalized_symbol = str(symbol or "").strip().upper()
         if not normalized_symbol:
@@ -169,6 +173,8 @@ class SymbolCatalogService:
     def _default_ts_code(symbol: str, market: str) -> str:
         if market == "us":
             return f"{symbol}.US"
+        if symbol.startswith(("4", "8", "92")):
+            return f"{symbol}.BJ"
         return f"{symbol}.SH" if symbol.startswith("6") else f"{symbol}.SZ"
 
 

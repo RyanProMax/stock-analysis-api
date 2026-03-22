@@ -92,14 +92,16 @@ def sync_market_data():
     def _print_progress(update: dict) -> None:
         processed = update["processed_count"]
         total = update["total_symbols"]
+        skipped = update.get("skipped_count", 0)
         success = update["success_count"]
         failure = update["failure_count"]
+        rows_written = update.get("rows_written", 0)
         symbol = update["symbol"]
         item_status = update["item_status"]
         source = update.get("source")
         source_suffix = f" source={source}" if source else ""
         print(
-            f"[{processed}/{total}] success={success} failure={failure} symbol={symbol} status={item_status}{source_suffix}",
+            f"[{processed}/{total}] skipped={skipped} success={success} failure={failure} rows={rows_written} symbol={symbol} status={item_status}{source_suffix}",
             flush=True,
         )
 

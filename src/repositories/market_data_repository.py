@@ -20,6 +20,8 @@ import pandas as pd
 class MarketDataRepository:
     """SQLite 行情仓 Repository。"""
 
+    STALE_GRACE_DAYS = 7
+
     SYMBOL_COLUMNS = (
         "symbol",
         "ts_code",
@@ -28,6 +30,7 @@ class MarketDataRepository:
         "industry",
         "market",
         "exchange",
+        "cnspell",
         "list_date",
         "updated_at",
         "extra",
@@ -45,6 +48,21 @@ class MarketDataRepository:
         "pct_chg",
         "vol",
         "amount",
+        "turnover_rate",
+        "turnover_rate_f",
+        "volume_ratio",
+        "pe",
+        "pe_ttm",
+        "pb",
+        "ps",
+        "ps_ttm",
+        "dv_ratio",
+        "dv_ttm",
+        "float_share",
+        "free_share",
+        "total_share",
+        "circ_mv",
+        "total_mv",
         "adj_factor",
         "is_suspended",
         "up_limit",
@@ -53,20 +71,35 @@ class MarketDataRepository:
         "updated_at",
         "extra",
     )
-    SYMBOL_EXTRA_KEYS = ("fullname", "curr_type", "is_hs", "country", "currency", "sector_raw")
-    DAILY_EXTRA_KEYS = (
+    DAILY_BASIC_COLUMNS = (
         "turnover_rate",
-        "vwap",
+        "turnover_rate_f",
+        "volume_ratio",
+        "pe",
+        "pe_ttm",
+        "pb",
+        "ps",
+        "ps_ttm",
+        "dv_ratio",
+        "dv_ttm",
+        "float_share",
         "free_share",
         "total_share",
-        "free_mv",
+        "circ_mv",
         "total_mv",
     )
-    DAILY_ALIAS_KEYS = {
-        "date",
-        "volume",
-        "turnover",
-    }
+    SYMBOL_EXTRA_KEYS = (
+        "fullname",
+        "curr_type",
+        "is_hs",
+        "country",
+        "currency",
+        "sector_raw",
+        "act_name",
+        "act_ent_type",
+    )
+    DAILY_EXTRA_KEYS = ("vwap",)
+    DAILY_ALIAS_KEYS = {"date", "volume", "turnover"}
     NON_FACT_DAILY_KEYS = {
         "ma5",
         "ma10",
@@ -75,7 +108,7 @@ class MarketDataRepository:
         "macd",
         "kdj",
         "boll",
-        "volume_ratio",
+        "volume_ratio_state",
         "trend",
         "breakout_state",
     }
@@ -123,6 +156,7 @@ class MarketDataRepository:
                     industry TEXT,
                     market TEXT,
                     exchange TEXT,
+                    cnspell TEXT,
                     list_date TEXT,
                     updated_at TEXT NOT NULL,
                     extra TEXT
@@ -136,6 +170,7 @@ class MarketDataRepository:
                     industry TEXT,
                     market TEXT,
                     exchange TEXT,
+                    cnspell TEXT,
                     list_date TEXT,
                     updated_at TEXT NOT NULL,
                     extra TEXT
@@ -154,6 +189,21 @@ class MarketDataRepository:
                     pct_chg REAL,
                     vol REAL,
                     amount REAL,
+                    turnover_rate REAL,
+                    turnover_rate_f REAL,
+                    volume_ratio REAL,
+                    pe REAL,
+                    pe_ttm REAL,
+                    pb REAL,
+                    ps REAL,
+                    ps_ttm REAL,
+                    dv_ratio REAL,
+                    dv_ttm REAL,
+                    float_share REAL,
+                    free_share REAL,
+                    total_share REAL,
+                    circ_mv REAL,
+                    total_mv REAL,
                     adj_factor REAL,
                     is_suspended INTEGER,
                     up_limit REAL,
@@ -177,6 +227,21 @@ class MarketDataRepository:
                     pct_chg REAL,
                     vol REAL,
                     amount REAL,
+                    turnover_rate REAL,
+                    turnover_rate_f REAL,
+                    volume_ratio REAL,
+                    pe REAL,
+                    pe_ttm REAL,
+                    pb REAL,
+                    ps REAL,
+                    ps_ttm REAL,
+                    dv_ratio REAL,
+                    dv_ttm REAL,
+                    float_share REAL,
+                    free_share REAL,
+                    total_share REAL,
+                    circ_mv REAL,
+                    total_mv REAL,
                     adj_factor REAL,
                     is_suspended INTEGER,
                     up_limit REAL,
@@ -197,15 +262,109 @@ class MarketDataRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source TEXT NOT NULL,
                     mode TEXT NOT NULL,
+                    market TEXT,
+                    scope TEXT,
+                    symbol TEXT,
+                    requested_start_date TEXT,
+                    requested_end_date TEXT,
+                    requested_days INTEGER,
+                    requested_years INTEGER,
+                    universe_source TEXT,
                     started_at TEXT NOT NULL,
                     ended_at TEXT,
                     status TEXT NOT NULL,
                     total_symbols INTEGER NOT NULL DEFAULT 0,
+                    processed_count INTEGER NOT NULL DEFAULT 0,
+                    skipped_count INTEGER NOT NULL DEFAULT 0,
                     success_count INTEGER NOT NULL DEFAULT 0,
                     failure_count INTEGER NOT NULL DEFAULT 0,
-                    error_summary TEXT
+                    rows_written INTEGER NOT NULL DEFAULT 0,
+                    error_summary TEXT,
+                    error_details TEXT,
+                    symbol_snapshot_count INTEGER,
+                    symbol_snapshot_updated_at TEXT,
+                    target_latest_trade_date TEXT,
+                    coverage_start_date TEXT,
+                    coverage_end_date TEXT,
+                    covered_symbol_count INTEGER,
+                    missing_symbol_count INTEGER,
+                    stale_symbol_count INTEGER,
+                    daily_row_count INTEGER,
+                    is_data_current INTEGER
                 );
                 """
+            )
+            self._ensure_columns(conn, "cn_symbols", {"cnspell": "TEXT"})
+            self._ensure_columns(conn, "us_symbols", {"cnspell": "TEXT"})
+            self._ensure_columns(
+                conn,
+                "cn_daily",
+                {
+                    "turnover_rate": "REAL",
+                    "turnover_rate_f": "REAL",
+                    "volume_ratio": "REAL",
+                    "pe": "REAL",
+                    "pe_ttm": "REAL",
+                    "pb": "REAL",
+                    "ps": "REAL",
+                    "ps_ttm": "REAL",
+                    "dv_ratio": "REAL",
+                    "dv_ttm": "REAL",
+                    "float_share": "REAL",
+                    "free_share": "REAL",
+                    "total_share": "REAL",
+                    "circ_mv": "REAL",
+                    "total_mv": "REAL",
+                },
+            )
+            self._ensure_columns(
+                conn,
+                "us_daily",
+                {
+                    "turnover_rate": "REAL",
+                    "turnover_rate_f": "REAL",
+                    "volume_ratio": "REAL",
+                    "pe": "REAL",
+                    "pe_ttm": "REAL",
+                    "pb": "REAL",
+                    "ps": "REAL",
+                    "ps_ttm": "REAL",
+                    "dv_ratio": "REAL",
+                    "dv_ttm": "REAL",
+                    "float_share": "REAL",
+                    "free_share": "REAL",
+                    "total_share": "REAL",
+                    "circ_mv": "REAL",
+                    "total_mv": "REAL",
+                },
+            )
+            self._ensure_columns(
+                conn,
+                "sync_runs",
+                {
+                    "market": "TEXT",
+                    "scope": "TEXT",
+                    "symbol": "TEXT",
+                    "requested_start_date": "TEXT",
+                    "requested_end_date": "TEXT",
+                    "requested_days": "INTEGER",
+                    "requested_years": "INTEGER",
+                    "universe_source": "TEXT",
+                    "processed_count": "INTEGER NOT NULL DEFAULT 0",
+                    "skipped_count": "INTEGER NOT NULL DEFAULT 0",
+                    "rows_written": "INTEGER NOT NULL DEFAULT 0",
+                    "error_details": "TEXT",
+                    "symbol_snapshot_count": "INTEGER",
+                    "symbol_snapshot_updated_at": "TEXT",
+                    "target_latest_trade_date": "TEXT",
+                    "coverage_start_date": "TEXT",
+                    "coverage_end_date": "TEXT",
+                    "covered_symbol_count": "INTEGER",
+                    "missing_symbol_count": "INTEGER",
+                    "stale_symbol_count": "INTEGER",
+                    "daily_row_count": "INTEGER",
+                    "is_data_current": "INTEGER",
+                },
             )
 
     def upsert_symbols(self, rows: Iterable[Dict[str, Any]], market: Optional[str] = None) -> int:
@@ -228,6 +387,7 @@ class MarketDataRepository:
                     row.get("industry"),
                     row.get("market") or ("A股" if row_market == "cn" else "美股"),
                     row.get("exchange") or self._infer_exchange(row.get("ts_code"), row_market),
+                    row.get("cnspell"),
                     row.get("list_date"),
                     updated_at,
                     extra,
@@ -242,9 +402,9 @@ class MarketDataRepository:
                 conn.executemany(
                     f"""
                     INSERT INTO {self._symbols_table(row_market)}(
-                        symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                        symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(symbol) DO UPDATE SET
                         ts_code=excluded.ts_code,
                         name=excluded.name,
@@ -252,6 +412,7 @@ class MarketDataRepository:
                         industry=excluded.industry,
                         market=excluded.market,
                         exchange=excluded.exchange,
+                        cnspell=excluded.cnspell,
                         list_date=excluded.list_date,
                         updated_at=excluded.updated_at,
                         extra=excluded.extra
@@ -320,6 +481,10 @@ class MarketDataRepository:
             if vol is None:
                 vol = self._float_or_none(row.get("volume"))
 
+            circ_mv = row.get("circ_mv")
+            if circ_mv in (None, ""):
+                circ_mv = row.get("free_mv")
+
             extra = self._build_daily_extra(row)
             payload.append(
                 (
@@ -335,6 +500,21 @@ class MarketDataRepository:
                     pct_chg,
                     vol,
                     self._float_or_none(row.get("amount")),
+                    self._float_or_none(row.get("turnover_rate")),
+                    self._float_or_none(row.get("turnover_rate_f")),
+                    self._float_or_none(row.get("volume_ratio")),
+                    self._float_or_none(row.get("pe")),
+                    self._float_or_none(row.get("pe_ttm")),
+                    self._float_or_none(row.get("pb")),
+                    self._float_or_none(row.get("ps")),
+                    self._float_or_none(row.get("ps_ttm")),
+                    self._float_or_none(row.get("dv_ratio")),
+                    self._float_or_none(row.get("dv_ttm")),
+                    self._float_or_none(row.get("float_share")),
+                    self._float_or_none(row.get("free_share")),
+                    self._float_or_none(row.get("total_share")),
+                    self._float_or_none(circ_mv),
+                    self._float_or_none(row.get("total_mv")),
                     self._float_or_none(row.get("adj_factor")),
                     self._bool_to_int(row.get("is_suspended")),
                     self._float_or_none(row.get("up_limit")),
@@ -355,10 +535,12 @@ class MarketDataRepository:
                 f"""
                 INSERT INTO {self._daily_table(normalized_market)}(
                     symbol, ts_code, trade_date, open, high, low, close, pre_close,
-                    change, pct_chg, vol, amount, adj_factor, is_suspended,
-                    up_limit, down_limit, source, updated_at, extra
+                    change, pct_chg, vol, amount, turnover_rate, turnover_rate_f, volume_ratio,
+                    pe, pe_ttm, pb, ps, ps_ttm, dv_ratio, dv_ttm,
+                    float_share, free_share, total_share, circ_mv, total_mv,
+                    adj_factor, is_suspended, up_limit, down_limit, source, updated_at, extra
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, trade_date) DO UPDATE SET
                     ts_code=excluded.ts_code,
                     open=excluded.open,
@@ -370,6 +552,21 @@ class MarketDataRepository:
                     pct_chg=excluded.pct_chg,
                     vol=excluded.vol,
                     amount=excluded.amount,
+                    turnover_rate=excluded.turnover_rate,
+                    turnover_rate_f=excluded.turnover_rate_f,
+                    volume_ratio=excluded.volume_ratio,
+                    pe=excluded.pe,
+                    pe_ttm=excluded.pe_ttm,
+                    pb=excluded.pb,
+                    ps=excluded.ps,
+                    ps_ttm=excluded.ps_ttm,
+                    dv_ratio=excluded.dv_ratio,
+                    dv_ttm=excluded.dv_ttm,
+                    float_share=excluded.float_share,
+                    free_share=excluded.free_share,
+                    total_share=excluded.total_share,
+                    circ_mv=excluded.circ_mv,
+                    total_mv=excluded.total_mv,
                     adj_factor=excluded.adj_factor,
                     is_suspended=excluded.is_suspended,
                     up_limit=excluded.up_limit,
@@ -415,6 +612,21 @@ class MarketDataRepository:
                 pct_chg,
                 vol AS volume,
                 amount,
+                turnover_rate,
+                turnover_rate_f,
+                volume_ratio,
+                pe,
+                pe_ttm,
+                pb,
+                ps,
+                ps_ttm,
+                dv_ratio,
+                dv_ttm,
+                float_share,
+                free_share,
+                total_share,
+                circ_mv,
+                total_mv,
                 adj_factor,
                 is_suspended,
                 up_limit,
@@ -449,11 +661,44 @@ class MarketDataRepository:
         df["vwap"] = None
         for idx, extra_text in enumerate(df.pop("extra")):
             extra = self._decode_extra(extra_text)
-            if "turnover_rate" in extra:
+            if df.at[idx, "turnover_rate"] is not None:
+                df.at[idx, "turnover"] = df.at[idx, "turnover_rate"]
+            elif "turnover_rate" in extra:
                 df.at[idx, "turnover"] = extra.get("turnover_rate")
             if "vwap" in extra:
                 df.at[idx, "vwap"] = extra.get("vwap")
         return df
+
+    def bulk_update_cn_daily_basic(self, daily_basic_df: pd.DataFrame) -> int:
+        if daily_basic_df is None or daily_basic_df.empty:
+            return 0
+
+        payload: list[tuple[Any, ...]] = []
+        for row in daily_basic_df.to_dict("records"):
+            ts_code = str(row.get("ts_code") or "").strip().upper()
+            symbol = str(row.get("symbol") or ts_code.split(".")[0] if ts_code else "").strip().upper()
+            trade_date = self._normalize_trade_date(row.get("trade_date") or row.get("date"))
+            if not symbol or not trade_date:
+                continue
+            payload.append(
+                tuple(self._float_or_none(row.get(column)) for column in self.DAILY_BASIC_COLUMNS)
+                + (self._now_iso(), symbol, trade_date)
+            )
+
+        if not payload:
+            return 0
+
+        set_clause = ", ".join(f"{column} = ?" for column in self.DAILY_BASIC_COLUMNS)
+        with self.connect() as conn:
+            cursor = conn.executemany(
+                f"""
+                UPDATE cn_daily
+                SET {set_clause}, updated_at = ?
+                WHERE symbol = ? AND trade_date = ?
+                """,
+                payload,
+            )
+        return int(cursor.rowcount or 0)
 
     def get_symbol_record(self, symbol: str, market: Optional[str] = None) -> Optional[Dict[str, Any]]:
         normalized_symbol = str(symbol).strip().upper()
@@ -461,7 +706,7 @@ class MarketDataRepository:
         with self.connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                 FROM {self._symbols_table(normalized_market)}
                 WHERE symbol = ?
                 """,
@@ -486,10 +731,10 @@ class MarketDataRepository:
             limit_clause = "" if limit is None or limit < 0 else " LIMIT ?"
             query = f"""
                 SELECT * FROM (
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                     FROM cn_symbols
                     UNION ALL
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                     FROM us_symbols
                 ) ORDER BY symbol ASC{limit_clause}
             """
@@ -509,15 +754,15 @@ class MarketDataRepository:
             return []
 
         like = f"%{normalized_keyword}%"
-        params = [like, like, like]
+        params = [like, like, like, like]
         where_clause = """
-            WHERE UPPER(symbol) LIKE ? OR UPPER(COALESCE(ts_code, '')) LIKE ? OR UPPER(COALESCE(name, '')) LIKE ?
+            WHERE UPPER(symbol) LIKE ? OR UPPER(COALESCE(ts_code, '')) LIKE ? OR UPPER(COALESCE(name, '')) LIKE ? OR UPPER(COALESCE(cnspell, '')) LIKE ?
         """
         normalized_market = self._normalize_market(market) if market else None
 
         if normalized_market:
             query = f"""
-                SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                 FROM {self._symbols_table(normalized_market)}
                 {where_clause}
                 ORDER BY symbol ASC
@@ -525,10 +770,10 @@ class MarketDataRepository:
         else:
             query = f"""
                 SELECT * FROM (
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                     FROM cn_symbols
                     UNION ALL
-                    SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
                     FROM us_symbols
                 )
                 {where_clause}
@@ -551,50 +796,300 @@ class MarketDataRepository:
             return None
         return row["latest_trade_date"]
 
-    def start_sync_run(self, source: str, mode: str, total_symbols: int) -> int:
+    def start_sync_run(
+        self,
+        *,
+        source: str,
+        mode: str,
+        market: Optional[str] = None,
+        scope: Optional[str] = None,
+        symbol: Optional[str] = None,
+        requested_start_date: Optional[str] = None,
+        requested_end_date: Optional[str] = None,
+        requested_days: Optional[int] = None,
+        requested_years: Optional[int] = None,
+        universe_source: Optional[str] = None,
+        total_symbols: int = 0,
+    ) -> int:
         with self.connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO sync_runs(source, mode, started_at, status, total_symbols)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO sync_runs(
+                    source, mode, market, scope, symbol, requested_start_date, requested_end_date,
+                    requested_days, requested_years, universe_source, started_at, status, total_symbols,
+                    processed_count, skipped_count, success_count, failure_count, rows_written
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0)
                 """,
-                (source, mode, self._now_iso(), "running", total_symbols),
+                (
+                    source,
+                    mode,
+                    market,
+                    scope,
+                    symbol,
+                    requested_start_date,
+                    requested_end_date,
+                    requested_days,
+                    requested_years,
+                    universe_source,
+                    self._now_iso(),
+                    "running",
+                    total_symbols,
+                ),
             )
             return int(cursor.lastrowid)
+
+    def get_latest_sync_run(self, mode: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM sync_runs WHERE mode = ? ORDER BY id DESC LIMIT 1",
+                (mode,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["error_details"] = self._decode_json_text(result.get("error_details"))
+        if result.get("is_data_current") is not None:
+            result["is_data_current"] = bool(result["is_data_current"])
+        return result
 
     def finish_sync_run(
         self,
         run_id: int,
         status: str,
+        processed_count: int,
+        skipped_count: int,
         success_count: int,
         failure_count: int,
+        rows_written: int,
         error_summary: Optional[str] = None,
+        error_details: Optional[Any] = None,
+        state_snapshot: Optional[Dict[str, Any]] = None,
     ) -> None:
+        snapshot = state_snapshot or {}
         with self.connect() as conn:
             conn.execute(
                 """
                 UPDATE sync_runs
-                SET ended_at = ?, status = ?, success_count = ?, failure_count = ?, error_summary = ?
+                SET ended_at = ?, status = ?, processed_count = ?, skipped_count = ?,
+                    success_count = ?, failure_count = ?, rows_written = ?, error_summary = ?,
+                    error_details = ?, symbol_snapshot_count = ?, symbol_snapshot_updated_at = ?,
+                    target_latest_trade_date = ?, coverage_start_date = ?, coverage_end_date = ?,
+                    covered_symbol_count = ?, missing_symbol_count = ?, stale_symbol_count = ?,
+                    daily_row_count = ?, is_data_current = ?
                 WHERE id = ?
                 """,
-                (self._now_iso(), status, success_count, failure_count, error_summary, run_id),
+                (
+                    self._now_iso(),
+                    status,
+                    processed_count,
+                    skipped_count,
+                    success_count,
+                    failure_count,
+                    rows_written,
+                    error_summary,
+                    self._encode_json_text(error_details),
+                    snapshot.get("symbol_snapshot_count"),
+                    snapshot.get("symbol_snapshot_updated_at"),
+                    snapshot.get("target_latest_trade_date"),
+                    snapshot.get("coverage_start_date"),
+                    snapshot.get("coverage_end_date"),
+                    snapshot.get("covered_symbol_count"),
+                    snapshot.get("missing_symbol_count"),
+                    snapshot.get("stale_symbol_count"),
+                    snapshot.get("daily_row_count"),
+                    self._bool_to_int(snapshot.get("is_data_current")),
+                    run_id,
+                ),
             )
 
     def update_sync_run_progress(
         self,
         run_id: int,
+        processed_count: int,
+        skipped_count: int,
         success_count: int,
         failure_count: int,
+        rows_written: int,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 UPDATE sync_runs
-                SET success_count = ?, failure_count = ?
+                SET processed_count = ?, skipped_count = ?, success_count = ?, failure_count = ?, rows_written = ?
                 WHERE id = ?
                 """,
-                (success_count, failure_count, run_id),
+                (processed_count, skipped_count, success_count, failure_count, rows_written, run_id),
             )
+
+    def summarize_market_sync_state(
+        self,
+        market: str,
+        *,
+        start_trade_date: Optional[str] = None,
+        target_latest_trade_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized_market = self._normalize_market(market)
+        symbols_table = self._symbols_table(normalized_market)
+        daily_table = self._daily_table(normalized_market)
+
+        with self.connect() as conn:
+            symbol_row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS symbol_snapshot_count, MAX(updated_at) AS symbol_snapshot_updated_at
+                FROM {symbols_table}
+                """
+            ).fetchone()
+            coverage_row = conn.execute(
+                f"""
+                SELECT
+                    MIN(trade_date) AS coverage_start_date,
+                    MAX(trade_date) AS coverage_end_date,
+                    COUNT(*) AS daily_row_count
+                FROM {daily_table}
+                """
+            ).fetchone()
+
+            if start_trade_date:
+                covered_row = conn.execute(
+                    f"SELECT COUNT(DISTINCT symbol) AS covered_symbol_count FROM {daily_table} WHERE trade_date >= ?",
+                    (start_trade_date,),
+                ).fetchone()
+                missing_row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS missing_symbol_count
+                    FROM {symbols_table} s
+                    LEFT JOIN (
+                        SELECT DISTINCT symbol FROM {daily_table} WHERE trade_date >= ?
+                    ) d ON d.symbol = s.symbol
+                    WHERE d.symbol IS NULL
+                    """,
+                    (start_trade_date,),
+                ).fetchone()
+            else:
+                covered_row = conn.execute(
+                    f"SELECT COUNT(DISTINCT symbol) AS covered_symbol_count FROM {daily_table}"
+                ).fetchone()
+                missing_row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS missing_symbol_count
+                    FROM {symbols_table} s
+                    LEFT JOIN (
+                        SELECT DISTINCT symbol FROM {daily_table}
+                    ) d ON d.symbol = s.symbol
+                    WHERE d.symbol IS NULL
+                    """
+                ).fetchone()
+
+            stale_count = 0
+            if target_latest_trade_date:
+                try:
+                    stale_cutoff = (
+                        pd.Timestamp(target_latest_trade_date) - pd.Timedelta(days=self.STALE_GRACE_DAYS)
+                    ).strftime("%Y-%m-%d")
+                except Exception:
+                    stale_cutoff = target_latest_trade_date
+                stale_row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS stale_symbol_count
+                    FROM (
+                        SELECT s.symbol, MAX(d.trade_date) AS latest_trade_date
+                        FROM {symbols_table} s
+                        LEFT JOIN {daily_table} d ON d.symbol = s.symbol
+                        GROUP BY s.symbol
+                    )
+                    WHERE latest_trade_date IS NOT NULL AND latest_trade_date < ?
+                    """,
+                    (stale_cutoff,),
+                ).fetchone()
+                stale_count = int(stale_row["stale_symbol_count"] or 0)
+
+        symbol_snapshot_count = int(symbol_row["symbol_snapshot_count"] or 0)
+        coverage_start_date = coverage_row["coverage_start_date"] if coverage_row else None
+        coverage_end_date = coverage_row["coverage_end_date"] if coverage_row else None
+        covered_symbol_count = int(covered_row["covered_symbol_count"] or 0)
+        missing_symbol_count = int(missing_row["missing_symbol_count"] or 0)
+        daily_row_count = int(coverage_row["daily_row_count"] or 0)
+
+        has_required_history = True
+        if start_trade_date:
+            has_required_history = coverage_start_date is not None and coverage_start_date <= start_trade_date
+
+        is_data_current = (
+            symbol_snapshot_count > 0
+            and has_required_history
+            and missing_symbol_count == 0
+            and stale_count == 0
+            and (target_latest_trade_date is None or coverage_end_date == target_latest_trade_date)
+        )
+
+        return {
+            "symbol_snapshot_count": symbol_snapshot_count,
+            "symbol_snapshot_updated_at": symbol_row["symbol_snapshot_updated_at"] if symbol_row else None,
+            "target_latest_trade_date": target_latest_trade_date,
+            "coverage_start_date": coverage_start_date,
+            "coverage_end_date": coverage_end_date,
+            "covered_symbol_count": covered_symbol_count,
+            "missing_symbol_count": missing_symbol_count,
+            "stale_symbol_count": stale_count,
+            "daily_row_count": daily_row_count,
+            "is_data_current": is_data_current,
+        }
+
+    def get_symbol_date_ranges(self, market: str) -> Dict[str, Dict[str, Any]]:
+        normalized_market = self._normalize_market(market)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT symbol, MIN(trade_date) AS min_trade_date, MAX(trade_date) AS max_trade_date, COUNT(*) AS row_count
+                FROM {self._daily_table(normalized_market)}
+                GROUP BY symbol
+                """
+            ).fetchall()
+        return {
+            row["symbol"]: {
+                "min_trade_date": row["min_trade_date"],
+                "max_trade_date": row["max_trade_date"],
+                "row_count": int(row["row_count"] or 0),
+            }
+            for row in rows
+        }
+
+    def list_symbols_missing_standardized_daily_fields(
+        self,
+        market: str,
+        *,
+        start_trade_date: Optional[str] = None,
+    ) -> list[str]:
+        normalized_market = self._normalize_market(market)
+        if normalized_market != "cn":
+            return []
+
+        clauses = ["total_mv IS NULL"]
+        params: list[Any] = []
+        if start_trade_date:
+            clauses.append("trade_date >= ?")
+            params.append(start_trade_date)
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT symbol
+                FROM {self._daily_table(normalized_market)}
+                WHERE {' AND '.join(clauses)}
+                ORDER BY symbol ASC
+                """,
+                params,
+            ).fetchall()
+        return [str(row["symbol"]).strip().upper() for row in rows]
+
+    def count_symbols(self, market: str) -> int:
+        normalized_market = self._normalize_market(market)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM {self._symbols_table(normalized_market)}"
+            ).fetchone()
+        return int(row["count"] or 0)
 
     @staticmethod
     def _normalize_trade_date(value: Any) -> Optional[str]:
@@ -608,7 +1103,7 @@ class MarketDataRepository:
     @staticmethod
     def _normalize_market(value: Any) -> str:
         text = str(value or "").strip().lower()
-        if text in {"cn", "a股", "主板", "创业板", "科创板", "北交所", "sse", "szse"}:
+        if text in {"cn", "a股", "主板", "创业板", "科创板", "北交所", "sse", "szse", "bse"}:
             return "cn"
         if text in {"us", "美股", "nasdaq", "nyse", "amex"}:
             return "us"
@@ -628,6 +1123,8 @@ class MarketDataRepository:
     def _default_ts_code(symbol: str, market: str) -> str:
         if market == "us":
             return f"{symbol}.US"
+        if symbol.startswith(("4", "8", "92")):
+            return f"{symbol}.BJ"
         if symbol.startswith("6"):
             return f"{symbol}.SH"
         return f"{symbol}.SZ"
@@ -635,6 +1132,8 @@ class MarketDataRepository:
     @classmethod
     def _infer_exchange(cls, ts_code: Any, market: str) -> Optional[str]:
         text = str(ts_code or "").upper()
+        if text.endswith(".BJ"):
+            return "BSE"
         if text.endswith(".SH"):
             return "SSE"
         if text.endswith(".SZ"):
@@ -719,7 +1218,7 @@ class MarketDataRepository:
     def _symbol_query(table: str, limit: Optional[int]) -> str:
         limit_clause = "" if limit is None or limit < 0 else " LIMIT ?"
         return f"""
-            SELECT symbol, ts_code, name, area, industry, market, exchange, list_date, updated_at, extra
+            SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date, updated_at, extra
             FROM {table}
             ORDER BY symbol ASC{limit_clause}
         """
@@ -755,6 +1254,40 @@ class MarketDataRepository:
     @staticmethod
     def _now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+        return {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    @classmethod
+    def _ensure_columns(
+        cls,
+        conn: sqlite3.Connection,
+        table: str,
+        columns: Dict[str, str],
+    ) -> None:
+        existing = cls._table_columns(conn, table)
+        for name, definition in columns.items():
+            if name in existing:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+    @staticmethod
+    def _encode_json_text(value: Any) -> Optional[str]:
+        if value in (None, "", [], {}, ()):
+            return None
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _decode_json_text(value: Any) -> Any:
+        if value in (None, "", b""):
+            return None
+        try:
+            return json.loads(str(value))
+        except Exception:
+            return value
 
 
 market_data_repository = MarketDataRepository()

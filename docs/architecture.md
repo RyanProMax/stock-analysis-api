@@ -55,8 +55,10 @@ src/
   - `us_daily`
   - `sync_runs`
 - `cn_symbols` 只保存当前上市 A 股最新快照，不建模历史状态
+- A 股 current universe 固定以 `Tushare stock_basic(exchange='', list_status='L')` 为准；截至 `2026-03-22` 当前实时计数为 `5000`
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
-- 主列按 tushare 核心口径建模；低频、跨市场差异大的事实字段放入 `extra` JSON 文本列
+- `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
+- `extra` 只保留非标准、低频或暂不标准化的事实字段，不承担长期核心市场事实
 - 所有关键事实字段应逐步补齐 `source_chain`、`as_of`、`period_end_date`、`filing_or_release_date`
 - fallback 需要区分：
   - 降级成功
@@ -77,6 +79,18 @@ src/
   - `watch_polling_service`
 - 公共 HTTP 接口默认先读 SQLite，若最新日线超过 7 个自然日则按需回退外部源并回写，不暴露强制 `refresh`
 - A 股列表与日线优先级默认是 `Tushare -> fallback`，URL 与 token 必须通过环境变量读取，不允许硬编码
+- `sync-market-data` 的目标执行链固定为：
+  - 读取最新 `sync_runs`
+  - 读取 live universe 与目标最新交易日
+  - 判定是否存在 symbol 缺口、历史缺口或 stale 日线
+  - 刷新 `cn_symbols`
+  - 补齐 `cn_daily`
+  - 回写本次运行后的全局状态快照
+- stale 判定使用 freshness grace，而不是强制每只股票都等于市场最新交易日；同一状态重复运行应直接 `skipped`
+- `sync_runs` 不只是运行日志，还必须表达：
+  - 本次请求参数
+  - 本次运行进度
+  - 本次结束后整张市场表的全局状态
 - workflow 至少覆盖：
   - 输入检查
   - 证据要求

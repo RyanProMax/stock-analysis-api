@@ -61,55 +61,239 @@ class DailyDataWriteService:
         if scope == "symbol" and not symbol:
             raise ValueError("`scope=symbol` 时必须提供 `--symbol`")
 
+        effective_start_date = start_date or self._compute_start_date(days=days, years=years)
+        requested_end_date = datetime.now(timezone.utc).date().strftime("%Y-%m-%d")
+        target_start_trade_date, target_latest_trade_date = self._resolve_trade_window(
+            normalized_market,
+            effective_start_date,
+            requested_end_date,
+        )
+        mode = self._build_mode(normalized_market, scope, symbol, days, years, start_date)
+        latest_run = self.repository.get_latest_sync_run(mode)
+
         if scope == "all":
-            stocks = self.symbol_catalog.refresh_market_snapshot(normalized_market)
+            live_snapshot = self.symbol_catalog.fetch_live_market_snapshot(normalized_market)
+            universe_source = f"{normalized_market.upper()}_TushareListedSnapshot"
+            current_snapshot = self.repository.list_symbols(market=normalized_market)
+            live_symbols = {str(row.get("symbol") or "").strip().upper() for row in live_snapshot}
+            current_symbols = {str(row.get("symbol") or "").strip().upper() for row in current_snapshot}
+            if live_snapshot and live_symbols != current_symbols:
+                self.repository.replace_symbols(live_snapshot, market=normalized_market)
+            stocks = self.repository.list_symbols(market=normalized_market)
         else:
+            universe_source = "symbol_request"
             resolved = self.symbol_catalog.resolve_symbol(str(symbol or "").strip().upper(), market=normalized_market)
             stocks = [resolved] if resolved else []
+            if resolved:
+                self.repository.upsert_symbols([resolved], market=normalized_market)
 
-        mode = self._build_mode(normalized_market, scope, symbol, days, years, start_date)
+        state_before = self.repository.summarize_market_sync_state(
+            normalized_market,
+            start_trade_date=target_start_trade_date or effective_start_date,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        incomplete_symbols = set(
+            self.repository.list_symbols_missing_standardized_daily_fields(
+                normalized_market,
+                start_trade_date=target_start_trade_date or effective_start_date,
+            )
+        )
+        stock_symbols = {
+            str((stock or {}).get("symbol") or "").strip().upper()
+            for stock in stocks
+            if str((stock or {}).get("symbol") or "").strip()
+        }
+        incomplete_symbols &= stock_symbols
+
+        if (
+            normalized_market == "cn"
+            and scope == "all"
+            and incomplete_symbols
+            and state_before.get("is_data_current")
+        ):
+            run_id = self.repository.start_sync_run(
+                source="CN_Tushare_daily_basic",
+                mode=mode,
+                market=normalized_market,
+                scope=scope,
+                symbol=None,
+                requested_start_date=effective_start_date,
+                requested_end_date=requested_end_date,
+                requested_days=days,
+                requested_years=years,
+                universe_source=universe_source,
+                total_symbols=len(incomplete_symbols),
+            )
+            batch_result = self._backfill_cn_daily_basic_only(
+                run_id=run_id,
+                symbols=incomplete_symbols,
+                start_trade_date=target_start_trade_date or effective_start_date,
+                target_latest_trade_date=target_latest_trade_date or requested_end_date,
+                total_universe_symbols=len(stocks),
+                progress_callback=progress_callback,
+            )
+            state_after = self.repository.summarize_market_sync_state(
+                normalized_market,
+                start_trade_date=target_start_trade_date or effective_start_date,
+                target_latest_trade_date=target_latest_trade_date,
+            )
+            status = "completed" if batch_result["failure_count"] == 0 else "partial"
+            self.repository.finish_sync_run(
+                run_id=run_id,
+                status=status,
+                processed_count=batch_result["processed_count"],
+                skipped_count=batch_result["skipped_count"],
+                success_count=batch_result["success_count"],
+                failure_count=batch_result["failure_count"],
+                rows_written=batch_result["rows_written"],
+                error_summary=batch_result["error_summary"],
+                error_details=batch_result["error_details"],
+                state_snapshot=state_after,
+            )
+            return {
+                "run_id": run_id,
+                "market": normalized_market,
+                "scope": scope,
+                "symbol": None,
+                "days": days,
+                "years": years,
+                "start_date": effective_start_date,
+                "processed_count": batch_result["processed_count"],
+                "total_symbols": len(incomplete_symbols),
+                "skipped_count": batch_result["skipped_count"],
+                "success_count": batch_result["success_count"],
+                "failure_count": batch_result["failure_count"],
+                "rows_written": batch_result["rows_written"],
+                "status": status,
+                "error_summary": batch_result["error_summary_list"],
+            }
+
+        candidates = self._build_sync_candidates(
+            stocks,
+            market=normalized_market,
+            start_trade_date=target_start_trade_date or effective_start_date,
+            target_latest_trade_date=target_latest_trade_date,
+        )
+        skipped_count = max(len(stocks) - len(candidates), 0)
+
+        if self._should_skip_run(
+            latest_run=latest_run,
+            state_before=state_before,
+            candidates=candidates,
+        ):
+            run_id = self.repository.start_sync_run(
+                source=f"{normalized_market.upper()}_MULTI_SOURCE",
+                mode=mode,
+                market=normalized_market,
+                scope=scope,
+                symbol=symbol.upper() if symbol else None,
+                requested_start_date=effective_start_date,
+                requested_end_date=requested_end_date,
+                requested_days=days,
+                requested_years=years,
+                universe_source=universe_source,
+                total_symbols=0,
+            )
+            state_after = self.repository.summarize_market_sync_state(
+                normalized_market,
+                start_trade_date=target_start_trade_date or effective_start_date,
+                target_latest_trade_date=target_latest_trade_date,
+            )
+            self.repository.finish_sync_run(
+                run_id=run_id,
+                status="skipped",
+                processed_count=0,
+                skipped_count=len(stocks),
+                success_count=0,
+                failure_count=0,
+                rows_written=0,
+                error_summary=None,
+                error_details={"reason": "data_current", "latest_run_id": latest_run.get("id") if latest_run else None},
+                state_snapshot=state_after,
+            )
+            return {
+                "run_id": run_id,
+                "market": normalized_market,
+                "scope": scope,
+                "symbol": symbol.upper() if symbol else None,
+                "days": days,
+                "years": years,
+                "start_date": effective_start_date,
+                "processed_count": 0,
+                "total_symbols": 0,
+                "skipped_count": len(stocks),
+                "success_count": 0,
+                "failure_count": 0,
+                "rows_written": 0,
+                "status": "skipped",
+                "error_summary": [],
+            }
+
         run_id = self.repository.start_sync_run(
             source=f"{normalized_market.upper()}_MULTI_SOURCE",
             mode=mode,
-            total_symbols=len(stocks),
+            market=normalized_market,
+            scope=scope,
+            symbol=symbol.upper() if symbol else None,
+            requested_start_date=effective_start_date,
+            requested_end_date=requested_end_date,
+            requested_days=days,
+            requested_years=years,
+            universe_source=universe_source,
+            total_symbols=len(candidates),
         )
         success_count = 0
         failure_count = 0
+        rows_written = 0
         errors: list[str] = []
+        error_details: list[dict[str, Any]] = []
 
-        for stock in stocks:
+        for stock in candidates:
             current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
             if not current_symbol:
                 continue
             item_status = "empty"
             item_source = None
+            item_rows = 0
             try:
                 result = self.sync_symbol_daily(
                     symbol=current_symbol,
                     market=normalized_market,
                     ts_code=(stock or {}).get("ts_code"),
-                    start_date=start_date,
-                    days=days,
-                    years=years,
+                    start_date=effective_start_date,
                 )
-                if result["rows"] > 0:
+                item_rows = int(result.get("rows") or 0)
+                rows_written += item_rows
+                if item_rows > 0:
                     success_count += 1
                     item_status = "success"
                     item_source = result.get("source")
                 else:
                     failure_count += 1
                     errors.append(f"{current_symbol}:empty")
+                    error_details.append({"symbol": current_symbol, "status": "empty"})
                     item_status = "empty"
             except Exception as exc:
                 failure_count += 1
                 errors.append(f"{current_symbol}:{type(exc).__name__}")
+                error_details.append(
+                    {
+                        "symbol": current_symbol,
+                        "status": "error",
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
                 item_status = "error"
 
             processed_count = success_count + failure_count
             self.repository.update_sync_run_progress(
                 run_id=run_id,
+                processed_count=processed_count,
+                skipped_count=skipped_count,
                 success_count=success_count,
                 failure_count=failure_count,
+                rows_written=rows_written,
             )
             if progress_callback is not None:
                 progress_callback(
@@ -119,21 +303,35 @@ class DailyDataWriteService:
                         "scope": scope,
                         "symbol": current_symbol,
                         "processed_count": processed_count,
-                        "total_symbols": len(stocks),
+                        "total_symbols": len(candidates),
+                        "skipped_count": skipped_count,
                         "success_count": success_count,
                         "failure_count": failure_count,
+                        "rows_written": rows_written,
                         "item_status": item_status,
                         "source": item_source,
+                        "item_rows": item_rows,
                     }
                 )
 
+        state_after = self.repository.summarize_market_sync_state(
+            normalized_market,
+            start_trade_date=target_start_trade_date or effective_start_date,
+            target_latest_trade_date=target_latest_trade_date,
+        )
         status = "completed" if failure_count == 0 else "partial"
+        processed_count = success_count + failure_count
         self.repository.finish_sync_run(
             run_id=run_id,
             status=status,
+            processed_count=processed_count,
+            skipped_count=skipped_count,
             success_count=success_count,
             failure_count=failure_count,
+            rows_written=rows_written,
             error_summary="; ".join(errors[:20]) if errors else None,
+            error_details=error_details[:100] if error_details else None,
+            state_snapshot=state_after,
         )
         return {
             "run_id": run_id,
@@ -142,11 +340,14 @@ class DailyDataWriteService:
             "symbol": symbol.upper() if symbol else None,
             "days": days,
             "years": years,
-            "start_date": start_date,
-            "processed_count": success_count + failure_count,
-            "total_symbols": len(stocks),
+            "start_date": effective_start_date,
+            "processed_count": processed_count,
+            "total_symbols": len(candidates),
+            "skipped_count": skipped_count,
             "success_count": success_count,
             "failure_count": failure_count,
+            "rows_written": rows_written,
+            "status": status,
             "error_summary": errors[:20],
         }
 
@@ -195,14 +396,14 @@ class DailyDataWriteService:
         if selected_df is None or selected_df.empty:
             return {"symbol": normalized_symbol, "rows": 0, "source": None}
 
-        self.repository.upsert_daily_bars(
+        inserted_rows = self.repository.upsert_daily_bars(
             symbol=normalized_symbol,
             daily_df=selected_df,
             source=selected_source,
             market=normalized_market,
             ts_code=ts_code or (symbol_record or {}).get("ts_code"),
         )
-        return {"symbol": normalized_symbol, "rows": len(selected_df), "source": selected_source}
+        return {"symbol": normalized_symbol, "rows": inserted_rows, "source": selected_source}
 
     def _fetch_source_daily(
         self,
@@ -246,6 +447,192 @@ class DailyDataWriteService:
             df = df[df[date_col] >= pd.Timestamp(start_date)]
         return df.sort_values(date_col, ascending=True).reset_index(drop=True)
 
+    def _build_sync_candidates(
+        self,
+        stocks: list[dict],
+        *,
+        market: str,
+        start_trade_date: Optional[str],
+        target_latest_trade_date: Optional[str],
+    ) -> list[dict]:
+        if not stocks:
+            return []
+
+        date_ranges = self.repository.get_symbol_date_ranges(market)
+        latest_trade_cutoff = self._compute_stale_cutoff(target_latest_trade_date)
+        incomplete_symbols = set(
+            self.repository.list_symbols_missing_standardized_daily_fields(
+                market,
+                start_trade_date=start_trade_date,
+            )
+        )
+
+        candidates = []
+        for stock in stocks:
+            current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
+            if not current_symbol:
+                continue
+
+            symbol_range = date_ranges.get(current_symbol)
+            needs_sync = symbol_range is None
+            if start_trade_date and (
+                symbol_range is None
+                or symbol_range.get("min_trade_date") is None
+                or symbol_range["min_trade_date"] > start_trade_date
+            ):
+                needs_sync = True
+            if latest_trade_cutoff and (
+                symbol_range is None
+                or symbol_range.get("max_trade_date") is None
+                or symbol_range["max_trade_date"] < latest_trade_cutoff
+            ):
+                needs_sync = True
+            if current_symbol in incomplete_symbols:
+                needs_sync = True
+
+            if needs_sync:
+                candidates.append(stock)
+        return candidates
+
+    def _backfill_cn_daily_basic_only(
+        self,
+        *,
+        run_id: int,
+        symbols: set[str],
+        start_trade_date: Optional[str],
+        target_latest_trade_date: Optional[str],
+        total_universe_symbols: int,
+        progress_callback: Optional[Callable[[dict], None]],
+    ) -> dict:
+        target_symbols = {str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()}
+        if not target_symbols:
+            return {
+                "processed_count": 0,
+                "skipped_count": total_universe_symbols,
+                "success_count": 0,
+                "failure_count": 0,
+                "rows_written": 0,
+                "error_summary": None,
+                "error_summary_list": [],
+                "error_details": None,
+            }
+
+        open_dates = TushareDataSource.list_cn_open_trade_dates(
+            start_date=start_trade_date,
+            end_date=target_latest_trade_date,
+        )
+        touched_symbols: set[str] = set()
+        rows_written = 0
+
+        for trade_date in open_dates:
+            daily_basic_df = TushareDataSource.fetch_cn_daily_basic_by_trade_date(trade_date)
+            if daily_basic_df is None or daily_basic_df.empty:
+                continue
+
+            batch_df = daily_basic_df.copy()
+            batch_df["symbol"] = (
+                batch_df["ts_code"]
+                .astype(str)
+                .str.split(".")
+                .str[0]
+                .str.strip()
+                .str.upper()
+            )
+            batch_df = batch_df[batch_df["symbol"].isin(target_symbols)]
+            if batch_df.empty:
+                continue
+
+            rows_written += self.repository.bulk_update_cn_daily_basic(batch_df)
+            touched_symbols.update(batch_df["symbol"].dropna().astype(str).str.upper().tolist())
+
+            processed_count = len(touched_symbols)
+            skipped_count = max(total_universe_symbols - processed_count, 0)
+            self.repository.update_sync_run_progress(
+                run_id=run_id,
+                processed_count=processed_count,
+                skipped_count=skipped_count,
+                success_count=processed_count,
+                failure_count=0,
+                rows_written=rows_written,
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "run_id": run_id,
+                        "market": "cn",
+                        "scope": "all",
+                        "symbol": f"daily_basic:{trade_date}",
+                        "processed_count": processed_count,
+                        "total_symbols": len(target_symbols),
+                        "skipped_count": skipped_count,
+                        "success_count": processed_count,
+                        "failure_count": 0,
+                        "rows_written": rows_written,
+                        "item_status": "batch_backfill",
+                        "source": "CN_Tushare_daily_basic",
+                        "item_rows": len(batch_df),
+                    }
+                )
+
+        remaining_symbols = sorted(target_symbols - touched_symbols)
+        error_details = None
+        error_summary = None
+        error_summary_list: list[str] = []
+        if remaining_symbols:
+            error_summary_list = [f"{symbol}:daily_basic_missing" for symbol in remaining_symbols[:20]]
+            error_summary = "; ".join(error_summary_list)
+            error_details = [
+                {"symbol": symbol, "status": "daily_basic_missing"}
+                for symbol in remaining_symbols[:100]
+            ]
+
+        processed_count = len(target_symbols)
+        success_count = len(touched_symbols)
+        failure_count = len(remaining_symbols)
+        skipped_count = max(total_universe_symbols - processed_count, 0)
+        return {
+            "processed_count": processed_count,
+            "skipped_count": skipped_count,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "rows_written": rows_written,
+            "error_summary": error_summary,
+            "error_summary_list": error_summary_list,
+            "error_details": error_details,
+        }
+
+    @staticmethod
+    def _should_skip_run(
+        *,
+        latest_run: Optional[dict],
+        state_before: dict,
+        candidates: list[dict],
+    ) -> bool:
+        if not candidates:
+            if not state_before.get("is_data_current"):
+                return False
+            if latest_run is None:
+                return True
+            return latest_run.get("status") in {"completed", "partial", "skipped"} and bool(
+                latest_run.get("is_data_current")
+            )
+
+        if latest_run is None or latest_run.get("status") != "completed" or int(latest_run.get("failure_count") or 0) != 0:
+            return False
+
+        stable_keys = (
+            "target_latest_trade_date",
+            "coverage_start_date",
+            "coverage_end_date",
+            "covered_symbol_count",
+            "missing_symbol_count",
+            "stale_symbol_count",
+            "daily_row_count",
+        )
+        if any(latest_run.get(key) != state_before.get(key) for key in stable_keys):
+            return False
+        return int(latest_run.get("processed_count") or 0) == len(candidates)
+
     @staticmethod
     def _compute_start_date(days: Optional[int], years: Optional[int]) -> Optional[str]:
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -268,6 +655,32 @@ class DailyDataWriteService:
     @staticmethod
     def _normalize_market(market: str) -> str:
         return "us" if str(market).strip().lower() == "us" else "cn"
+
+    def _resolve_trade_window(
+        self,
+        market: str,
+        start_date: Optional[str],
+        end_date: Optional[str],
+    ) -> tuple[Optional[str], Optional[str]]:
+        if market != "cn":
+            return start_date, None
+        if not any(isinstance(source, TushareDataSource) for source in self.cn_daily_sources):
+            return start_date, None
+        first_open_date, latest_open_date = TushareDataSource.get_cn_trade_window(
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return first_open_date or start_date, latest_open_date
+
+    def _compute_stale_cutoff(self, target_latest_trade_date: Optional[str]) -> Optional[str]:
+        if not target_latest_trade_date:
+            return None
+        try:
+            return (
+                pd.Timestamp(target_latest_trade_date) - pd.Timedelta(days=self.repository.STALE_GRACE_DAYS)
+            ).strftime("%Y-%m-%d")
+        except Exception:
+            return target_latest_trade_date
 
     @staticmethod
     def _build_mode(

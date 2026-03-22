@@ -9,6 +9,7 @@ Stock Analysis API 后端项目，当前仅保留 HTTP REST API。
 - `docs/specs/` 是具体需求、审计结论、字段规范、接口整改项和模块级交付要求的唯一目录
 - 新需求先落 `docs/specs/`，实施过程中同步更新 `docs/plan.md`
 - 架构层面的新增、删除或偏移，必须先更新 `docs/architecture.md`
+- 涉及仓表、同步流程、状态模型和字段口径的重构，必须先更新 `README.md` / `AGENTS.md` / `docs/`
 - 不再新增重复职责的阶段性文档；如需迁移旧文档内容，迁移完成后删除原文档并校正 `docs/plan.md`
 - `docs/specs/` 只保留未完成、仍需执行的规格；已完成的迁移说明、审计快照或阶段性治理文档应删除，不作长期归档
 
@@ -74,6 +75,8 @@ src/
 - A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
 - `cn_symbols` 只保留当前上市 A 股最新快照，不保留历史状态
 - `cn_daily` 的全市场补库口径为当前上市 A 股、自 `2026-01-01` 起的日线数据
+- `sync_runs` 采用 append-only 历史模型，但每条记录都必须表达“本次运行结束后的全局数据状态”
+- `cn_daily` 应逐步吸收 Tushare `daily_basic` 的标准事实字段，不把核心市场事实长期塞进 `extra`
 
 ## 文档协作要求
 

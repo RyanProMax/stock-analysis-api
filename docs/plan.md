@@ -4,10 +4,9 @@
 
 ## 当前目标
 
-- 完成 DSA 风格的 `repositories/` + `services/` 收敛
-- 将 A 股仓表从 `a_share_*` 统一重命名为 `cn_*`
-- 让 `/watch/poll`、`/stock/analyze`、`/stock/list`、`/stock/search` 统一走 `SymbolCatalogService` 与 `DailyDataReadService`
-- 完成 A 股全市场 `2026-01-01` 起补库并核验 `cn_daily` 全覆盖
+- 完成 A 股本地行情仓的状态模型和字段模型重构验收
+- 保持 `sync-market-data` 的按需补库 / `skipped` 语义稳定
+- 评估剩余 source-limited stale symbol 的停牌或无成交语义建模
 
 ## 最近完成项
 
@@ -45,6 +44,16 @@
 - 完成 A 股 `market=cn`、`scope=all`、`start_date=2026-01-01` 的全市场补库
 - 修复 Tushare 北交所 `ts_code` 映射，将 `920xxx / 8xxx / 4xxx` 正确映射到 `.BJ`
 - 重试北交所缺失 symbol 后补齐 `cn_daily` 缺口，当前 `5000/5000` 个 `cn_symbols` 均已有日线
+- 实时核实 Tushare `stock_basic(list_status='L')` 当前返回 `5000` 只，`P/D` 当前都为 `0`
+- 实时核实当前本地 `cn_daily` 最新交易日为 `2026-03-20`，与截至 `2026-03-22` 的最新开市日一致
+- 明确本轮重构重点从“补更多 symbol”转为“补状态模型与事实字段模型”
+- 更新 `README.md`、`AGENTS.md`、`docs/architecture.md`、`docs/specs/local-daily-warehouse.md`，先锁定新设计再改代码
+- 为 `cn_symbols` 增加 `cnspell` 主列，并将 `act_name`、`act_ent_type` 归入 `extra`
+- 为 `cn_daily` 提升 `turnover_rate`、`volume_ratio`、`pe/pb/ps`、`circ_mv/total_mv` 等 Tushare `daily_basic` 标准列
+- 升级 `sync_runs` schema，增加请求参数、运行进度和全局状态快照字段
+- 让 `sync-market-data` 先查状态再决策，并支持同一状态重复执行直接 `skipped`
+- 新增 `daily_basic` 批量回填路径，完成现有 `cn_daily` 旧行回填，当前 `total_mv` 缺口为 `0`
+- 用真实 Tushare 数据完成 A 股仓回填验收；最新 `sync_runs.id=14` 已进入 `skipped`
 
 ## 当前状态
 
@@ -54,6 +63,11 @@
 - 文件缓存已下线，持久层收敛为 SQLite + 进程内内存态
 - Tushare 现为股票列表与 A 股日线的主优先级数据源
 - `repositories/` 和 `services/` 已成为正式业务层，`storage/` 只保留兼容导入
+- 当前 A 股 listed universe 以 Tushare `list_status='L'` 为准，实时计数为 `5000`
+- `cn_symbols` 当前为 `5000`
+- `cn_daily` 当前为 `244475` 行，覆盖 `5000/5000` 个 symbol
+- `cn_daily` 当前 `total_mv` 缺口为 `0`
+- 最新 `sync_runs` 已可表达请求参数、进度和全局状态快照
 - 首版已完成的实现包括：
   - compact snapshot
   - delta / alerts
@@ -69,18 +83,20 @@
   - `/stock/list` 与 `/stock/search` 默认消费 SQLite symbol 仓
   - `/stock/analyze` 与 `/watch/poll` 默认执行 freshness 检查后按需补数
   - 北交所 `cn_daily` 现已可通过 `CN_Tushare` 正常补库
+  - `sync-market-data` 当前会先查最新状态，再决定补库或 `skipped`
+  - `daily_basic` 标准字段已成为 `cn_daily` 主列
+  - 历史 `running` 脏记录已统一改为 `cancelled`
 
 ## 下一步计划
 
 ### P0
 
-- 继续清理旧兼容壳调用点，减少对 `core/` / `storage/` 兼容路径的依赖
-- 为全市场同步补一条回归测试，覆盖北交所 `.BJ` 代码映射
+- 评估 `603056`、`002231`、`300344`、`600735` 这 4 只 source-limited stale symbol 的停牌 / 无成交语义
+- 决定是否需要把“已尝试同步但 source 无更新”单独建模进 `sync_runs` 或仓层状态
 
 ### P1
 
 - 评估是否需要引入更稳定的 US realtime quote 链路
-- 评估 `extra` 字段中高频使用的事实字段是否需要升级为主列
 - 继续压缩轮询 payload，控制 token 与重复字段
 
 ## 已知风险与阻塞
@@ -90,4 +106,4 @@
 - symbol 级 baseline 为进程内全局共享，不区分调用方，且重启后丢失，会影响多 Agent 并发观测语义
 - SQLite 方案当前只适合单机、单写多读场景，不适合未来多实例共享写入
 - 旧兼容导入层仍然存在，后续若要继续收敛，需要逐步清理 `src/core/` / `src/storage/` 的转发用法
-- 北交所 symbol 是否可补齐当前依赖 `.BJ` 映射正确性；后续若新增其他交易所编码规则，需要同步补充单测
+- 当前仍有 4 只 source-limited symbol 的最新日线早于 market latest；若后续要让 `is_data_current` 更贴近真实语义，需要单独建模停牌 / source latest available
