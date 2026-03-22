@@ -46,19 +46,19 @@ black --line-length 100 .
 
 ## HTTP API
 
-主要端点：
+主要端点与用途：
 
-- `POST /stock/analyze`
-- `GET /stock/list`
-- `POST /stock/search`
-- `POST /watch/poll`
-- `GET /valuation/dcf`
-- `GET /valuation/comps`
-- `GET /model/lbo`
-- `GET /model/three-statement`
-- `GET /model/three-statement/scenarios`
-- `GET /analysis/competitive/competitive`
-- `GET /analysis/earnings/earnings`
+- `POST /stock/analyze`: 单股或多股综合分析，返回标准化的 `entity / facts / analysis / meta`
+- `GET /stock/list`: 按市场分页获取股票列表
+- `POST /stock/search`: 按代码、名称或拼音搜索股票
+- `POST /watch/poll`: 多股票轮询盯盘，返回 snapshot、delta 和 alerts
+- `GET /valuation/dcf`: DCF 估值结果
+- `GET /valuation/comps`: 可比公司估值结果
+- `GET /model/lbo`: LBO 情景测算
+- `GET /model/three-statement`: 三表预测结果
+- `GET /model/three-statement/scenarios`: 三表多情景对比
+- `GET /analysis/competitive/competitive`: 竞争格局分析
+- `GET /analysis/earnings/earnings`: 财报与业绩解读
 
 ## 环境变量
 
