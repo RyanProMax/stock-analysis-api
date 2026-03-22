@@ -41,6 +41,7 @@
 - 新增 `src/repositories/market_data_repository.py` 和 `src/services/` 分层
 - 将旧 `storage/`、`core/market_data_*`、`core/watch_polling` 改为兼容转发层
 - 为统一同步命令新增精确 `start_date` 能力
+- 将同步进度改为按股票数实时统计，并在 CLI 输出 `processed/total` 进度
 
 ## 当前状态
 

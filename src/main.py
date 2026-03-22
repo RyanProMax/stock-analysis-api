@@ -89,6 +89,20 @@ def start():
 
 
 def sync_market_data():
+    def _print_progress(update: dict) -> None:
+        processed = update["processed_count"]
+        total = update["total_symbols"]
+        success = update["success_count"]
+        failure = update["failure_count"]
+        symbol = update["symbol"]
+        item_status = update["item_status"]
+        source = update.get("source")
+        source_suffix = f" source={source}" if source else ""
+        print(
+            f"[{processed}/{total}] success={success} failure={failure} symbol={symbol} status={item_status}{source_suffix}",
+            flush=True,
+        )
+
     parser = argparse.ArgumentParser(description="Sync market data into the local SQLite warehouse.")
     parser.add_argument("--market", choices=["cn", "us"], required=True)
     parser.add_argument("--scope", choices=["all", "symbol"], default="all")
@@ -110,6 +124,7 @@ def sync_market_data():
         days=args.days or (None if args.years or args.start_date else 30),
         years=args.years,
         start_date=args.start_date,
+        progress_callback=_print_progress,
     )
     print(summary)
 
