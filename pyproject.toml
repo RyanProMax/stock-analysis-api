@@ -37,8 +37,7 @@ dev = [
 
 [project.scripts]
 start = "src.main:start"
-sync-a-share-daily = "src.main:sync_a_share_daily"
-backfill-a-share-daily = "src.main:backfill_a_share_daily"
+sync-market-data = "src.main:sync_market_data"
 
 [build-system]
 requires = ["setuptools>=61.0"]

@@ -23,12 +23,12 @@ from .sources import (
 )
 
 # 创建全局 DataManager 实例
-# A股优先级: Efinance(P0) -> Tushare(P1) -> AkShare(P2) -> Pytdx(P2) -> Baostock(P3)
+# A股优先级: Tushare(P0) -> Efinance(P1) -> AkShare(P2) -> Pytdx(P2) -> Baostock(P3)
 # 美股优先级: yfinance(P0) -> AkShare(P1)
 _data_manager = DataManager.create_market_manager(
     cn_fetchers=[
-        EfinanceDataSource.get_instance(),
         TushareDataSource.get_instance(),
+        EfinanceDataSource.get_instance(),
         AkShareDataSource.get_instance(),
         PytdxDataSource.get_instance(),
         BaostockDataSource.get_instance(),

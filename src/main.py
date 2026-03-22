@@ -1,4 +1,6 @@
+import argparse
 import os
+import sys
 import uvicorn
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,15 +88,27 @@ def start():
     uvicorn.run("src.main:app", host="0.0.0.0", port=port, reload=is_development())
 
 
-def sync_a_share_daily():
-    days = int(os.environ.get("MARKET_DATA_SYNC_DAYS", "30"))
-    summary = daily_warehouse_sync_service.refresh_recent_a_share_daily(days=days)
-    print(summary)
+def sync_market_data():
+    parser = argparse.ArgumentParser(description="Sync market data into the local SQLite warehouse.")
+    parser.add_argument("--market", choices=["cn", "us"], required=True)
+    parser.add_argument("--scope", choices=["all", "symbol"], default="all")
+    parser.add_argument("--symbol")
+    parser.add_argument("--days", type=int)
+    parser.add_argument("--years", type=int)
+    args = parser.parse_args(sys.argv[1:])
 
+    if args.days and args.years:
+        raise SystemExit("`--days` 和 `--years` 只能二选一")
+    if args.scope == "symbol" and not args.symbol:
+        raise SystemExit("`scope=symbol` 时必须提供 `--symbol`")
 
-def backfill_a_share_daily():
-    years = int(os.environ.get("MARKET_DATA_BACKFILL_YEARS", "10"))
-    summary = daily_warehouse_sync_service.backfill_a_share_history(years=years)
+    summary = daily_warehouse_sync_service.sync_market_data(
+        market=args.market,
+        scope=args.scope,
+        symbol=args.symbol,
+        days=args.days or (None if args.years else 30),
+        years=args.years,
+    )
     print(summary)
 
 
