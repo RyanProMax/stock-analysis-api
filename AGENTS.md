@@ -37,7 +37,7 @@ src/
 ├── core/             # 核心服务
 ├── data_provider/    # 数据源
 ├── model/            # 领域模型与统一 contract
-├── storage/          # 本地 SQLite 持久层
+├── storage/          # 本地 SQLite + 内存态持久层
 └── utils/            # 工具
 ```
 
@@ -67,6 +67,9 @@ src/
 - SQLite 只保存数据源返回的必要持久信息，不保存分析报告缓存
 - 5-10 分钟短线 watch baseline 只保留进程内内存态，不落数据库
 - 公共 HTTP 接口不暴露 `refresh` 参数，统一先查 SQLite，缺失再拉外部源并回写
+- 本地行情仓主表按市场拆分为 `a_share_symbols`、`a_share_daily`、`us_symbols`、`us_daily`
+- 统一同步入口为 `uv run sync-market-data`
+- A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
 
 ## 文档协作要求
 

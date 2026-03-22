@@ -22,22 +22,30 @@ class TushareDataSource(BaseStockDataSource):
     SOURCE_NAME: str = "Tushare"
     priority: int = 0  # 优先级最高
     TOKEN: ClassVar[str] = os.environ.get("TUSHARE_TOKEN", "")
+    TUSHARE_URL: ClassVar[str] = os.environ.get("TUSHARE_HTTP_URL") or os.environ.get("TUSHARE_URL", "")
     _pro: ClassVar[Optional[Any]] = None
 
     @classmethod
     def get_pro(cls) -> Optional[Any]:
         """获取 tushare pro 实例（懒加载）"""
-        if cls._pro is not None:
+        token = os.environ.get("TUSHARE_TOKEN", cls.TOKEN or "")
+        url = os.environ.get("TUSHARE_HTTP_URL") or os.environ.get("TUSHARE_URL", cls.TUSHARE_URL or "")
+
+        if cls._pro is not None and cls.TOKEN == token and cls.TUSHARE_URL == url:
             return cls._pro
 
-        if not cls.TOKEN:
+        cls.TOKEN = token
+        cls.TUSHARE_URL = url
+        cls._pro = None
+
+        if not token:
             return None
 
         try:
             cls._pro = ts.pro_api("anything")
-            # 设置实际 token 和代理地址
-            setattr(cls._pro, "_DataApi__token", cls.TOKEN)
-            setattr(cls._pro, "_DataApi__http_url", "http://5k1a.xiximiao.com/dataapi")
+            setattr(cls._pro, "_DataApi__token", token)
+            if url:
+                setattr(cls._pro, "_DataApi__http_url", url)
             print("✓ Tushare 初始化成功")
             return cls._pro
         except Exception as e:
@@ -54,7 +62,7 @@ class TushareDataSource(BaseStockDataSource):
 
         try:
             # Tushare 需要带交易所前缀的股票代码
-            ts_symbol = f"{symbol}.SH" if symbol.startswith("6") else f"{symbol}.SZ"
+            ts_symbol = self._build_cn_ts_code(symbol)
             df = pro.daily(ts_code=ts_symbol, start_date="20100101")
             if df is not None and not df.empty:
                 df = df.sort_values("trade_date").reset_index(drop=True)
@@ -103,7 +111,44 @@ class TushareDataSource(BaseStockDataSource):
             return []
 
         df = pro.us_basic()
-        return self.normalize_dataframe(df)
+        if df is None or df.empty:
+            return []
+
+        stocks = []
+        for row in self.normalize_dataframe(df):
+            ts_code = str(row.get("ts_code") or "").strip().upper()
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol and ts_code:
+                symbol = ts_code.split(".")[0]
+            if not symbol:
+                continue
+            row["symbol"] = symbol
+            row["ts_code"] = ts_code or f"{symbol}.US"
+            row["market"] = row.get("market") or "美股"
+            row["exchange"] = row.get("exchange") or "NASDAQ"
+            stocks.append(row)
+        return stocks
+
+    @classmethod
+    def fetch_cn_stock_basic(cls, symbol: str) -> Optional[Dict[str, Any]]:
+        """按单只股票获取 A 股主数据，用于单股同步时补齐 symbol 元信息。"""
+        pro = cls.get_pro()
+        if pro is None:
+            return None
+
+        ts_symbol = cls._build_cn_ts_code(symbol)
+        try:
+            df = pro.stock_basic(ts_code=ts_symbol, list_status="L")
+            if df is None or df.empty:
+                return None
+            row = cls.normalize_dataframe(df.iloc[[0]])[0]
+            row["symbol"] = str(row.get("symbol") or symbol).strip().upper()
+            row["ts_code"] = str(row.get("ts_code") or ts_symbol).strip().upper()
+            row["market"] = row.get("market") or "A股"
+            row["exchange"] = row.get("exchange") or cls._infer_exchange_from_ts_code(row["ts_code"])
+            return row
+        except Exception:
+            return None
 
     def is_available(self, market: str) -> bool:
         """检查数据源是否可用"""
@@ -112,6 +157,126 @@ class TushareDataSource(BaseStockDataSource):
             return False
         pro = self.get_pro()
         return pro is not None
+
+    @classmethod
+    def fetch_daily_with_extras(
+        cls,
+        symbol: str,
+        market: str = "cn",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Optional[pd.DataFrame]:
+        """获取带扩展字段的日线数据，优先服务于 SQLite 落库。"""
+        normalized_market = "us" if str(market).lower() == "us" else "cn"
+        if normalized_market != "cn":
+            return None
+
+        pro = cls.get_pro()
+        if pro is None:
+            return None
+
+        ts_symbol = cls._build_cn_ts_code(symbol)
+        start_text = cls._format_tushare_date(start_date) or "20100101"
+        end_text = cls._format_tushare_date(end_date)
+
+        try:
+            daily_df = pro.daily(ts_code=ts_symbol, start_date=start_text, end_date=end_text)
+            if daily_df is None or daily_df.empty:
+                return None
+            daily_df = daily_df.sort_values("trade_date").reset_index(drop=True)
+
+            adj_df = cls._safe_query_dataframe(
+                pro,
+                "adj_factor",
+                ts_code=ts_symbol,
+                start_date=start_text,
+                end_date=end_text,
+            )
+            limit_df = cls._safe_query_dataframe(
+                pro,
+                "stk_limit",
+                ts_code=ts_symbol,
+                start_date=start_text,
+                end_date=end_text,
+            )
+            suspend_df = cls._safe_query_dataframe(
+                pro,
+                "suspend_d",
+                ts_code=ts_symbol,
+                start_date=start_text,
+                end_date=end_text,
+            )
+
+            if adj_df is not None and not adj_df.empty and "trade_date" in adj_df.columns:
+                daily_df = daily_df.merge(
+                    adj_df[["trade_date", "adj_factor"]].drop_duplicates("trade_date"),
+                    on="trade_date",
+                    how="left",
+                )
+
+            if limit_df is not None and not limit_df.empty and "trade_date" in limit_df.columns:
+                keep_columns = [col for col in ("trade_date", "up_limit", "down_limit") if col in limit_df.columns]
+                daily_df = daily_df.merge(
+                    limit_df[keep_columns].drop_duplicates("trade_date"),
+                    on="trade_date",
+                    how="left",
+                )
+
+            daily_df["is_suspended"] = 0
+            suspend_dates = cls._extract_suspend_dates(suspend_df)
+            if suspend_dates:
+                daily_df.loc[daily_df["trade_date"].isin(suspend_dates), "is_suspended"] = 1
+
+            daily_df["ts_code"] = ts_symbol
+            return daily_df
+        except Exception as e:
+            print(f"⚠️ Tushare 获取扩展日线失败 [{symbol}]: {e}")
+            return None
+
+    @staticmethod
+    def _safe_query_dataframe(pro: Any, method_name: str, **kwargs: Any) -> Optional[pd.DataFrame]:
+        try:
+            method = getattr(pro, method_name)
+            result = method(**kwargs)
+            return result if isinstance(result, pd.DataFrame) else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _extract_suspend_dates(df: Optional[pd.DataFrame]) -> set[str]:
+        if df is None or df.empty:
+            return set()
+
+        for candidate in ("trade_date", "suspend_date", "date"):
+            if candidate in df.columns:
+                return {
+                    pd.Timestamp(value).strftime("%Y-%m-%d")
+                    for value in df[candidate].dropna().tolist()
+                }
+        return set()
+
+    @staticmethod
+    def _format_tushare_date(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            return pd.Timestamp(value).strftime("%Y%m%d")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _build_cn_ts_code(symbol: str) -> str:
+        normalized = str(symbol).strip().upper()
+        return f"{normalized}.SH" if normalized.startswith("6") else f"{normalized}.SZ"
+
+    @staticmethod
+    def _infer_exchange_from_ts_code(ts_code: str) -> Optional[str]:
+        text = str(ts_code or "").upper()
+        if text.endswith(".SH"):
+            return "SSE"
+        if text.endswith(".SZ"):
+            return "SZSE"
+        return None
 
     # ==================== 财务数据 ====================
 
@@ -149,7 +314,7 @@ class TushareDataSource(BaseStockDataSource):
 
         try:
             # Tushare 需要带交易所前缀的股票代码
-            ts_symbol = f"{symbol}.SH" if symbol.startswith("6") else f"{symbol}.SZ"
+            ts_symbol = cls._build_cn_ts_code(symbol)
 
             # 获取估值指标 (PE/PB)
             try:

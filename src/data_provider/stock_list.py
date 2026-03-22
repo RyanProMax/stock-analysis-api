@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 
 from .sources.tushare import TushareDataSource
 from .sources.akshare import AkShareDataSource
+from .sources.efinance import EfinanceDataSource
 from .sources.nasdaq import NasdaqDataSource
 from ..storage import market_data_storage
 
@@ -20,13 +21,14 @@ class StockListService:
 
     # 数据源实例（单例）
     _tushare_source = TushareDataSource.get_instance()
+    _efinance_source = EfinanceDataSource.get_instance()
     _akshare_source = AkShareDataSource.get_instance()
     _nasdaq_source = NasdaqDataSource.get_instance()
 
     # A股数据源优先级
-    _a_stock_sources = [_tushare_source, _akshare_source]
+    _a_stock_sources = [_tushare_source, _efinance_source, _akshare_source]
     # 美股数据源优先级
-    _us_stock_sources = [_nasdaq_source, _tushare_source]
+    _us_stock_sources = [_tushare_source, _nasdaq_source]
 
     @classmethod
     def _load_from_storage(cls, market: str) -> List[Dict[str, Any]]:

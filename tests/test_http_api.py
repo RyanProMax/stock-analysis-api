@@ -3,7 +3,13 @@ HTTP API contract tests for the HTTP-only structured response model.
 """
 
 from fastapi.testclient import TestClient
+import src.api.routes.stock as stock_route
 import src.api.routes.watch as watch_route
+import src.api.routes.valuation as valuation_route
+import src.api.routes.comps as comps_route
+import src.api.routes.model as model_route
+import src.api.routes.competitive as competitive_route
+import src.api.routes.earnings as earnings_route
 
 from tests.conftest import TEST_SYMBOL
 
@@ -15,6 +21,24 @@ def assert_structured_payload(payload: dict):
     assert "meta" in payload
     assert payload["meta"]["schema_version"] == "2.0.0"
     assert payload["meta"]["interface_type"] in {"fact", "mixed", "model"}
+
+
+def stub_structured_payload(interface_type: str = "mixed") -> dict:
+    return {
+        "entity": {"symbol": TEST_SYMBOL, "name": "NVIDIA"},
+        "facts": {"market_snapshot": {}, "quote": {}},
+        "analysis": {"technical_signals": {}, "delta": {}},
+        "meta": {"schema_version": "2.0.0", "interface_type": interface_type},
+    }
+
+
+class StubResult:
+    def __init__(self, payload: dict | None = None, error: str | None = None):
+        self._payload = payload or {}
+        self.error = error
+
+    def to_dict(self):
+        return self._payload
 
 
 class TestHealthEndpoints:
@@ -44,7 +68,18 @@ class TestStockEndpoints:
         assert data["status_code"] == 200
         assert "meta" in data["data"]
 
-    def test_stock_analyze_contract(self, client: TestClient):
+    def test_stock_analyze_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            stock_route.stock_service,
+            "batch_analyze",
+            lambda symbols, include_qlib_factors=False: [StubResult()],
+        )
+        monkeypatch.setattr(
+            stock_route,
+            "stock_analysis_contract",
+            lambda payload: stub_structured_payload("mixed"),
+        )
+
         response = client.post("/stock/analyze", json={"symbols": [TEST_SYMBOL], "include_qlib_factors": False})
         assert response.status_code == 200
         data = response.json()
@@ -132,7 +167,14 @@ class TestStockEndpoints:
 
 
 class TestValuationEndpoints:
-    def test_dcf_contract(self, client: TestClient):
+    def test_dcf_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(valuation_route.DCFModel, "analyze", lambda self, symbol: StubResult())
+        monkeypatch.setattr(
+            valuation_route,
+            "dcf_contract",
+            lambda payload: stub_structured_payload("model"),
+        )
+
         response = client.get(f"/valuation/dcf?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
@@ -141,7 +183,14 @@ class TestValuationEndpoints:
             assert_structured_payload(data["data"])
             assert data["data"]["meta"]["interface_type"] == "model"
 
-    def test_comps_contract(self, client: TestClient):
+    def test_comps_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(comps_route.comps_analyzer, "analyze", lambda symbol, sector=None: StubResult())
+        monkeypatch.setattr(
+            comps_route,
+            "comps_contract",
+            lambda payload: stub_structured_payload("mixed"),
+        )
+
         response = client.get(f"/valuation/comps?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
@@ -152,7 +201,14 @@ class TestValuationEndpoints:
 
 
 class TestModelEndpoints:
-    def test_lbo_contract(self, client: TestClient):
+    def test_lbo_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(model_route.LBOModel, "analyze", lambda self, symbol: StubResult())
+        monkeypatch.setattr(
+            model_route,
+            "lbo_contract",
+            lambda payload: stub_structured_payload("model"),
+        )
+
         response = client.get(f"/model/lbo?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
@@ -161,7 +217,18 @@ class TestModelEndpoints:
             assert_structured_payload(data["data"])
             assert data["data"]["meta"]["interface_type"] == "model"
 
-    def test_three_statement_contract(self, client: TestClient):
+    def test_three_statement_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            model_route.ThreeStatementModel,
+            "analyze",
+            lambda self, symbol, scenario: StubResult(),
+        )
+        monkeypatch.setattr(
+            model_route,
+            "three_statement_contract",
+            lambda payload: stub_structured_payload("model"),
+        )
+
         response = client.get(f"/model/three-statement?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
@@ -172,7 +239,18 @@ class TestModelEndpoints:
 
 
 class TestAnalysisEndpoints:
-    def test_competitive_contract(self, client: TestClient):
+    def test_competitive_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            competitive_route.CompetitiveAnalyzer,
+            "analyze",
+            lambda self, symbol, competitors=None, industry="technology": StubResult(),
+        )
+        monkeypatch.setattr(
+            competitive_route,
+            "competitive_contract",
+            lambda payload: stub_structured_payload("mixed"),
+        )
+
         response = client.get(f"/analysis/competitive/competitive?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
@@ -181,7 +259,18 @@ class TestAnalysisEndpoints:
             assert_structured_payload(data["data"])
             assert data["data"]["meta"]["interface_type"] == "mixed"
 
-    def test_earnings_contract(self, client: TestClient):
+    def test_earnings_contract(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            earnings_route.EarningsAnalyzer,
+            "analyze",
+            lambda self, symbol, quarter=None, fiscal_year=None: StubResult(),
+        )
+        monkeypatch.setattr(
+            earnings_route,
+            "earnings_contract",
+            lambda payload: stub_structured_payload("mixed"),
+        )
+
         response = client.get(f"/analysis/earnings/earnings?symbol={TEST_SYMBOL}")
         assert response.status_code == 200
         data = response.json()
