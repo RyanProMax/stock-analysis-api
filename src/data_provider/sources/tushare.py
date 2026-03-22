@@ -267,11 +267,15 @@ class TushareDataSource(BaseStockDataSource):
     @staticmethod
     def _build_cn_ts_code(symbol: str) -> str:
         normalized = str(symbol).strip().upper()
+        if normalized.startswith(("4", "8", "92")):
+            return f"{normalized}.BJ"
         return f"{normalized}.SH" if normalized.startswith("6") else f"{normalized}.SZ"
 
     @staticmethod
     def _infer_exchange_from_ts_code(ts_code: str) -> Optional[str]:
         text = str(ts_code or "").upper()
+        if text.endswith(".BJ"):
+            return "BSE"
         if text.endswith(".SH"):
             return "SSE"
         if text.endswith(".SZ"):
