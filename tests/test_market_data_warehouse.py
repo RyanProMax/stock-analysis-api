@@ -302,6 +302,41 @@ class TestDailyDataWriteService:
         assert row["success_count"] == 1
         assert row["failure_count"] == 0
 
+    def test_sync_market_data_updates_progress_by_symbol(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ),
+            cn_daily_sources=[FakeSource("Tushare", _daily_df())],
+            us_daily_sources=[],
+        )
+
+        updates = []
+        result = service.sync_market_data(
+            market="cn",
+            scope="symbol",
+            symbol="300827",
+            days=30,
+            progress_callback=updates.append,
+        )
+
+        assert result["processed_count"] == 1
+        assert result["total_symbols"] == 1
+        assert len(updates) == 1
+        assert updates[0]["processed_count"] == 1
+        assert updates[0]["success_count"] == 1
+        assert updates[0]["failure_count"] == 0
+        assert updates[0]["item_status"] == "success"
+
     def test_sync_symbol_scope_accepts_exact_start_date(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         service = DailyDataWriteService(
@@ -346,14 +381,13 @@ class TestSyncCli:
 
         sync_market_data()
 
-        assert captured == {
-            "market": "cn",
-            "scope": "symbol",
-            "symbol": "300827",
-            "days": 30,
-            "years": None,
-            "start_date": None,
-        }
+        assert captured["market"] == "cn"
+        assert captured["scope"] == "symbol"
+        assert captured["symbol"] == "300827"
+        assert captured["days"] == 30
+        assert captured["years"] is None
+        assert captured["start_date"] is None
+        assert callable(captured["progress_callback"])
 
 
 class TestSymbolCatalogService:

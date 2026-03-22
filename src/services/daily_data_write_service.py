@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import pandas as pd
 
@@ -54,6 +54,7 @@ class DailyDataWriteService:
         days: Optional[int] = None,
         years: Optional[int] = None,
         start_date: Optional[str] = None,
+        progress_callback: Optional[Callable[[dict], None]] = None,
     ) -> dict:
         normalized_market = self._normalize_market(market)
         self._validate_window(days=days, years=years, start_date=start_date)
@@ -80,6 +81,8 @@ class DailyDataWriteService:
             current_symbol = str((stock or {}).get("symbol") or "").strip().upper()
             if not current_symbol:
                 continue
+            item_status = "empty"
+            item_source = None
             try:
                 result = self.sync_symbol_daily(
                     symbol=current_symbol,
@@ -91,12 +94,38 @@ class DailyDataWriteService:
                 )
                 if result["rows"] > 0:
                     success_count += 1
+                    item_status = "success"
+                    item_source = result.get("source")
                 else:
                     failure_count += 1
                     errors.append(f"{current_symbol}:empty")
+                    item_status = "empty"
             except Exception as exc:
                 failure_count += 1
                 errors.append(f"{current_symbol}:{type(exc).__name__}")
+                item_status = "error"
+
+            processed_count = success_count + failure_count
+            self.repository.update_sync_run_progress(
+                run_id=run_id,
+                success_count=success_count,
+                failure_count=failure_count,
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "run_id": run_id,
+                        "market": normalized_market,
+                        "scope": scope,
+                        "symbol": current_symbol,
+                        "processed_count": processed_count,
+                        "total_symbols": len(stocks),
+                        "success_count": success_count,
+                        "failure_count": failure_count,
+                        "item_status": item_status,
+                        "source": item_source,
+                    }
+                )
 
         status = "completed" if failure_count == 0 else "partial"
         self.repository.finish_sync_run(
@@ -114,6 +143,8 @@ class DailyDataWriteService:
             "days": days,
             "years": years,
             "start_date": start_date,
+            "processed_count": success_count + failure_count,
+            "total_symbols": len(stocks),
             "success_count": success_count,
             "failure_count": failure_count,
             "error_summary": errors[:20],

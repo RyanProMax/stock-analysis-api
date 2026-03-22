@@ -580,6 +580,22 @@ class MarketDataRepository:
                 (self._now_iso(), status, success_count, failure_count, error_summary, run_id),
             )
 
+    def update_sync_run_progress(
+        self,
+        run_id: int,
+        success_count: int,
+        failure_count: int,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE sync_runs
+                SET success_count = ?, failure_count = ?
+                WHERE id = ?
+                """,
+                (success_count, failure_count, run_id),
+            )
+
     @staticmethod
     def _normalize_trade_date(value: Any) -> Optional[str]:
         if value is None:
