@@ -277,10 +277,35 @@ class TestHTTPOnlyStructuredContracts:
                 "name": "NVIDIA",
                 "market": "us",
                 "computed_at": "2026-03-22T10:00:00+00:00",
-                "source_chain": ["Efinance", "yfinance"],
+                "source_chain": [
+                    {
+                        "provider": "US_realtime",
+                        "field": "quote",
+                        "result": "failed",
+                        "mode": "realtime",
+                    },
+                    {
+                        "provider": "US_yfinance",
+                        "field": "quote",
+                        "result": "ok",
+                        "mode": "daily_fallback",
+                    },
+                    {
+                        "provider": "yfinance.info",
+                        "field": "fundamentals",
+                        "result": "ok",
+                    },
+                ],
                 "status": "partial",
                 "partial": True,
                 "baseline_at": "2026-03-22T09:55:00+00:00",
+                "degradation": {
+                    "quote_mode": "daily_fallback",
+                    "quote_is_realtime": False,
+                    "quote_fallback_used": True,
+                    "fundamentals_partial": False,
+                    "earnings_partial": False,
+                },
                 "quote": {
                     "price": 105.0,
                     "change_pct": 0.02,
@@ -326,3 +351,5 @@ class TestHTTPOnlyStructuredContracts:
         assert payload["analysis"]["delta"]["status"] == "updated"
         assert payload["meta"]["poll_interval_hint"] == "5-10m"
         assert payload["meta"]["partial"] is True
+        assert payload["meta"]["degradation"]["quote_mode"] == "daily_fallback"
+        assert payload["meta"]["sources"] == ["US_yfinance", "yfinance.info"]

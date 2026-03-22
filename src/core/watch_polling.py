@@ -82,21 +82,40 @@ class WatchPollingService:
         earnings_watch = self._build_earnings_watch(financial_data=financial_data)
 
         source_chain = self._dedupe_sources(
-            quote_source,
-            daily_source,
-            financial_source,
-            quote_payload.get("source"),
-            fundamentals_payload.get("source"),
+            {
+                "provider": quote_source,
+                "field": "quote",
+                "result": "ok" if quote_payload.get("mode") == "realtime" else "failed",
+                "mode": "realtime",
+            },
+            {
+                "provider": daily_source,
+                "field": "quote",
+                "result": "ok" if quote_payload.get("mode") == "daily_fallback" else "not_used",
+                "mode": "daily_fallback",
+            },
+            {
+                "provider": financial_source or fundamentals_payload.get("source"),
+                "field": "fundamentals",
+                "result": "partial" if fundamentals_payload.get("partial") else "ok",
+            },
         )
 
         missing_quote = quote_payload.get("price") is None
         missing_daily = daily_df is None or daily_df.empty
+        quote_mode = quote_payload.get("mode")
+        us_daily_fallback = market == "us" and quote_mode == "daily_fallback"
         status = "ok"
         partial = False
         if missing_quote and missing_daily:
             status = "failed"
             partial = True
-        elif missing_quote or fundamentals_payload.get("partial") or earnings_watch.get("partial"):
+        elif (
+            missing_quote
+            or us_daily_fallback
+            or fundamentals_payload.get("partial")
+            or earnings_watch.get("partial")
+        ):
             status = "partial"
             partial = True
 
@@ -108,6 +127,13 @@ class WatchPollingService:
             "source_chain": source_chain,
             "status": status,
             "partial": partial,
+            "degradation": {
+                "quote_mode": quote_mode,
+                "quote_is_realtime": quote_mode == "realtime",
+                "quote_fallback_used": quote_mode == "daily_fallback",
+                "fundamentals_partial": fundamentals_payload.get("partial", False),
+                "earnings_partial": earnings_watch.get("partial", False),
+            },
             "quote": quote_payload,
             "fundamentals": fundamentals_payload,
             "technical": technical_payload,
@@ -138,6 +164,7 @@ class WatchPollingService:
                 "volume_ratio": self._float_or_none(getattr(quote, "volume_ratio", None)),
                 "source": quote_source or getattr(getattr(quote, "source", None), "value", None),
                 "as_of": computed_at,
+                "mode": "realtime",
             }
 
         if daily_df is None or daily_df.empty:
@@ -156,6 +183,7 @@ class WatchPollingService:
                 "volume_ratio": None,
                 "source": quote_source or daily_source or None,
                 "as_of": computed_at,
+                "mode": "unavailable",
             }
 
         latest = daily_df.iloc[-1]
@@ -183,6 +211,7 @@ class WatchPollingService:
             "volume_ratio": self._compute_volume_ratio(daily_df),
             "source": daily_source or quote_source or None,
             "as_of": self._date_to_iso(latest.get("date")) or computed_at,
+            "mode": "daily_fallback",
         }
 
     def _build_fundamentals_payload(
@@ -547,13 +576,26 @@ class WatchPollingService:
         return datetime.now(timezone.utc).isoformat()
 
     @staticmethod
-    def _dedupe_sources(*values: Any) -> List[str]:
-        sources: List[str] = []
+    def _dedupe_sources(*values: Any) -> List[Any]:
+        sources: List[Any] = []
+        seen_strings: set[str] = set()
+        seen_structured: set[tuple[str, str, str, str]] = set()
         for value in values:
             if isinstance(value, str):
                 text = value.strip()
-                if text and text not in sources:
+                if text and text not in seen_strings:
+                    seen_strings.add(text)
                     sources.append(text)
+            elif isinstance(value, dict):
+                key = (
+                    str(value.get("provider") or ""),
+                    str(value.get("field") or ""),
+                    str(value.get("result") or ""),
+                    str(value.get("mode") or ""),
+                )
+                if any(key) and key not in seen_structured:
+                    seen_structured.add(key)
+                    sources.append(value)
         return sources
 
     @staticmethod

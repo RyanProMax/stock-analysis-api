@@ -70,6 +70,13 @@ class TestStockEndpoints:
                     "status": "ok",
                     "partial": False,
                     "baseline_at": None,
+                    "degradation": {
+                        "quote_mode": "realtime",
+                        "quote_is_realtime": True,
+                        "quote_fallback_used": False,
+                        "fundamentals_partial": False,
+                        "earnings_partial": False,
+                    },
                     "quote": {
                         "price": 100.0,
                         "change_pct": 0.01,
@@ -121,6 +128,7 @@ class TestStockEndpoints:
         assert "quote" in payload["facts"]
         assert "delta" in payload["analysis"]
         assert payload["meta"]["poll_interval_hint"] == "5-10m"
+        assert payload["meta"]["degradation"]["quote_mode"] == "realtime"
 
 
 class TestValuationEndpoints:

@@ -44,6 +44,24 @@
   - `meta.poll_interval_hint`
   - `meta.status`
   - `meta.partial`
+  - `meta.degradation`
+
+补充语义：
+
+- `quote.mode` 仅允许：
+  - `realtime`
+  - `daily_fallback`
+  - `unavailable`
+- 当美股仅拿到 latest available daily snapshot 时，必须：
+  - 返回 `quote.mode = daily_fallback`
+  - 返回 `meta.partial = true`
+  - 不得将整体状态标记为等同 realtime 的完整 `ok`
+- `meta.degradation` 至少包含：
+  - `quote_mode`
+  - `quote_is_realtime`
+  - `quote_fallback_used`
+  - `fundamentals_partial`
+  - `earnings_partial`
 
 ## 服务端规则
 
