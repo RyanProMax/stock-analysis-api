@@ -1,11 +1,12 @@
 from fastapi import APIRouter
 
 from ...analyzer.normalizers import watch_poll_contract
-from ...core.watch_polling import watch_polling_service
+from ..deps import get_watch_polling_service
 from ..schemas import StandardResponse, StructuredInterfaceResponse, WatchPollRequest
 
 
 router = APIRouter()
+watch_polling_service = get_watch_polling_service()
 
 
 @router.post(

@@ -93,7 +93,7 @@
 - 只保留一个公共盯盘接口，不新增 cursor / monitor_id / health / rules 公共接口
 - 盯盘 route 层不复用 `/stock/analyze`、`/earnings`、`/competitive` 的整包输出
 - baseline cache 以 `symbol` 为 key，TTL 为 24 小时
-- A 股历史日线优先使用本地 SQLite canonical 日线仓，缺失时回退外部源并回写；实时行情仍优先使用现有实时行情链路
+- A 股历史日线优先使用本地 SQLite canonical 日线仓，缺失时通过 `daily_data_read_service -> daily_data_write_service` 自动补数并回写；实时行情仍优先使用现有实时行情链路
 - 美股允许降级为 latest available daily snapshot
 - 缺失字段显式返回 `null`，不得伪造实时性
 

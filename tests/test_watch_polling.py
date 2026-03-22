@@ -127,7 +127,7 @@ class TestWatchPollingService:
             lambda symbol: {"name": "NVIDIA"},
         )
         monkeypatch.setattr(
-            "src.core.watch_polling.data_manager.get_stock_daily",
+            "src.core.watch_polling.daily_market_data_service.get_stock_daily",
             lambda symbol: (None, "NVIDIA", "US_yfinance"),
         )
         monkeypatch.setattr(

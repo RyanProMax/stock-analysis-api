@@ -4,10 +4,10 @@
 
 ## 当前目标
 
-- 完成统一同步命令、Tushare 主源接入和 SQLite 训练友好表结构改造
-- 让 `/watch/poll`、`/stock/analyze`、`/stock/list`、`/stock/search` 统一以 SQLite + 内存态运作
-- 收紧存储边界，确保 SQLite 只保留必要持久数据与事实型扩展字段
-- 完成 `300827` 近 30 天单股同步验收
+- 完成 DSA 风格的 `repositories/` + `services/` 收敛
+- 将 A 股仓表从 `a_share_*` 统一重命名为 `cn_*`
+- 让 `/watch/poll`、`/stock/analyze`、`/stock/list`、`/stock/search` 统一走 `SymbolCatalogService` 与 `DailyDataReadService`
+- 为 A 股全市场 `2026-01-01` 起补库准备精确 `start_date` 写路径
 
 ## 最近完成项
 
@@ -32,12 +32,15 @@
 - 将 `/stock/list` 与 `/stock/search` 改为默认从 SQLite `symbols` 读取，缺失时冷启动拉源并回写
 - 将 watch baseline 改为纯内存态，保留 symbol 级 TTL 语义
 - 将 Tushare 调整为主数据源，token / URL 统一从环境变量读取
-- 将本地行情仓重构为 `a_share_symbols`、`a_share_daily`、`us_symbols`、`us_daily` 与 `sync_runs`
+- 将本地行情仓重构为 `cn_symbols`、`cn_daily`、`us_symbols`、`us_daily` 与 `sync_runs`
 - 新增 `extra` JSON 扩展字段，主列按 tushare 核心口径保存稳定事实字段
 - 删除 `sync-a-share-daily` / `backfill-a-share-daily`，统一为 `sync-market-data`
 - 将 `/stock/analyze` 与 `/watch/poll` 改为 7 天 freshness 检查后自动补数并回写
 - 将 Docker workflow 改为仅在 `main` push 且最新 commit message 包含 `[pack]` 时构建
 - 完成 `300827` 近 30 天真实同步验收，确认 `CN_Tushare` 写库与 SQLite 命中读取正常
+- 新增 `src/repositories/market_data_repository.py` 和 `src/services/` 分层
+- 将旧 `storage/`、`core/market_data_*`、`core/watch_polling` 改为兼容转发层
+- 为统一同步命令新增精确 `start_date` 能力
 
 ## 当前状态
 
@@ -46,6 +49,7 @@
 - 当前唯一对外盯盘能力应收敛为单一轮询接口
 - 文件缓存已下线，持久层收敛为 SQLite + 进程内内存态
 - Tushare 现为股票列表与 A 股日线的主优先级数据源
+- `repositories/` 和 `services/` 已成为正式业务层，`storage/` 只保留兼容导入
 - 首版已完成的实现包括：
   - compact snapshot
   - delta / alerts
@@ -53,7 +57,7 @@
   - A 股实时优先、美股降级可用
   - quote 降级模式显式暴露
   - US daily fallback 不再伪装为 realtime `ok`
-  - A 股 / 美股拆分的 SQLite symbol / daily 仓
+  - `cn_* / us_*` 拆分的 SQLite symbol / daily 仓
   - `extra` JSON 扩展字段与 tushare 核心主列
   - 统一 `sync-market-data` 命令入口
   - `/stock/analyze` 不再缓存分析报告
@@ -64,16 +68,15 @@
 
 ### P0
 
-- 完成 `300827` 近 30 天真实拉取与落库核验
-- 验证统一同步命令在全市场与单股场景下的稳定性与耗时
-- 将更多依赖历史日线的分析路径切到 SQLite 仓
+- 运行 `market=cn`、`scope=all`、`start_date=2026-01-01` 的全市场补库
+- 验证 `cn_symbols` 为当前上市快照，且不残留退市股票
+- 继续清理旧兼容壳调用点，减少对 `core/` / `storage/` 兼容路径的依赖
 
 ### P1
 
-- 继续压缩轮询 payload，控制 token 与重复字段
 - 评估是否需要引入更稳定的 US realtime quote 链路
-- 评估是否需要补充 SQLite 只读诊断接口或运维脚本
 - 评估 `extra` 字段中高频使用的事实字段是否需要升级为主列
+- 继续压缩轮询 payload，控制 token 与重复字段
 
 ## 已知风险与阻塞
 
@@ -81,3 +84,4 @@
 - 美股缺少与 A 股同等级的统一 realtime quote，首版需要接受 partial 降级
 - symbol 级 baseline 为进程内全局共享，不区分调用方，且重启后丢失，会影响多 Agent 并发观测语义
 - SQLite 方案当前只适合单机、单写多读场景，不适合未来多实例共享写入
+- 旧兼容导入层仍然存在，后续若要继续收敛，需要逐步清理 `src/core/` / `src/storage/` 的转发用法
