@@ -22,20 +22,20 @@ class TushareDataSource(BaseStockDataSource):
     SOURCE_NAME: str = "Tushare"
     priority: int = 0  # 优先级最高
     TOKEN: ClassVar[str] = os.environ.get("TUSHARE_TOKEN", "")
-    TUSHARE_URL: ClassVar[str] = os.environ.get("TUSHARE_HTTP_URL") or os.environ.get("TUSHARE_URL", "")
+    TUSHARE_HTTP_URL: ClassVar[str] = os.environ.get("TUSHARE_HTTP_URL", "")
     _pro: ClassVar[Optional[Any]] = None
 
     @classmethod
     def get_pro(cls) -> Optional[Any]:
         """获取 tushare pro 实例（懒加载）"""
         token = os.environ.get("TUSHARE_TOKEN", cls.TOKEN or "")
-        url = os.environ.get("TUSHARE_HTTP_URL") or os.environ.get("TUSHARE_URL", cls.TUSHARE_URL or "")
+        url = os.environ.get("TUSHARE_HTTP_URL", cls.TUSHARE_HTTP_URL or "")
 
-        if cls._pro is not None and cls.TOKEN == token and cls.TUSHARE_URL == url:
+        if cls._pro is not None and cls.TOKEN == token and cls.TUSHARE_HTTP_URL == url:
             return cls._pro
 
         cls.TOKEN = token
-        cls.TUSHARE_URL = url
+        cls.TUSHARE_HTTP_URL = url
         cls._pro = None
 
         if not token:
