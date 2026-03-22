@@ -12,6 +12,8 @@ from src.services.daily_data_read_service import DailyDataReadService
 from src.services.daily_data_write_service import DailyDataWriteService
 from src.services.symbol_catalog_service import SymbolCatalogService
 
+daily_data_write_service_module = importlib.import_module("src.services.daily_data_write_service")
+
 
 def _daily_df(end_offset_days: int = 0, periods: int = 6) -> pd.DataFrame:
     end_date = datetime.now(timezone.utc).date() + timedelta(days=end_offset_days)
@@ -54,10 +56,18 @@ class FakeSource:
 
 class FakeCatalog:
     def __init__(self, symbol_row):
-        self.symbol_row = symbol_row
+        if isinstance(symbol_row, list):
+            self.symbol_rows = [dict(row) for row in symbol_row]
+            self.symbol_row = dict(symbol_row[0]) if symbol_row else {}
+        else:
+            self.symbol_rows = [dict(symbol_row)]
+            self.symbol_row = dict(symbol_row)
 
     def refresh_market_snapshot(self, market: str):
-        return [self.symbol_row]
+        return [dict(row) for row in self.symbol_rows]
+
+    def fetch_live_market_snapshot(self, market: str):
+        return [dict(row) for row in self.symbol_rows]
 
     def resolve_symbol(self, symbol: str, market: str | None = None):
         return dict(self.symbol_row)
@@ -161,6 +171,8 @@ class TestMarketDataRepository:
         assert len(loaded) == 6
         assert "ma5" not in loaded.columns
         assert "turnover" in loaded.columns
+        assert "turnover_rate" in loaded.columns
+        assert "total_mv" in loaded.columns
         assert loaded.iloc[-1]["turnover"] is not None
         assert storage.get_latest_trade_date("300827", market="cn") == str(loaded.iloc[-1]["date"])[:10]
 
@@ -178,7 +190,6 @@ class TestMarketDataRepository:
             ).fetchone()
 
         assert row is not None
-        assert "turnover_rate" in row["extra"]
         assert "vwap" in row["extra"]
         assert "date" not in row["extra"]
         assert "volume" not in row["extra"]
@@ -290,7 +301,7 @@ class TestDailyDataWriteService:
         with storage.connect() as conn:
             row = conn.execute(
                 """
-                SELECT source, mode, status, success_count, failure_count
+                SELECT source, mode, market, scope, status, success_count, failure_count, rows_written
                 FROM sync_runs
                 ORDER BY id DESC LIMIT 1
                 """
@@ -298,9 +309,12 @@ class TestDailyDataWriteService:
 
         assert row["source"] == "CN_MULTI_SOURCE"
         assert row["mode"] == "cn_symbol_300827_30d"
+        assert row["market"] == "cn"
+        assert row["scope"] == "symbol"
         assert row["status"] == "completed"
         assert row["success_count"] == 1
         assert row["failure_count"] == 0
+        assert row["rows_written"] == 6
 
     def test_sync_market_data_updates_progress_by_symbol(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
@@ -333,8 +347,10 @@ class TestDailyDataWriteService:
         assert result["total_symbols"] == 1
         assert len(updates) == 1
         assert updates[0]["processed_count"] == 1
+        assert updates[0]["skipped_count"] == 0
         assert updates[0]["success_count"] == 1
         assert updates[0]["failure_count"] == 0
+        assert updates[0]["rows_written"] == 6
         assert updates[0]["item_status"] == "success"
 
     def test_sync_symbol_scope_accepts_exact_start_date(self, tmp_path):
@@ -363,6 +379,134 @@ class TestDailyDataWriteService:
         )
         assert result["success_count"] == 1
         assert result["start_date"] == "2026-01-01"
+
+    def test_sync_market_data_skips_when_state_is_current(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        current_df = _daily_df().assign(total_mv=1_000_000.0, circ_mv=800_000.0)
+        storage.upsert_symbols(
+            [
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ],
+            market="cn",
+        )
+        storage.upsert_daily_bars("300827", current_df, "CN_Tushare", market="cn")
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ),
+            cn_daily_sources=[FakeSource("Tushare", current_df)],
+            us_daily_sources=[],
+        )
+
+        first = service.sync_market_data(
+            market="cn",
+            scope="symbol",
+            symbol="300827",
+            start_date=str(current_df.iloc[0]["date"])[:10],
+        )
+        second = service.sync_market_data(
+            market="cn",
+            scope="symbol",
+            symbol="300827",
+            start_date=str(current_df.iloc[0]["date"])[:10],
+        )
+
+        assert first["status"] == "skipped"
+        assert second["status"] == "skipped"
+        assert first["skipped_count"] == 1
+        assert second["skipped_count"] == 1
+
+    def test_sync_market_data_backfills_daily_basic_in_batch(self, tmp_path, monkeypatch):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        base_df = _daily_df()
+        symbol_row = {
+            "symbol": "300827",
+            "ts_code": "300827.SZ",
+            "name": "上能电气",
+            "market": "创业板",
+            "exchange": "SZSE",
+            "list_date": "2020-04-10",
+        }
+        storage.upsert_symbols([symbol_row], market="cn")
+        storage.upsert_daily_bars("300827", base_df, "CN_Tushare", market="cn", ts_code="300827.SZ")
+
+        trade_dates = [str(value)[:10] for value in base_df["date"].tolist()]
+
+        def fake_list_cn_open_trade_dates(start_date=None, end_date=None):
+            return trade_dates
+
+        def fake_fetch_cn_daily_basic_by_trade_date(trade_date: str):
+            return pd.DataFrame(
+                [
+                    {
+                        "ts_code": "300827.SZ",
+                        "trade_date": trade_date,
+                        "turnover_rate": 1.0,
+                        "turnover_rate_f": 1.1,
+                        "volume_ratio": 1.2,
+                        "pe": 10.0,
+                        "pe_ttm": 11.0,
+                        "pb": 1.5,
+                        "ps": 2.0,
+                        "ps_ttm": 2.1,
+                        "dv_ratio": 0.4,
+                        "dv_ttm": 0.5,
+                        "float_share": 100.0,
+                        "free_share": 90.0,
+                        "total_share": 120.0,
+                        "circ_mv": 800.0,
+                        "total_mv": 1000.0,
+                    }
+                ]
+            )
+
+        monkeypatch.setattr(
+            daily_data_write_service_module.TushareDataSource,
+            "list_cn_open_trade_dates",
+            fake_list_cn_open_trade_dates,
+        )
+        monkeypatch.setattr(
+            daily_data_write_service_module.TushareDataSource,
+            "fetch_cn_daily_basic_by_trade_date",
+            fake_fetch_cn_daily_basic_by_trade_date,
+        )
+
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(symbol_row),
+            cn_daily_sources=[FakeSource("Tushare", base_df)],
+            us_daily_sources=[],
+        )
+
+        result = service.sync_market_data(
+            market="cn",
+            scope="all",
+            start_date=trade_dates[0],
+        )
+
+        loaded = storage.load_daily_bars("300827", market="cn")
+        assert result["status"] == "completed"
+        assert result["success_count"] == 1
+        assert result["failure_count"] == 0
+        assert result["rows_written"] == len(base_df)
+        assert loaded["total_mv"].notna().all()
+        assert loaded["circ_mv"].notna().all()
+        assert storage.list_symbols_missing_standardized_daily_fields("cn", start_trade_date=trade_dates[0]) == []
 
 
 class TestSyncCli:

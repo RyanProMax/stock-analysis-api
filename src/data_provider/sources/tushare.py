@@ -102,7 +102,11 @@ class TushareDataSource(BaseStockDataSource):
             return []
 
         df = pro.stock_basic(exchange="", list_status="L")
-        return self.normalize_dataframe(df)
+        rows = self.normalize_dataframe(df)
+        for row in rows:
+            ts_code = str(row.get("ts_code") or "").strip().upper()
+            row["exchange"] = row.get("exchange") or self._infer_exchange_from_ts_code(ts_code)
+        return rows
 
     def fetch_us_stocks(self) -> List[Dict[str, Any]]:
         """获取美股股票列表"""
@@ -185,6 +189,13 @@ class TushareDataSource(BaseStockDataSource):
                 return None
             daily_df = daily_df.sort_values("trade_date").reset_index(drop=True)
 
+            daily_basic_df = cls._safe_query_dataframe(
+                pro,
+                "daily_basic",
+                ts_code=ts_symbol,
+                start_date=start_text,
+                end_date=end_text,
+            )
             adj_df = cls._safe_query_dataframe(
                 pro,
                 "adj_factor",
@@ -222,6 +233,35 @@ class TushareDataSource(BaseStockDataSource):
                     how="left",
                 )
 
+            if daily_basic_df is not None and not daily_basic_df.empty and "trade_date" in daily_basic_df.columns:
+                keep_columns = [
+                    col
+                    for col in (
+                        "trade_date",
+                        "turnover_rate",
+                        "turnover_rate_f",
+                        "volume_ratio",
+                        "pe",
+                        "pe_ttm",
+                        "pb",
+                        "ps",
+                        "ps_ttm",
+                        "dv_ratio",
+                        "dv_ttm",
+                        "float_share",
+                        "free_share",
+                        "total_share",
+                        "circ_mv",
+                        "total_mv",
+                    )
+                    if col in daily_basic_df.columns
+                ]
+                daily_df = daily_df.merge(
+                    daily_basic_df[keep_columns].drop_duplicates("trade_date"),
+                    on="trade_date",
+                    how="left",
+                )
+
             daily_df["is_suspended"] = 0
             suspend_dates = cls._extract_suspend_dates(suspend_df)
             if suspend_dates:
@@ -232,6 +272,87 @@ class TushareDataSource(BaseStockDataSource):
         except Exception as e:
             print(f"⚠️ Tushare 获取扩展日线失败 [{symbol}]: {e}")
             return None
+
+    @classmethod
+    def get_cn_trade_window(
+        cls,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        open_dates = cls.list_cn_open_trade_dates(start_date=start_date, end_date=end_date)
+        if not open_dates:
+            return start_date, None
+        return open_dates[0], open_dates[-1]
+
+    @classmethod
+    def list_cn_open_trade_dates(
+        cls,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> list[str]:
+        pro = cls.get_pro()
+        if pro is None:
+            return []
+
+        today_text = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+        start_text = cls._format_tushare_date(start_date) or cls._format_tushare_date(today_text)
+        end_text = cls._format_tushare_date(end_date) or cls._format_tushare_date(today_text)
+
+        try:
+            cal_df = pro.trade_cal(exchange="", start_date=start_text, end_date=end_text, is_open="1")
+        except Exception:
+            return []
+
+        if cal_df is None or cal_df.empty or "cal_date" not in cal_df.columns:
+            return []
+
+        cal_dates = cal_df["cal_date"].dropna().astype(str).sort_values()
+        if cal_dates.empty:
+            return []
+        return [pd.Timestamp(value).strftime("%Y-%m-%d") for value in cal_dates.tolist()]
+
+    @classmethod
+    def fetch_cn_daily_basic_by_trade_date(cls, trade_date: str) -> Optional[pd.DataFrame]:
+        pro = cls.get_pro()
+        if pro is None:
+            return None
+
+        trade_date_text = cls._format_tushare_date(trade_date)
+        if not trade_date_text:
+            return None
+
+        daily_basic_df = cls._safe_query_dataframe(
+            pro,
+            "daily_basic",
+            trade_date=trade_date_text,
+        )
+        if daily_basic_df is None or daily_basic_df.empty:
+            return None
+
+        keep_columns = [
+            col
+            for col in (
+                "ts_code",
+                "trade_date",
+                "turnover_rate",
+                "turnover_rate_f",
+                "volume_ratio",
+                "pe",
+                "pe_ttm",
+                "pb",
+                "ps",
+                "ps_ttm",
+                "dv_ratio",
+                "dv_ttm",
+                "float_share",
+                "free_share",
+                "total_share",
+                "circ_mv",
+                "total_mv",
+            )
+            if col in daily_basic_df.columns
+        ]
+        return daily_basic_df[keep_columns].copy()
 
     @staticmethod
     def _safe_query_dataframe(pro: Any, method_name: str, **kwargs: Any) -> Optional[pd.DataFrame]:
