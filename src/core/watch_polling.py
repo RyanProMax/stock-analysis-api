@@ -7,14 +7,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from ..analyzer.trend_analyzer import StockTrendAnalyzer
 from ..data_provider import data_manager
-from ..storage import CacheUtil
 from .market_data_service import daily_market_data_service
 
 
@@ -26,8 +25,9 @@ class WatchPollingService:
     NEAR_DAY_EXTREME_THRESHOLD = 0.01
     BREAKOUT_LOOKBACK = 20
     EARNINGS_SOON_DAYS = 7
+    _baseline_state: Dict[str, Dict[str, Any]] = {}
 
-    def poll(self, symbols: List[str], refresh: bool = False) -> List[Dict[str, Any]]:
+    def poll(self, symbols: List[str]) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
         seen: set[str] = set()
 
@@ -36,12 +36,12 @@ class WatchPollingService:
             if not symbol or symbol in seen:
                 continue
             seen.add(symbol)
-            items.append(self._poll_symbol(symbol, refresh=refresh))
+            items.append(self._poll_symbol(symbol))
 
         return items
 
-    def _poll_symbol(self, symbol: str, refresh: bool = False) -> Dict[str, Any]:
-        current = self._build_current_snapshot(symbol, refresh=refresh)
+    def _poll_symbol(self, symbol: str) -> Dict[str, Any]:
+        current = self._build_current_snapshot(symbol)
         previous = self._load_baseline(symbol)
 
         delta = self._build_delta(current, previous)
@@ -56,15 +56,12 @@ class WatchPollingService:
             self._save_baseline(symbol, current)
         return payload
 
-    def _build_current_snapshot(self, symbol: str, refresh: bool = False) -> Dict[str, Any]:
+    def _build_current_snapshot(self, symbol: str) -> Dict[str, Any]:
         computed_at = self._now_iso()
         market = "us" if any(ch.isalpha() for ch in symbol) else "cn"
 
         stock_info = data_manager.get_stock_info(symbol)
-        daily_df, stock_name, daily_source = daily_market_data_service.get_stock_daily(
-            symbol,
-            refresh=refresh,
-        )
+        daily_df, stock_name, daily_source = daily_market_data_service.get_stock_daily(symbol)
         quote, quote_source = data_manager.get_realtime_quote(symbol)
         financial_data, financial_source = data_manager.get_financial_data(symbol)
 
@@ -527,10 +524,36 @@ class WatchPollingService:
         return alerts
 
     def _load_baseline(self, symbol: str) -> Optional[Dict[str, Any]]:
-        return CacheUtil.load_watch_baseline(symbol, ttl_hours=self.BASELINE_TTL_HOURS)
+        normalized = str(symbol).strip().upper()
+        wrapped = self._baseline_state.get(normalized)
+        if not isinstance(wrapped, dict):
+            return None
+
+        saved_at_raw = wrapped.get("saved_at")
+        payload = wrapped.get("payload")
+        if not saved_at_raw or not isinstance(payload, dict):
+            return None
+
+        try:
+            saved_at = datetime.fromisoformat(str(saved_at_raw))
+        except Exception:
+            return None
+        if saved_at.tzinfo is None:
+            saved_at = saved_at.replace(tzinfo=timezone.utc)
+
+        if datetime.now(timezone.utc) - saved_at.astimezone(timezone.utc) > timedelta(
+            hours=self.BASELINE_TTL_HOURS
+        ):
+            self._baseline_state.pop(normalized, None)
+            return None
+        return payload
 
     def _save_baseline(self, symbol: str, current: Dict[str, Any]) -> None:
-        CacheUtil.save_watch_baseline(symbol, current)
+        normalized = str(symbol).strip().upper()
+        self._baseline_state[normalized] = {
+            "saved_at": self._now_iso(),
+            "payload": deepcopy(current),
+        }
 
     @staticmethod
     def _build_alert(

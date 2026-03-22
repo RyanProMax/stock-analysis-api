@@ -60,7 +60,7 @@ class TestStockEndpoints:
         monkeypatch.setattr(
             watch_route.watch_polling_service,
             "poll",
-            lambda symbols, refresh=False: [
+            lambda symbols: [
                 {
                     "symbol": "NVDA",
                     "name": "NVIDIA",
@@ -117,7 +117,7 @@ class TestStockEndpoints:
             ],
         )
 
-        response = client.post("/watch/poll", json={"symbols": ["NVDA", "AAPL"], "refresh": True})
+        response = client.post("/watch/poll", json={"symbols": ["NVDA", "AAPL"]})
         assert response.status_code == 200
         data = response.json()
         assert data["status_code"] == 200

@@ -37,7 +37,7 @@ src/
 ├── core/             # 核心服务
 ├── data_provider/    # 数据源
 ├── model/            # 领域模型与统一 contract
-├── storage/          # 缓存
+├── storage/          # 本地 SQLite 持久层
 └── utils/            # 工具
 ```
 
@@ -64,6 +64,9 @@ src/
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
 - 比例型机器值统一存 `ratio`
 - 缺少可靠原始数据时宁可降级，也不要伪造历史或共识
+- SQLite 只保存数据源返回的必要持久信息，不保存分析报告缓存
+- 5-10 分钟短线 watch baseline 只保留进程内内存态，不落数据库
+- 公共 HTTP 接口不暴露 `refresh` 参数，统一先查 SQLite，缺失再拉外部源并回写
 
 ## 文档协作要求
 

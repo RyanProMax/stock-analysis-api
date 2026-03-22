@@ -42,8 +42,11 @@
 ## 行为约束
 
 - v1 只存 canonical A 股日线，不存多 source 原始表
-- API 查询 A 股历史日线时，应优先读 SQLite 仓；缺失或显式 `refresh` 时，再回退外部源并回写仓库
+- SQLite 只保存数据源返回的必要信息，不保存分析报告缓存，也不保存 watch baseline
+- API 查询 A 股历史日线时，应优先读 SQLite 仓；缺失时，再回退外部源并回写仓库
 - `/watch/poll` 与 `/stock/analyze` 不改对外 contract，只改内部历史日线路径
+- 公共 HTTP 接口不暴露 `refresh` 参数
+- `/watch/poll` 的 baseline 仅保留进程内内存态，TTL 为 24 小时
 - 日更任务优先源为 `Tushare`，fallback 为 `AkShare`、`Efinance`
 - 首次回填允许按年窗口，日常刷新允许按天窗口
 

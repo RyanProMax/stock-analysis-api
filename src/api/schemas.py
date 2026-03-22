@@ -62,10 +62,9 @@ class StockSearchRequest(BaseModel):
 
 class WatchPollRequest(BaseModel):
     symbols: List[str]
-    refresh: bool = False
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {"symbols": ["NVDA", "AAPL", "600519"], "refresh": False}
+            "example": {"symbols": ["NVDA", "AAPL", "600519"]}
         }
     )

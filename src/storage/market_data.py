@@ -105,7 +105,7 @@ class MarketDataStorage:
                     symbol,
                     row.get("ts_code"),
                     row.get("name"),
-                    self._normalize_market(row.get("market")),
+                    self._storage_market_value(row.get("market")),
                     row.get("list_date"),
                     updated_at,
                 )
@@ -247,6 +247,65 @@ class MarketDataStorage:
             return None
         return dict(row)
 
+    def list_symbols(
+        self,
+        market: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if market:
+            allowed_markets = self._market_query_values(market)
+            placeholders = ", ".join("?" for _ in allowed_markets)
+            clauses.append(f"market IN ({placeholders})")
+            params.extend(allowed_markets)
+
+        query = """
+            SELECT symbol, ts_code, name, market, list_date, updated_at
+            FROM symbols
+        """
+        if clauses:
+            query += f" WHERE {' AND '.join(clauses)}"
+        query += " ORDER BY symbol ASC"
+        if limit is not None and limit >= 0:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def search_symbols(
+        self,
+        keyword: str,
+        market: Optional[str] = None,
+    ) -> list[Dict[str, Any]]:
+        normalized_keyword = str(keyword or "").strip().upper()
+        if not normalized_keyword:
+            return []
+
+        clauses = [
+            "(UPPER(symbol) LIKE ? OR UPPER(COALESCE(ts_code, '')) LIKE ? OR UPPER(COALESCE(name, '')) LIKE ?)"
+        ]
+        like = f"%{normalized_keyword}%"
+        params: list[Any] = [like, like, like]
+
+        if market:
+            allowed_markets = self._market_query_values(market)
+            placeholders = ", ".join("?" for _ in allowed_markets)
+            clauses.append(f"market IN ({placeholders})")
+            params.extend(allowed_markets)
+
+        query = f"""
+            SELECT symbol, ts_code, name, market, list_date, updated_at
+            FROM symbols
+            WHERE {' AND '.join(clauses)}
+            ORDER BY symbol ASC
+        """
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def get_latest_trade_date(self, symbol: str) -> Optional[str]:
         normalized_symbol = str(symbol).strip().upper()
         with self.connect() as conn:
@@ -304,6 +363,20 @@ class MarketDataStorage:
         if text in {"us", "美股"}:
             return "us"
         return "cn"
+
+    @classmethod
+    def _storage_market_value(cls, value: Any) -> str:
+        text = str(value or "").strip()
+        if text:
+            return text
+        return cls._normalize_market(value)
+
+    @classmethod
+    def _market_query_values(cls, market: Any) -> list[str]:
+        normalized = cls._normalize_market(market)
+        if normalized == "cn":
+            return ["cn", "A股", "主板", "创业板", "科创板", "北交所"]
+        return ["us", "美股"]
 
     @staticmethod
     def _float_or_none(value: Any) -> Optional[float]:

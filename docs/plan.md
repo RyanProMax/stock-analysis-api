@@ -4,9 +4,9 @@
 
 ## 当前目标
 
-- 落地 A 股本地 SQLite 日线仓 v1
-- 让 `/watch/poll` 与 `/stock/analyze` 优先消费本地日线仓
-- 持续提升 watch 接口的降级质量与 alert 语义
+- 完成 `CacheUtil` 下线与 SQLite 全迁移
+- 让 `/watch/poll`、`/stock/analyze`、`/stock/list`、`/stock/search` 统一以 SQLite + 内存态运作
+- 收紧存储边界，确保 SQLite 只保留必要持久数据
 - 保持任务、架构和规格三层文档结构稳定
 
 ## 最近完成项
@@ -27,22 +27,28 @@
 - 新增 A 股日线仓同步服务和独立命令入口，支持 recent refresh / history backfill
 - 让 `/watch/poll` 与 `/stock/analyze` 的 A 股历史日线优先读取 SQLite 仓，缺失时回退外部源并回写
 - 补充 SQLite 仓储、读路径优先级与同步任务测试
+- 下线 `CacheUtil` 文件缓存，移除 `cache_version`、报告缓存与 watch baseline 文件落盘
+- 移除 `/watch/poll` 与 `/stock/list` 的公共 `refresh` 参数
+- 将 `/stock/list` 与 `/stock/search` 改为默认从 SQLite `symbols` 读取，缺失时冷启动拉源并回写
+- 将 watch baseline 改为纯内存态，保留 symbol 级 TTL 语义
 
 ## 当前状态
 
 - HTTP 服务仍是唯一对外协议
 - `facts / analysis / meta` 分层仍是当前输出 contract 基线
 - 当前唯一对外盯盘能力应收敛为单一轮询接口
-- 当前已新增本地 SQLite 日线仓，但 watch baseline 仍保留文件缓存
+- 文件缓存已下线，持久层收敛为 SQLite + 进程内内存态
 - 首版已完成的实现包括：
   - compact snapshot
   - delta / alerts
-  - symbol 级 baseline cache
+  - symbol 级 baseline memory state
   - A 股实时优先、美股降级可用
   - quote 降级模式显式暴露
   - US daily fallback 不再伪装为 realtime `ok`
   - A 股本地 canonical 日线仓
   - A 股日线 recent refresh / history backfill 命令入口
+  - `/stock/analyze` 不再缓存分析报告
+  - `/stock/list` 与 `/stock/search` 默认消费 SQLite symbol 仓
 
 ## 下一步计划
 
@@ -54,13 +60,13 @@
 
 ### P1
 
-- 评估是否需要将 watch baseline 也迁移到 SQLite
 - 继续压缩轮询 payload，控制 token 与重复字段
 - 评估是否需要引入更稳定的 US realtime quote 链路
+- 评估是否需要补充 SQLite 只读诊断接口或运维脚本
 
 ## 已知风险与阻塞
 
 - A 股长历史回填实际高度依赖 `Tushare` 可用性，fallback 源可能只能提供较短窗口
 - 美股缺少与 A 股同等级的统一 realtime quote，首版需要接受 partial 降级
-- symbol 级 baseline 为全局共享，不区分调用方，会影响多 Agent 并发观测语义
+- symbol 级 baseline 为进程内全局共享，不区分调用方，且重启后丢失，会影响多 Agent 并发观测语义
 - SQLite 方案当前只适合单机、单写多读场景，不适合未来多实例共享写入

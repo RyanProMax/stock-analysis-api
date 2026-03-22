@@ -42,8 +42,6 @@ class BaseStockDataSource(ABC):
     def __init__(self):
         # 内存缓存：{market: [stocks]}
         self._cache: Dict[str, List[Dict[str, Any]]] = {}
-        # 缓存日期：{market: date}
-        self._cache_date: Dict[str, str] = {}
 
     @classmethod
     def get_instance(cls) -> "BaseStockDataSource":
@@ -52,52 +50,25 @@ class BaseStockDataSource(ABC):
             cls._instances[cls.SOURCE_NAME] = cls()
         return cls._instances[cls.SOURCE_NAME]
 
-    @staticmethod
-    def get_cache_key() -> str:
-        """获取缓存日期键"""
-        from ..storage.cache import CacheUtil
-
-        return CacheUtil.get_cst_date_key()
-
     def is_cache_valid(self, market: str) -> bool:
-        """检查缓存是否有效"""
-        today = self.get_cache_key()
-        return (
-            market in self._cache
-            and market in self._cache_date
-            and self._cache_date[market] == today
-            and len(self._cache[market]) > 0
-        )
+        """检查进程内缓存是否有效"""
+        return market in self._cache and len(self._cache[market]) > 0
 
     def update_cache(self, market: str, stocks: List[Dict[str, Any]]) -> None:
-        """更新缓存"""
-        from ..storage.cache import CacheUtil
-
+        """更新进程内缓存"""
         if len(stocks) > 0:
             self._cache[market] = stocks
-            self._cache_date[market] = self.get_cache_key()
-            CacheUtil.save_stock_list(market, stocks)
 
     def get_cached(self, market: str) -> Optional[List[Dict[str, Any]]]:
-        """获取缓存数据"""
+        """获取进程内缓存数据"""
         if self.is_cache_valid(market):
             return self._cache[market]
-
-        # 尝试从文件缓存加载
-        from ..storage.cache import CacheUtil
-
-        cached_data = CacheUtil.load_stock_list(market)
-        if cached_data is not None:
-            self._cache[market] = cached_data
-            self._cache_date[market] = self.get_cache_key()
-        return cached_data
+        return None
 
     def clear_cache(self, market: str) -> None:
         """清除缓存"""
         if market in self._cache:
             del self._cache[market]
-        if market in self._cache_date:
-            del self._cache_date[market]
 
     @staticmethod
     def normalize_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -287,28 +258,24 @@ class BaseStockDataSource(ABC):
         """
         pass
 
-    # ==================== 具体方法：股票列表（带缓存）====================
+    # ==================== 具体方法：股票列表（进程内缓存）====================
 
-    def get_a_stocks(self, refresh: bool = False) -> List[Dict[str, Any]]:
+    def get_a_stocks(self) -> List[Dict[str, Any]]:
         """
-        获取 A 股股票列表（带缓存）
-
-        Args:
-            refresh: 是否强制刷新缓存
+        获取 A 股股票列表（带进程内缓存）
 
         Returns:
             标准格式的股票列表
         """
         market = "A股"
 
-        if not refresh:
-            cached = self.get_cached(market)
-            if cached is not None:
-                print(
-                    f"✓ 使用{self.SOURCE_NAME}缓存的A股列表"
-                    f"（{self._cache_date[market]}），共 {len(cached)} 只股票"
-                )
-                return cached
+        cached = self.get_cached(market)
+        if cached is not None:
+            print(
+                f"✓ 使用{self.SOURCE_NAME}缓存的A股列表"
+                f"，共 {len(cached)} 只股票"
+            )
+            return cached
 
         try:
             stocks = self.fetch_a_stocks()
@@ -322,26 +289,22 @@ class BaseStockDataSource(ABC):
 
         return []
 
-    def get_us_stocks(self, refresh: bool = False) -> List[Dict[str, Any]]:
+    def get_us_stocks(self) -> List[Dict[str, Any]]:
         """
-        获取美股股票列表（带缓存）
-
-        Args:
-            refresh: 是否强制刷新缓存
+        获取美股股票列表（带进程内缓存）
 
         Returns:
             标准格式的股票列表
         """
         market = "美股"
 
-        if not refresh:
-            cached = self.get_cached(market)
-            if cached is not None:
-                print(
-                    f"✓ 使用{self.SOURCE_NAME}缓存的美股列表"
-                    f"（{self._cache_date[market]}），共 {len(cached)} 只股票"
-                )
-                return cached
+        cached = self.get_cached(market)
+        if cached is not None:
+            print(
+                f"✓ 使用{self.SOURCE_NAME}缓存的美股列表"
+                f"，共 {len(cached)} 只股票"
+            )
+            return cached
 
         try:
             stocks = self.fetch_us_stocks()
