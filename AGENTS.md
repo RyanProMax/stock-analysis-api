@@ -48,6 +48,7 @@ src/
 | `/stock/analyze` | POST | 批量分析股票 |
 | `/stock/list` | GET | 获取股票列表 |
 | `/stock/search` | POST | 搜索股票 |
+| `/watch/poll` | POST | 多股票盯盘轮询 |
 | `/valuation/dcf` | GET | DCF 估值模型 |
 | `/valuation/comps` | GET | 可比公司分析 |
 | `/model/lbo` | GET | LBO 情景模型 |

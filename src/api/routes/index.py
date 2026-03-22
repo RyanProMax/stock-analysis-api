@@ -9,6 +9,7 @@ from .comps import router as comps_router
 from .model import router as model_router
 from .competitive import router as competitive_router
 from .earnings import router as earnings_router
+from .watch import router as watch_router
 
 # 创建主路由器
 router = APIRouter()
@@ -35,3 +36,7 @@ router.include_router(
 # 注册季报分析相关路由
 # /analysis/earnings/* - 季报分析接口
 router.include_router(earnings_router, prefix="/analysis/earnings", tags=["Analysis"])
+
+# 注册盯盘轮询相关路由
+# /watch/* - 外部 Agent 盯盘接口
+router.include_router(watch_router, prefix="/watch", tags=["Watch"])
