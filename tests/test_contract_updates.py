@@ -11,6 +11,7 @@ from src.analyzer.normalizers import (
     stock_analysis_contract,
     stock_record,
     three_statement_contract,
+    watch_poll_contract,
 )
 
 
@@ -268,3 +269,60 @@ class TestHTTPOnlyStructuredContracts:
         )
         assert payload["facts"]["fundamentals"]["market"] == "us"
         assert "yfinance.info" in payload["meta"]["sources"]
+
+    def test_watch_poll_contract_keeps_compact_agent_friendly_shape(self):
+        payload = watch_poll_contract(
+            {
+                "symbol": "NVDA",
+                "name": "NVIDIA",
+                "market": "us",
+                "computed_at": "2026-03-22T10:00:00+00:00",
+                "source_chain": ["Efinance", "yfinance"],
+                "status": "partial",
+                "partial": True,
+                "baseline_at": "2026-03-22T09:55:00+00:00",
+                "quote": {
+                    "price": 105.0,
+                    "change_pct": 0.02,
+                    "change_amount": 2.0,
+                    "open": 103.0,
+                    "high": 106.0,
+                    "low": 101.0,
+                    "pre_close": 103.0,
+                    "volume": 1000,
+                    "amount": 100000.0,
+                    "turnover_rate": 0.03,
+                    "amplitude": 0.04,
+                    "source": "Efinance",
+                    "as_of": "2026-03-22T10:00:00+00:00",
+                },
+                "fundamentals": {
+                    "pe_ratio": 20.0,
+                    "pb_ratio": 5.0,
+                    "market_cap": 1000000000.0,
+                    "dividend_yield": 0.01,
+                    "revenue_ttm": 500000000.0,
+                    "source": "yfinance",
+                },
+                "technical": {
+                    "trend": "多头排列",
+                    "ma_alignment": "MA5>MA10>MA20",
+                    "breakout_state": "up",
+                    "volume_ratio": 2.0,
+                    "volume_ratio_state": "spike",
+                },
+                "earnings_watch": {
+                    "next_earnings_date": "2026-03-25T00:00:00+00:00",
+                    "earnings_proximity_days": 3,
+                },
+                "delta": {"status": "updated", "changed_fields": ["price"]},
+                "alerts": [{"code": "price_jump_up"}],
+            }
+        )
+        assert payload["entity"]["symbol"] == "NVDA"
+        assert payload["facts"]["quote"]["price"]["field"] == "price"
+        assert payload["facts"]["fundamentals"]["revenue_ttm"]["field"] == "revenue_ttm"
+        assert payload["analysis"]["technical"]["breakout_state"] == "up"
+        assert payload["analysis"]["delta"]["status"] == "updated"
+        assert payload["meta"]["poll_interval_hint"] == "5-10m"
+        assert payload["meta"]["partial"] is True

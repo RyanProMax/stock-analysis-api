@@ -10,6 +10,7 @@ import time
 from typing import List, Optional, Tuple, Dict, Any, Callable
 import pandas as pd
 
+from .realtime_types import UnifiedRealtimeQuote
 from .stock_list import StockListService
 
 
@@ -493,6 +494,29 @@ class DataManager:
             call=call,
             is_empty=lambda x: x is None or x == {},
             log_prefix=f"{market}财务",
+        )
+
+    def get_realtime_quote(self, symbol: str) -> Tuple[Optional[UnifiedRealtimeQuote], str]:
+        """
+        获取实时行情（自动切换数据源 + 熔断）
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            (UnifiedRealtimeQuote, source_name)
+        """
+        market = self._get_market(symbol)
+        fetchers = self._get_fetchers(market)
+
+        return self._execute_with_fallback(
+            market=market,
+            fetchers=fetchers,
+            call=lambda f: (
+                f.get_realtime_quote(symbol) if hasattr(f, "get_realtime_quote") else None
+            ),
+            is_empty=lambda x: x is None,
+            log_prefix=f"{market}实时行情",
         )
 
     def reset_circuit_breaker(self, source_name: str):

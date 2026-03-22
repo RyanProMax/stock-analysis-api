@@ -1,0 +1,85 @@
+# 盯盘轮询 API 规格
+
+更新时间：2026-03-22
+
+## 目标
+
+- 为外部 Agent 提供单接口、多股票、5-10 分钟级别的盯盘轮询能力
+- 默认输出 compact snapshot，降低 token 成本
+- 由服务端内部维护 symbol 级 baseline，自动生成 delta 与 alerts
+
+## 对外接口
+
+### `POST /watch/poll`
+
+请求体：
+
+- `symbols: string[]`
+- `refresh?: boolean = false`
+
+处理规则：
+
+- 统一清洗、去重、保序
+- 支持 A 股和美股同时轮询
+- 服务端按 `symbol` 维护最近一次 snapshot 作为 baseline
+- 首次无 baseline 时返回 `delta.status = initial`
+- `refresh = true` 仅强制重拉当前数据，不清除 baseline
+
+返回结构：
+
+- 顶层使用 `StandardResponse[List[StructuredInterfaceResponse]]`
+- 每个 item 包含：
+  - `entity.symbol`
+  - `entity.name`
+  - `entity.market`
+  - `facts.quote`
+  - `facts.fundamentals`
+  - `analysis.delta`
+  - `analysis.alerts`
+  - `analysis.technical`
+  - `analysis.earnings_watch`
+  - `meta.computed_at`
+  - `meta.source_chain`
+  - `meta.baseline_at`
+  - `meta.poll_interval_hint`
+  - `meta.status`
+  - `meta.partial`
+
+## 服务端规则
+
+- `price_jump_up`
+- `price_jump_down`
+- `volume_spike`
+- `turnover_spike`
+- `near_day_high`
+- `near_day_low`
+- `breakout_up`
+- `breakout_down`
+- `earnings_soon`
+
+每条 alert 统一包含：
+
+- `code`
+- `severity`
+- `summary`
+- `evidence`
+- `symbol`
+- `as_of`
+
+## 实现约束
+
+- 只保留一个公共盯盘接口，不新增 cursor / monitor_id / health / rules 公共接口
+- 盯盘 route 层不复用 `/stock/analyze`、`/earnings`、`/competitive` 的整包输出
+- baseline cache 以 `symbol` 为 key，TTL 为 24 小时
+- A 股优先使用现有实时行情链路
+- 美股允许降级为 latest available daily snapshot
+- 缺失字段显式返回 `null`，不得伪造实时性
+
+## 验收标准
+
+- 单次请求支持多股票
+- 重复 symbol 只处理一次
+- 无 baseline 时返回 `initial`
+- 有 baseline 时返回 `delta` 和 `alerts`
+- 单只股票失败不影响整个批次
+- 输出保持 compact，不泄露旧重型分析 payload

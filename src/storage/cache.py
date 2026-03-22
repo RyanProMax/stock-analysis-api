@@ -4,6 +4,7 @@
 提供缓存功能，支持本地文件系统
 - 股票列表缓存：cache/stock_list/
 - 分析报告缓存：cache/reports/
+- 盯盘基线缓存：cache/watch/
 """
 
 import os
@@ -49,6 +50,7 @@ class CacheUtil:
 
     STOCK_LIST_CACHE_DIR = "stock_list"
     REPORTS_CACHE_DIR = "reports"
+    WATCH_CACHE_DIR = "watch"
 
     @classmethod
     def _ensure_cache_dir(cls, cache_dir: Path) -> None:
@@ -215,6 +217,58 @@ class CacheUtil:
             return None
         except Exception as e:
             print(f"⚠️ 加载分析报告缓存失败: {e}")
+            return None
+
+    @classmethod
+    def save_watch_baseline(cls, symbol: str, payload: Dict[str, Any]) -> bool:
+        try:
+            filename = f"{symbol.upper()}.json"
+            cache_file = cls._get_local_cache_file_path(cls.WATCH_CACHE_DIR, filename)
+            wrapped = {
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "payload": payload,
+            }
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(wrapped, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"⚠️ 保存盯盘基线缓存失败: {e}")
+            return False
+
+    @classmethod
+    def load_watch_baseline(
+        cls,
+        symbol: str,
+        ttl_hours: int = 24,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            filename = f"{symbol.upper()}.json"
+            cache_file = cls._get_local_cache_file_path(cls.WATCH_CACHE_DIR, filename)
+            if not cache_file.exists():
+                return None
+
+            with open(cache_file, "r", encoding="utf-8") as f:
+                wrapped = json.load(f)
+
+            if not isinstance(wrapped, dict):
+                return None
+
+            saved_at_raw = wrapped.get("saved_at")
+            payload = wrapped.get("payload")
+            if not saved_at_raw or not isinstance(payload, dict):
+                return None
+
+            saved_at = datetime.fromisoformat(str(saved_at_raw))
+            if saved_at.tzinfo is None:
+                saved_at = saved_at.replace(tzinfo=timezone.utc)
+
+            age = datetime.now(timezone.utc) - saved_at.astimezone(timezone.utc)
+            if age > timedelta(hours=ttl_hours):
+                return None
+
+            return payload
+        except Exception as e:
+            print(f"⚠️ 加载盯盘基线缓存失败: {e}")
             return None
 
     @classmethod

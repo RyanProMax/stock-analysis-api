@@ -123,6 +123,243 @@ def stock_record(record: Dict[str, Any], source: str = "stock_list_provider") ->
     }
 
 
+def watch_poll_contract(item: Dict[str, Any]) -> Dict[str, Any]:
+    computed_at = item.get("computed_at")
+    quote = item.get("quote", {})
+    fundamentals = item.get("fundamentals", {})
+    technical = item.get("technical", {})
+    earnings_watch = item.get("earnings_watch", {})
+
+    facts = {
+        "quote": {
+            "price": make_field(
+                "price",
+                quote.get("price"),
+                quote.get("price"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("price") is not None else "unavailable",
+            ),
+            "change_pct": make_field(
+                "change_pct",
+                quote.get("change_pct"),
+                format_ratio_as_percent(quote.get("change_pct")),
+                "ratio",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("change_pct") is not None else "unavailable",
+            ),
+            "change_amount": make_field(
+                "change_amount",
+                quote.get("change_amount"),
+                quote.get("change_amount"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("change_amount") is not None else "unavailable",
+            ),
+            "open": make_field(
+                "open",
+                quote.get("open"),
+                quote.get("open"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("open") is not None else "unavailable",
+            ),
+            "high": make_field(
+                "high",
+                quote.get("high"),
+                quote.get("high"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("high") is not None else "unavailable",
+            ),
+            "low": make_field(
+                "low",
+                quote.get("low"),
+                quote.get("low"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("low") is not None else "unavailable",
+            ),
+            "pre_close": make_field(
+                "pre_close",
+                quote.get("pre_close"),
+                quote.get("pre_close"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("pre_close") is not None else "unavailable",
+            ),
+            "volume": make_field(
+                "volume",
+                quote.get("volume"),
+                quote.get("volume"),
+                "shares",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("volume") is not None else "unavailable",
+            ),
+            "amount": make_field(
+                "amount",
+                quote.get("amount"),
+                quote.get("amount"),
+                "currency",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("amount") is not None else "unavailable",
+            ),
+            "turnover_rate": make_field(
+                "turnover_rate",
+                quote.get("turnover_rate"),
+                format_ratio_as_percent(quote.get("turnover_rate")),
+                "ratio",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("turnover_rate") is not None else "unavailable",
+            ),
+            "amplitude": make_field(
+                "amplitude",
+                quote.get("amplitude"),
+                format_ratio_as_percent(quote.get("amplitude")),
+                "ratio",
+                "spot",
+                "reported",
+                quote.get("source") or "market_data",
+                quote.get("as_of") or computed_at,
+                status="available" if quote.get("amplitude") is not None else "unavailable",
+            ),
+        },
+        "fundamentals": {
+            "pe_ratio": make_field(
+                "pe_ratio",
+                fundamentals.get("pe_ratio"),
+                fundamentals.get("pe_ratio"),
+                "multiple",
+                "spot",
+                "reported",
+                fundamentals.get("source") or "financial_data",
+                computed_at,
+                status="available" if fundamentals.get("pe_ratio") is not None else "unavailable",
+            ),
+            "pb_ratio": make_field(
+                "pb_ratio",
+                fundamentals.get("pb_ratio"),
+                fundamentals.get("pb_ratio"),
+                "multiple",
+                "spot",
+                "reported",
+                fundamentals.get("source") or "financial_data",
+                computed_at,
+                status="available" if fundamentals.get("pb_ratio") is not None else "unavailable",
+            ),
+            "market_cap": make_field(
+                "market_cap",
+                fundamentals.get("market_cap"),
+                fundamentals.get("market_cap"),
+                "currency",
+                "spot",
+                "reported",
+                fundamentals.get("source") or "financial_data",
+                computed_at,
+                status="available" if fundamentals.get("market_cap") is not None else "unavailable",
+            ),
+            "dividend_yield": make_field(
+                "dividend_yield",
+                fundamentals.get("dividend_yield"),
+                format_ratio_as_percent(fundamentals.get("dividend_yield")),
+                "ratio",
+                "ttm",
+                "derived",
+                fundamentals.get("source") or "financial_data",
+                computed_at,
+                status="available" if fundamentals.get("dividend_yield") is not None else "unavailable",
+            ),
+            "revenue_ttm": make_field(
+                "revenue_ttm",
+                fundamentals.get("revenue_ttm"),
+                fundamentals.get("revenue_ttm"),
+                "currency",
+                "ttm",
+                "reported",
+                fundamentals.get("source") or "financial_data",
+                computed_at,
+                status="available" if fundamentals.get("revenue_ttm") is not None else "unavailable",
+            ),
+        },
+    }
+    analysis = {
+        "delta": item.get("delta", {}),
+        "alerts": item.get("alerts", []),
+        "technical": {
+            "trend": technical.get("trend"),
+            "ma_alignment": technical.get("ma_alignment"),
+            "breakout_state": technical.get("breakout_state"),
+            "volume_ratio": technical.get("volume_ratio"),
+            "volume_ratio_state": technical.get("volume_ratio_state"),
+        },
+        "earnings_watch": {
+            "next_earnings_date": earnings_watch.get("next_earnings_date"),
+            "earnings_proximity_days": earnings_watch.get("earnings_proximity_days"),
+        },
+    }
+    payload = InterfacePayload(
+        entity={
+            "symbol": item.get("symbol"),
+            "name": item.get("name"),
+            "market": item.get("market"),
+        },
+        facts=facts,
+        analysis=analysis,
+        meta=InterfaceMeta(
+            as_of=computed_at,
+            sources=_normalize_sources(item.get("source_chain", [])),
+            data_completeness="partial" if item.get("partial") else "complete",
+            limitations=[
+                "US quote fields may degrade to latest available daily snapshot when realtime quote is unavailable",
+                "Polling baseline is shared globally by symbol across callers",
+            ],
+            interface_type="mixed",
+        ),
+    )
+    data = payload.to_dict()
+    data["meta"].update(
+        {
+            "computed_at": computed_at,
+            "source_chain": item.get("source_chain", []),
+            "baseline_at": item.get("baseline_at"),
+            "poll_interval_hint": "5-10m",
+            "status": item.get("status"),
+            "partial": item.get("partial", False),
+        }
+    )
+    return data
+
+
 def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
     as_of = report.get("as_of")
     fundamental_context = build_fundamental_context(

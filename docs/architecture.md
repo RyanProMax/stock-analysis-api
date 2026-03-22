@@ -5,6 +5,7 @@
 ## 系统边界
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
+- 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
 - 新增能力时只更新 HTTP 路由、schema、文档和测试
 - 业务逻辑放在 `src/core/` 或 `src/analyzer/`
 - 标准化 contract 放在 `src/model/contracts.py` 和 `src/analyzer/normalizers.py`
@@ -30,6 +31,7 @@ src/
 ## 输出 contract 约束
 
 - 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
+- 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
 - 比例型机器值统一存 `ratio`
@@ -50,6 +52,7 @@ src/
 ## 工作流与质量约束
 
 - 各复杂分析接口应逐步补齐 workflow contract，而不是只定义最终返回字段
+- 盯盘接口优先服务 5-10 分钟轮询场景，服务端内部维护 symbol 级 baseline
 - workflow 至少覆盖：
   - 输入检查
   - 证据要求
