@@ -11,6 +11,7 @@
 
 ## 最近完成项
 
+- 在 `README.md` 中补充 HTTP API 端点用途说明，同时保持 README 只承担使用说明职责
 - 为 `cn_symbols` 新增 `daily_start_date`、`daily_end_date`，并在日线写入后自动回写覆盖摘要
 - 为旧库新增覆盖摘要回填逻辑，避免 schema 升级后误判全量缺口
 - 让 `replace_symbols` 保留已有覆盖摘要，避免主数据刷新清空本地覆盖信息
