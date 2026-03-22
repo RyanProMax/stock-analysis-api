@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import importlib
 import sys
 
 import pandas as pd
 
-from src.core.market_data_service import DailyMarketDataService
-from src.core.market_data_sync import DailyWarehouseSyncService
-from src.data_provider.stock_list import StockListService
+from src.repositories.market_data_repository import MarketDataRepository
 from src.main import sync_market_data
-from src.storage.market_data import MarketDataStorage
+from src.services.daily_data_read_service import DailyDataReadService
+from src.services.daily_data_write_service import DailyDataWriteService
+from src.services.symbol_catalog_service import SymbolCatalogService
 
 
 def _daily_df(end_offset_days: int = 0, periods: int = 6) -> pd.DataFrame:
@@ -51,10 +52,38 @@ class FakeSource:
         return self._df.copy() if self._df is not None else None
 
 
-class TestMarketDataStorage:
-    def test_initialize_drops_legacy_symbols_and_daily_bars_tables(self, tmp_path):
+class FakeCatalog:
+    def __init__(self, symbol_row):
+        self.symbol_row = symbol_row
+
+    def refresh_market_snapshot(self, market: str):
+        return [self.symbol_row]
+
+    def resolve_symbol(self, symbol: str, market: str | None = None):
+        return dict(self.symbol_row)
+
+
+class FakeListSource:
+    def __init__(self, name: str, rows: list[dict], market: str = "A股"):
+        self.SOURCE_NAME = name
+        self.priority = 0
+        self._rows = rows
+        self._market = market
+
+    def is_available(self, market: str) -> bool:
+        return market == self._market
+
+    def get_a_stocks(self):
+        return list(self._rows)
+
+    def get_us_stocks(self):
+        return list(self._rows)
+
+
+class TestMarketDataRepository:
+    def test_initialize_drops_legacy_tables(self, tmp_path):
         db_path = tmp_path / "market.sqlite"
-        storage = MarketDataStorage(str(db_path))
+        storage = MarketDataRepository(str(db_path))
 
         with storage.connect() as conn:
             conn.executescript(
@@ -71,6 +100,18 @@ class TestMarketDataStorage:
                 );
                 CREATE INDEX IF NOT EXISTS idx_daily_bars_symbol_date
                 ON daily_bars(symbol, trade_date DESC);
+                CREATE TABLE IF NOT EXISTS a_share_symbols (
+                    symbol TEXT PRIMARY KEY,
+                    name TEXT
+                );
+                CREATE TABLE IF NOT EXISTS a_share_daily (
+                    symbol TEXT NOT NULL,
+                    trade_date TEXT NOT NULL,
+                    close REAL,
+                    PRIMARY KEY (symbol, trade_date)
+                );
+                CREATE INDEX IF NOT EXISTS idx_a_share_daily_symbol_date
+                ON a_share_daily(symbol, trade_date DESC);
                 """
             )
 
@@ -92,10 +133,13 @@ class TestMarketDataStorage:
 
         assert "symbols" not in names
         assert "daily_bars" not in names
+        assert "a_share_symbols" not in names
+        assert "a_share_daily" not in names
         assert "idx_daily_bars_symbol_date" not in index_names
+        assert "idx_a_share_daily_symbol_date" not in index_names
 
     def test_upsert_and_load_cn_daily_bars_with_extra_json(self, tmp_path):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         storage.upsert_symbols(
             [
                 {
@@ -115,12 +159,10 @@ class TestMarketDataStorage:
 
         assert inserted == 6
         assert len(loaded) == 6
-        assert "ma5" in loaded.columns
+        assert "ma5" not in loaded.columns
         assert "turnover" in loaded.columns
         assert loaded.iloc[-1]["turnover"] is not None
-        assert storage.get_latest_trade_date("300827", market="cn") == loaded.iloc[-1]["date"].strftime(
-            "%Y-%m-%d"
-        )
+        assert storage.get_latest_trade_date("300827", market="cn") == str(loaded.iloc[-1]["date"])[:10]
 
         symbol_row = storage.get_symbol_record("300827", market="cn")
         assert symbol_row["name"] == "上能电气"
@@ -129,7 +171,7 @@ class TestMarketDataStorage:
         with storage.connect() as conn:
             row = conn.execute(
                 """
-                SELECT extra FROM a_share_daily
+                SELECT extra FROM cn_daily
                 WHERE symbol = ? ORDER BY trade_date ASC LIMIT 1
                 """,
                 ("300827",),
@@ -142,7 +184,7 @@ class TestMarketDataStorage:
         assert "volume" not in row["extra"]
 
     def test_upsert_and_search_symbols_across_markets(self, tmp_path):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         storage.upsert_symbols(
             [
                 {"symbol": "300827", "ts_code": "300827.SZ", "name": "上能电气", "market": "创业板"},
@@ -159,29 +201,32 @@ class TestMarketDataStorage:
         assert cn_rows[0]["symbol"] == "300827"
 
 
-class TestDailyMarketDataService:
+class TestDailyDataReadService:
     def test_prefers_fresh_sqlite_data(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         storage.upsert_symbols(
             [{"symbol": "300827", "ts_code": "300827.SZ", "name": "上能电气", "market": "创业板"}],
             market="cn",
         )
         storage.upsert_daily_bars("300827", _daily_df(), "CN_Tushare", market="cn")
 
-        service = DailyMarketDataService(warehouse=storage)
+        service = DailyDataReadService(repository=storage)
+        daily_data_read_module = importlib.import_module("src.services.daily_data_read_service")
         monkeypatch.setattr(
-            "src.core.market_data_service.data_manager.get_stock_daily",
+            daily_data_read_module.data_manager,
+            "get_stock_daily",
             lambda symbol: (_ for _ in ()).throw(AssertionError("should not call external provider")),
         )
 
         df, name, source = service.get_stock_daily("300827")
 
         assert len(df) == 6
+        assert "ma5" in df.columns
         assert name == "上能电气"
         assert source == "CN_SQLiteDailyWarehouse"
 
     def test_refreshes_stale_sqlite_data_and_persists(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         stale_df = _daily_df(end_offset_days=-20)
         fresh_df = _daily_df(end_offset_days=0)
 
@@ -191,50 +236,33 @@ class TestDailyMarketDataService:
         )
         storage.upsert_daily_bars("300827", stale_df, "CN_Old", market="cn")
 
-        service = DailyMarketDataService(warehouse=storage)
-        monkeypatch.setattr(
-            "src.core.market_data_service.data_manager.get_stock_daily",
-            lambda symbol: (fresh_df.copy(), "上能电气", "CN_Tushare"),
-        )
-        monkeypatch.setattr(
-            "src.core.market_data_service.StockListService.search_stocks",
-            lambda keyword, market=None: [
-                {
-                    "symbol": "300827",
-                    "ts_code": "300827.SZ",
-                    "name": "上能电气",
-                    "market": "创业板",
-                    "exchange": "SZSE",
-                    "list_date": "2020-04-10",
-                }
-            ],
-        )
+        class FakeWriteService:
+            def sync_symbol_daily(self, symbol: str, market: str, start_date: str | None = None):
+                storage.upsert_daily_bars("300827", fresh_df.copy(), "CN_Tushare", market="cn", ts_code="300827.SZ")
+                return {"symbol": symbol, "rows": len(fresh_df), "source": "CN_Tushare"}
+
+        service = DailyDataReadService(repository=storage, write_service=FakeWriteService())
 
         df, name, source = service.get_stock_daily("300827")
         latest = storage.get_latest_trade_date("300827", market="cn")
         loaded = storage.load_daily_bars("300827", market="cn")
 
-        assert len(df) == 6
+        assert len(df) >= 6
+        assert "ma5" in df.columns
         assert name == "上能电气"
         assert source == "CN_Tushare"
         assert latest == fresh_df.iloc[-1]["date"]
         assert len(loaded) >= 6
 
 
-class TestDailyWarehouseSyncService:
+class TestDailyDataWriteService:
     def test_sync_symbol_scope_records_sync_run(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         empty_source = FakeSource("EmptySource", None)
         good_source = FakeSource("Tushare", _daily_df())
-        service = DailyWarehouseSyncService(
-            warehouse=storage,
-            cn_daily_sources=[empty_source, good_source],
-            us_daily_sources=[],
-        )
-
-        monkeypatch.setattr(
-            "src.core.market_data_sync.StockListService.search_stocks",
-            lambda keyword, market=None: [
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
                 {
                     "symbol": "300827",
                     "ts_code": "300827.SZ",
@@ -243,7 +271,9 @@ class TestDailyWarehouseSyncService:
                     "exchange": "SZSE",
                     "list_date": "2020-04-10",
                 }
-            ],
+            ),
+            cn_daily_sources=[empty_source, good_source],
+            us_daily_sources=[],
         )
 
         result = service.sync_market_data(
@@ -272,70 +302,32 @@ class TestDailyWarehouseSyncService:
         assert row["success_count"] == 1
         assert row["failure_count"] == 0
 
-    def test_sync_symbol_scope_fills_metadata_from_tushare_when_search_misses(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
-        service = DailyWarehouseSyncService(
-            warehouse=storage,
+    def test_sync_symbol_scope_accepts_exact_start_date(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "list_date": "2020-04-10",
+                }
+            ),
             cn_daily_sources=[FakeSource("Tushare", _daily_df())],
             us_daily_sources=[],
         )
 
-        monkeypatch.setattr(
-            "src.core.market_data_sync.StockListService.search_stocks",
-            lambda keyword, market=None: [],
-        )
-        monkeypatch.setattr(
-            "src.core.market_data_sync.TushareDataSource.fetch_cn_stock_basic",
-            lambda symbol: {
-                "symbol": "300827",
-                "ts_code": "300827.SZ",
-                "name": "上能电气",
-                "market": "创业板",
-                "exchange": "SZSE",
-                "list_date": "2020-04-10",
-            },
-        )
-
-        result = service.sync_market_data(market="cn", scope="symbol", symbol="300827", days=30)
-        symbol_row = storage.get_symbol_record("300827", market="cn")
-
-        assert result["success_count"] == 1
-        assert symbol_row["name"] == "上能电气"
-
-    def test_sync_symbol_scope_enriches_degraded_cached_metadata(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
-        storage.upsert_symbols(
-            [{"symbol": "300827", "ts_code": "300827.SZ", "name": "300827", "market": "A股"}],
+        result = service.sync_market_data(
             market="cn",
+            scope="symbol",
+            symbol="300827",
+            start_date="2026-01-01",
         )
-        service = DailyWarehouseSyncService(
-            warehouse=storage,
-            cn_daily_sources=[FakeSource("Tushare", _daily_df())],
-            us_daily_sources=[],
-        )
-
-        monkeypatch.setattr(
-            "src.core.market_data_sync.StockListService.search_stocks",
-            lambda keyword, market=None: [
-                {"symbol": "300827", "ts_code": "300827.SZ", "name": "300827", "market": "A股"}
-            ],
-        )
-        monkeypatch.setattr(
-            "src.core.market_data_sync.TushareDataSource.fetch_cn_stock_basic",
-            lambda symbol: {
-                "symbol": "300827",
-                "ts_code": "300827.SZ",
-                "name": "上能电气",
-                "market": "创业板",
-                "exchange": "SZSE",
-            },
-        )
-
-        result = service.sync_market_data(market="cn", scope="symbol", symbol="300827", days=30)
-        symbol_row = storage.get_symbol_record("300827", market="cn")
-
         assert result["success_count"] == 1
-        assert symbol_row["name"] == "上能电气"
+        assert result["start_date"] == "2026-01-01"
 
 
 class TestSyncCli:
@@ -347,7 +339,7 @@ class TestSyncCli:
             return {"ok": True}
 
         monkeypatch.setattr(
-            "src.main.daily_warehouse_sync_service.sync_market_data",
+            "src.main.daily_data_write_service.sync_market_data",
             fake_sync_market_data,
         )
         monkeypatch.setattr(sys, "argv", ["sync-market-data", "--market", "cn", "--scope", "symbol", "--symbol", "300827"])
@@ -360,12 +352,14 @@ class TestSyncCli:
             "symbol": "300827",
             "days": 30,
             "years": None,
+            "start_date": None,
         }
 
 
-class TestStockListServiceWithSQLite:
-    def test_prefers_sqlite_symbol_store_for_a_shares(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+class TestSymbolCatalogService:
+    def test_prefers_sqlite_symbol_store_for_a_shares(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        service = SymbolCatalogService(repository=storage, cn_sources=[], us_sources=[])
         storage.upsert_symbols(
             [
                 {
@@ -379,20 +373,14 @@ class TestStockListServiceWithSQLite:
             market="cn",
         )
 
-        monkeypatch.setattr("src.data_provider.stock_list.market_data_storage", storage)
-        monkeypatch.setattr(
-            "src.data_provider.stock_list.StockListService._a_stock_sources",
-            [FakeSource("ShouldNotFetch", _daily_df())],
-        )
-
-        stocks = StockListService.get_a_stock_list()
+        stocks = service.list_symbols("cn")
 
         assert len(stocks) == 1
         assert stocks[0]["symbol"] == "300827"
         assert stocks[0]["name"] == "上能电气"
 
-    def test_search_cold_starts_and_persists_to_sqlite(self, tmp_path, monkeypatch):
-        storage = MarketDataStorage(str(tmp_path / "market.sqlite"))
+    def test_search_cold_starts_and_persists_to_repository(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         rows = [
             {
                 "symbol": "NVDA",
@@ -402,16 +390,13 @@ class TestStockListServiceWithSQLite:
                 "exchange": "NASDAQ",
             }
         ]
+        service = SymbolCatalogService(
+            repository=storage,
+            cn_sources=[],
+            us_sources=[FakeListSource("NASDAQ", rows, market="美股")],
+        )
 
-        monkeypatch.setattr("src.data_provider.stock_list.market_data_storage", storage)
-
-        def fake_get_us_stock_list(use_tushare: bool = True):
-            storage.upsert_symbols(rows, market="us")
-            return rows
-
-        monkeypatch.setattr(StockListService, "get_us_stock_list", fake_get_us_stock_list)
-
-        results = StockListService.search_stocks("NVDA", "美股")
+        results = service.search_symbols("NVDA", "美股")
 
         assert len(results) == 1
         assert results[0]["symbol"] == "NVDA"

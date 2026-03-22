@@ -11,7 +11,14 @@ from typing import List, Optional, Tuple, Dict, Any, Callable
 import pandas as pd
 
 from .realtime_types import UnifiedRealtimeQuote
-from .stock_list import StockListService
+from .sources import (
+    EfinanceDataSource,
+    TushareDataSource,
+    AkShareDataSource,
+    PytdxDataSource,
+    BaostockDataSource,
+    YfinanceDataSource,
+)
 
 
 class CircuitBreaker:
@@ -309,12 +316,12 @@ class DataManager:
     def _get_cn_name(self, symbol: str) -> str:
         """获取A股名称（从缓存的股票列表读取）"""
         try:
-            stocks = StockListService.get_a_stock_list()
-            for stock in stocks:
-                if stock.get("symbol") == symbol:
-                    name = stock.get("name")
-                    if name:
-                        return str(name)
+            from ..services.symbol_catalog_service import symbol_catalog_service
+
+            info = symbol_catalog_service.get_stock_info(symbol)
+            name = info.get("name")
+            if name:
+                return str(name)
         except Exception as e:
             print(f"⚠️ 从缓存获取A股名称失败: {e}")
         return symbol
@@ -322,12 +329,12 @@ class DataManager:
     def _get_us_name(self, symbol: str) -> str:
         """获取美股名称（从缓存的股票列表读取）"""
         try:
-            stocks = StockListService.get_us_stock_list()
-            for stock in stocks:
-                if stock.get("symbol") == symbol:
-                    name = stock.get("name")
-                    if name:
-                        return str(name)
+            from ..services.symbol_catalog_service import symbol_catalog_service
+
+            info = symbol_catalog_service.get_stock_info(symbol)
+            name = info.get("name")
+            if name:
+                return str(name)
         except Exception as e:
             print(f"⚠️ 从缓存获取美股名称失败: {e}")
         return symbol
@@ -335,25 +342,13 @@ class DataManager:
     def get_stock_info(self, symbol: str) -> dict:
         """获取股票基本信息（名称和行业）"""
         symbol = str(symbol).strip().upper()
-        info = {"name": symbol, "industry": ""}
-
         try:
-            market = self._get_market(symbol)
-            stocks = (
-                StockListService.get_us_stock_list()
-                if market == self.MARKET_US
-                else StockListService.get_a_stock_list()
-            )
+            from ..services.symbol_catalog_service import symbol_catalog_service
 
-            for stock in stocks:
-                if stock.get("symbol") == symbol:
-                    info["name"] = stock.get("name", symbol)
-                    info["industry"] = stock.get("industry", "")
-                    break
+            return symbol_catalog_service.get_stock_info(symbol)
         except Exception as e:
             print(f"⚠️ 获取股票信息失败: {e}")
-
-        return info
+        return {"name": symbol, "industry": ""}
 
     # ==================== 通用调度方法 ====================
 
@@ -528,3 +523,18 @@ class DataManager:
         """重置所有熔断器"""
         for cb in self._circuit_breakers.values():
             cb.reset()
+
+
+data_manager = DataManager.create_market_manager(
+    cn_fetchers=[
+        TushareDataSource.get_instance(),
+        EfinanceDataSource.get_instance(),
+        AkShareDataSource.get_instance(),
+        PytdxDataSource.get_instance(),
+        BaostockDataSource.get_instance(),
+    ],
+    us_fetchers=[
+        YfinanceDataSource.get_instance(),
+        AkShareDataSource.get_instance(),
+    ],
+)

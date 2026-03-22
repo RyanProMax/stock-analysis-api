@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from src.api.routes import index as controller
 from src.api.schemas import StandardResponse
 from src.config import is_development
-from src.core.market_data_sync import daily_warehouse_sync_service
+from src.services.daily_data_write_service import daily_data_write_service
 
 port = int(os.environ.get("PORT", 8080))
 
@@ -95,19 +95,21 @@ def sync_market_data():
     parser.add_argument("--symbol")
     parser.add_argument("--days", type=int)
     parser.add_argument("--years", type=int)
+    parser.add_argument("--start-date")
     args = parser.parse_args(sys.argv[1:])
 
-    if args.days and args.years:
-        raise SystemExit("`--days` 和 `--years` 只能二选一")
+    if sum(value is not None for value in (args.days, args.years, args.start_date)) > 1:
+        raise SystemExit("`--days`、`--years` 和 `--start-date` 只能三选一")
     if args.scope == "symbol" and not args.symbol:
         raise SystemExit("`scope=symbol` 时必须提供 `--symbol`")
 
-    summary = daily_warehouse_sync_service.sync_market_data(
+    summary = daily_data_write_service.sync_market_data(
         market=args.market,
         scope=args.scope,
         symbol=args.symbol,
-        days=args.days or (None if args.years else 30),
+        days=args.days or (None if args.years or args.start_date else 30),
         years=args.years,
+        start_date=args.start_date,
     )
     print(summary)
 

@@ -12,10 +12,11 @@
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
-from ..data_provider import data_manager, StockListService
 from ..config import is_development
+from ..data_provider.manager import data_manager
 from ..model import AnalysisReport, FactorDetail
-from .market_data_service import daily_market_data_service
+from ..services.daily_data_read_service import daily_data_read_service
+from ..services.symbol_catalog_service import symbol_catalog_service
 
 
 class StockService:
@@ -37,7 +38,7 @@ class StockService:
         Returns:
             (DataFrame, stock_name, data_source): 数据、股票名称和数据源，失败时返回 (None, symbol, "")
         """
-        return daily_market_data_service.get_stock_daily(symbol)
+        return daily_data_read_service.get_stock_daily(symbol)
 
     def get_financial_data(self, symbol: str) -> Tuple[Optional[Dict[str, Any]], str]:
         """
@@ -65,11 +66,11 @@ class StockService:
             股票列表
         """
         if market == "A股":
-            return StockListService.get_a_stock_list()
+            return symbol_catalog_service.get_market_snapshot("cn")
         elif market == "美股":
-            return StockListService.get_us_stock_list()
+            return symbol_catalog_service.get_market_snapshot("us")
         else:
-            return StockListService.get_all_stock_list()
+            return symbol_catalog_service.list_symbols()
 
     def search_stocks(self, keyword: str, market: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -82,7 +83,7 @@ class StockService:
         Returns:
             匹配的股票列表
         """
-        return StockListService.search_stocks(keyword, market)
+        return symbol_catalog_service.search_symbols(keyword, market)
 
     # ==================== 分析服务 ====================
 

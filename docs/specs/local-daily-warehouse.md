@@ -7,10 +7,11 @@
 - 为 A 股和美股提供单机本地 SQLite canonical 日线仓
 - 支持统一同步命令按市场 / 单股 / 时间窗口写入 symbol 元数据、日线数据和同步任务记录
 - 让 `/watch/poll` 与 `/stock/analyze` 优先读取本地仓中的历史日线，并按 freshness 自动补数
+- 统一采用 `cn_* / us_*` 命名，不再保留 `a_share_*`
 
 ## 数据模型
 
-- `a_share_symbols` / `us_symbols`
+- `cn_symbols` / `us_symbols`
   - `symbol`
   - `ts_code`
   - `name`
@@ -21,7 +22,7 @@
   - `list_date`
   - `updated_at`
   - `extra`
-- `a_share_daily` / `us_daily`
+- `cn_daily` / `us_daily`
   - 主键：`(symbol, trade_date)`
   - `symbol`
   - `ts_code`
@@ -57,6 +58,8 @@
 
 - v1 只存 canonical symbol 与日线事实，不存多 source 原始表，不存技术指标，不存分析结果
 - SQLite 只保存数据源返回的必要信息与事实型扩展字段，不保存分析报告缓存，也不保存 watch baseline
+- `cn_symbols` 只保存当前上市 A 股最新快照；刷新列表时按市场快照覆盖写入
+- `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - API 查询历史日线时，应优先读 SQLite 仓；若最近一条数据超过 7 个自然日，则回退外部源并回写仓库
 - `/watch/poll` 与 `/stock/analyze` 不改对外 contract，只改内部历史日线路径
 - 公共 HTTP 接口不暴露 `refresh` 参数
@@ -70,6 +73,7 @@
   - `--symbol`
   - `--days`
   - `--years`
+  - `--start-date`
 - `extra` 仅保存事实型扩展字段，如 `turnover_rate`、`vwap`、`free_share`、`total_share`、`free_mv`、`total_mv`
 
 ## 当前未完成项

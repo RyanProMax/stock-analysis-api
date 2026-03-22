@@ -33,11 +33,13 @@ black --line-length 100 .
 ```text
 src/
 ├── analyzer/         # 因子计算与标准化适配
-├── api/              # FastAPI 路由与 schema
-├── core/             # 核心服务
-├── data_provider/    # 数据源
+├── api/              # FastAPI 路由、schema 与 deps
+├── core/             # 兼容层与流程编排
+├── data_provider/    # 外部数据源适配
 ├── model/            # 领域模型与统一 contract
-├── storage/          # 本地 SQLite + 内存态持久层
+├── repositories/     # SQLite repository
+├── services/         # 业务编排服务
+├── storage/          # 兼容导入层，不再作为正式业务层
 └── utils/            # 工具
 ```
 
@@ -67,9 +69,11 @@ src/
 - SQLite 只保存数据源返回的必要持久信息，不保存分析报告缓存
 - 5-10 分钟短线 watch baseline 只保留进程内内存态，不落数据库
 - 公共 HTTP 接口不暴露 `refresh` 参数，统一先查 SQLite，缺失再拉外部源并回写
-- 本地行情仓主表按市场拆分为 `a_share_symbols`、`a_share_daily`、`us_symbols`、`us_daily`
+- 本地行情仓主表按市场拆分为 `cn_symbols`、`cn_daily`、`us_symbols`、`us_daily`
 - 统一同步入口为 `uv run sync-market-data`
 - A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
+- `cn_symbols` 只保留当前上市 A 股最新快照，不保留历史状态
+- `cn_daily` 的全市场补库口径为当前上市 A 股、自 `2026-01-01` 起的日线数据
 
 ## 文档协作要求
 
@@ -87,5 +91,6 @@ src/
 ## 代码规范
 
 - 新增能力时只更新 HTTP 路由、schema、文档和测试
-- 业务逻辑放在 `src/core/` 或 `src/analyzer/`
+- 业务逻辑优先放在 `src/services/`、`src/repositories/` 或 `src/analyzer/`
 - 标准化 contract 放在 `src/model/contracts.py` 和 `src/analyzer/normalizers.py`
+- `src/storage/` 只保留兼容导入，不再新增正式实现
