@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from src.api.routes import index as controller
 from src.api.schemas import StandardResponse
 from src.config import is_development
+from src.core.market_data_sync import daily_warehouse_sync_service
 
 port = int(os.environ.get("PORT", 8080))
 
@@ -83,6 +84,18 @@ async def ping():
 
 def start():
     uvicorn.run("src.main:app", host="0.0.0.0", port=port, reload=is_development())
+
+
+def sync_a_share_daily():
+    days = int(os.environ.get("MARKET_DATA_SYNC_DAYS", "30"))
+    summary = daily_warehouse_sync_service.refresh_recent_a_share_daily(days=days)
+    print(summary)
+
+
+def backfill_a_share_daily():
+    years = int(os.environ.get("MARKET_DATA_BACKFILL_YEARS", "10"))
+    summary = daily_warehouse_sync_service.backfill_a_share_history(years=years)
+    print(summary)
 
 
 def main():

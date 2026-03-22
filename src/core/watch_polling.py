@@ -15,6 +15,7 @@ import pandas as pd
 from ..analyzer.trend_analyzer import StockTrendAnalyzer
 from ..data_provider import data_manager
 from ..storage import CacheUtil
+from .market_data_service import daily_market_data_service
 
 
 class WatchPollingService:
@@ -60,7 +61,10 @@ class WatchPollingService:
         market = "us" if any(ch.isalpha() for ch in symbol) else "cn"
 
         stock_info = data_manager.get_stock_info(symbol)
-        daily_df, stock_name, daily_source = data_manager.get_stock_daily(symbol)
+        daily_df, stock_name, daily_source = daily_market_data_service.get_stock_daily(
+            symbol,
+            refresh=refresh,
+        )
         quote, quote_source = data_manager.get_realtime_quote(symbol)
         financial_data, financial_source = data_manager.get_financial_data(symbol)
 

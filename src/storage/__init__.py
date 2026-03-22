@@ -5,5 +5,6 @@
 """
 
 from .cache import CacheUtil
+from .market_data import MarketDataStorage, market_data_storage
 
-__all__ = ["CacheUtil"]
+__all__ = ["CacheUtil", "MarketDataStorage", "market_data_storage"]

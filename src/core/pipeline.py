@@ -18,6 +18,7 @@ from ..storage import CacheUtil
 from ..config import is_development
 from ..model import AnalysisReport, FactorAnalysis, FactorDetail, FearGreed
 from ..model.report import ANALYSIS_REPORT_CACHE_VERSION
+from .market_data_service import daily_market_data_service
 
 
 class StockService:
@@ -43,7 +44,7 @@ class StockService:
         Returns:
             (DataFrame, stock_name, data_source): 数据、股票名称和数据源，失败时返回 (None, symbol, "")
         """
-        return data_manager.get_stock_daily(symbol)
+        return daily_market_data_service.get_stock_daily(symbol)
 
     def get_financial_data(self, symbol: str) -> Tuple[Optional[Dict[str, Any]], str]:
         """
