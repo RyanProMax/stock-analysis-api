@@ -38,6 +38,13 @@ uv run sync-market-data --market cn --scope symbol --symbol 300827 --days 30
 uv run sync-market-data --market us --scope symbol --symbol NVDA --days 30
 ```
 
+后台常驻 HTTP 服务：
+
+```bash
+scripts/status_http_service.sh
+scripts/restart_http_service.sh
+```
+
 格式化：
 
 ```bash
