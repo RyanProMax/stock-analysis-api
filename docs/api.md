@@ -110,6 +110,17 @@
 - `data.message`: 固定为 `pong`
 - `data.status`: 固定为 `healthy`
 
+### `GET /health`
+
+用途：
+
+- 健康检查兼容别名，返回值与 `/ping` 完全一致
+
+响应：
+
+- `data.message`: 固定为 `pong`
+- `data.status`: 固定为 `healthy`
+
 ## 股票基础接口
 
 ### `POST /stock/analyze`
@@ -268,6 +279,12 @@ Query 参数：
 - `meta.degradation`
 - `meta.source_chain`
 
+A 股轮询补充约束：
+
+- A 股 `facts.fundamentals` 走轻量基本面模式，不再触发重型多源财务 fallback
+- A 股普通股票优先使用 realtime quote 已带出的 `pe / pb / total_mv / circ_mv` 等轻量字段
+- A 股 ETF / 基金 / 非普通股票若缺少适用基本面字段，可返回 `partial` 或 `null`，但不会再触发整条股票财务抓取链路
+
 `facts.quote` 常见字段：
 
 - `price`: 当前价格
@@ -322,6 +339,11 @@ Query 参数：
 
 - `quote_mode = realtime` 且 `quote_is_realtime = true`：盘中实时数据
 - `quote_mode = daily_fallback`：仅拿到最新日线快照，不是盘中实时
+
+`facts.fundamentals` 补充说明：
+
+- A 股轮询场景下，`source` 可能直接来自 realtime quote 源，例如 `CN_Tushare`
+- 当 A 股标的不适用股票财务口径，或轻量字段不足时，`fundamentals_partial = true`
 
 ## 估值接口
 

@@ -472,16 +472,21 @@ class DataManager:
 
         if market == self.MARKET_CN:
             print(f"正在获取 A股财务数据: [{symbol}]")
+            fetchers = [f for f in fetchers if hasattr(f, "get_cn_financial_data")]
             # A股：尝试 get_cn_financial_data
             call = lambda f: (
                 f.get_cn_financial_data(symbol)[0] if hasattr(f, "get_cn_financial_data") else None
             )
         else:
             print(f"正在获取 美股财务数据: [{symbol}]")
+            fetchers = [f for f in fetchers if hasattr(f, "get_us_financial_data")]
             # 美股：尝试 get_us_financial_data
             call = lambda f: (
                 f.get_us_financial_data(symbol)[0] if hasattr(f, "get_us_financial_data") else None
             )
+
+        if not fetchers:
+            return None, ""
 
         return self._execute_with_fallback(
             market=market,

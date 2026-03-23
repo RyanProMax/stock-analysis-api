@@ -10,10 +10,12 @@ Efinance 数据源
 - 内置防封禁策略（Jitter + UA 轮换 + 指数退避）
 """
 
+from json import JSONDecodeError
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import efinance as ef
 import time
+import requests
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -345,7 +347,7 @@ class EfinanceDataSource(BaseStockDataSource):
             logger.warning("efinance 未安装")
             return None
         except Exception as e:
-            logger.warning(f"获取 {symbol} 实时行情失败: {e}")
+            self._log_realtime_issue(symbol, e)
             return None
 
     def _get_etf_realtime_quote(self, symbol: str) -> Optional[UnifiedRealtimeQuote]:
@@ -372,7 +374,7 @@ class EfinanceDataSource(BaseStockDataSource):
             )
 
         except Exception as e:
-            logger.warning(f"获取ETF {symbol} 实时行情失败: {e}")
+            self._log_realtime_issue(symbol, e)
             return None
 
     # ==================== 可用性检查 ====================
@@ -444,3 +446,15 @@ class EfinanceDataSource(BaseStockDataSource):
             return int(float(value))
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _log_realtime_issue(symbol: str, exc: Exception) -> None:
+        log = logger.warning
+        if isinstance(exc, (requests.RequestException, JSONDecodeError, ValueError)):
+            log = logger.debug
+        log(
+            "Efinance 实时行情不可用 symbol=%s error_type=%s error=%s",
+            symbol,
+            type(exc).__name__,
+            str(exc),
+        )

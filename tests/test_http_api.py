@@ -49,6 +49,14 @@ class TestHealthEndpoints:
         assert data["status_code"] == 200
         assert data["data"]["message"] == "pong"
 
+    def test_health_alias(self, client: TestClient):
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status_code"] == 200
+        assert data["data"]["message"] == "pong"
+        assert data["data"]["status"] == "healthy"
+
 
 class TestStockEndpoints:
     def test_stock_list(self, client: TestClient):

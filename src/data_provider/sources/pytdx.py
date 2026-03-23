@@ -291,37 +291,43 @@ class PytdxDataSource(BaseStockDataSource):
         if api_class is None:
             raise ImportError("pytdx 库未安装")
 
-        api = api_class()
-        connected = False
+        api = None
 
         try:
             # 尝试连接服务器（自动选择最优）
             for i in range(len(self._hosts)):
                 host_idx = (self._current_host_idx + i) % len(self._hosts)
                 host, port = self._hosts[host_idx]
+                candidate = api_class()
 
                 try:
-                    if api.connect(host, port, time_out=1):
-                        connected = True
+                    if candidate.connect(host, port, time_out=1):
+                        api = candidate
                         self._current_host_idx = host_idx
                         logger.debug(f"Pytdx 连接成功: {host}:{port}")
                         break
                 except Exception as e:
                     logger.debug(f"Pytdx 连接 {host}:{port} 失败: {e}")
-                    continue
+                finally:
+                    if api is None:
+                        try:
+                            candidate.disconnect()
+                        except Exception:
+                            pass
 
-            if not connected:
+            if api is None:
                 raise ConnectionError("Pytdx 无法连接任何服务器")
 
             yield api
 
         finally:
             # 确保断开连接
-            try:
-                api.disconnect()
-                logger.debug("Pytdx 连接已断开")
-            except Exception as e:
-                logger.warning(f"Pytdx 断开连接时出错: {e}")
+            if api is not None:
+                try:
+                    api.disconnect()
+                    logger.debug("Pytdx 连接已断开")
+                except Exception as e:
+                    logger.warning(f"Pytdx 断开连接时出错: {e}")
 
     # ==================== 工具方法 ====================
 

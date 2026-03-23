@@ -4,12 +4,18 @@ AkShare 数据源
 使用 AkShare 获取 A 股股票列表、财务数据、日线数据
 """
 
+import logging
+from json import JSONDecodeError
 from typing import List, Dict, Any, Optional, cast
 import pandas as pd
 import akshare as ak
+import requests
 
 from ..base import BaseStockDataSource
 from ...model.contracts import normalize_percent_to_ratio, select_latest_metric_column
+
+
+logger = logging.getLogger(__name__)
 
 
 class AkShareDataSource(BaseStockDataSource):
@@ -256,13 +262,10 @@ class AkShareDataSource(BaseStockDataSource):
                         }
 
             except Exception as e:
-                print(f"⚠️ 获取财务摘要失败: {e}")
+                cls._log_financial_issue(symbol, "financial_abstract", e)
 
         except Exception as e:
-            import traceback
-
-            print(f"❌ AkShare获取A股财务数据失败: {e}")
-            traceback.print_exc()
+            cls._log_financial_issue(symbol, "financial_data", e)
 
         return financial_data if financial_data else None, raw_data
 
@@ -277,3 +280,25 @@ class AkShareDataSource(BaseStockDataSource):
             return float(text)
         except ValueError:
             return None
+
+    @staticmethod
+    def _log_financial_issue(symbol: str, stage: str, exc: Exception) -> None:
+        exc_type = type(exc).__name__
+        message = str(exc)
+        if isinstance(exc, (requests.RequestException, JSONDecodeError, ValueError)):
+            logger.warning(
+                "AkShare A股财务数据不可用 symbol=%s stage=%s error_type=%s error=%s",
+                symbol,
+                stage,
+                exc_type,
+                message,
+            )
+            return
+
+        logger.warning(
+            "AkShare A股财务数据失败 symbol=%s stage=%s error_type=%s error=%s",
+            symbol,
+            stage,
+            exc_type,
+            message,
+        )
