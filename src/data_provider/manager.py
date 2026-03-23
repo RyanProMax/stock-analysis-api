@@ -503,6 +503,9 @@ class DataManager:
         """
         market = self._get_market(symbol)
         fetchers = self._get_fetchers(market)
+        if market == self.MARKET_CN:
+            allowed_sources = {"Tushare", "Efinance", "Pytdx"}
+            fetchers = [fetcher for fetcher in fetchers if fetcher.SOURCE_NAME in allowed_sources]
 
         return self._execute_with_fallback(
             market=market,

@@ -1,6 +1,6 @@
 # 盯盘轮询 API 规格
 
-更新时间：2026-03-22
+更新时间：2026-03-23
 
 ## 目标
 
@@ -51,10 +51,14 @@
   - `realtime`
   - `daily_fallback`
   - `unavailable`
-- 当美股仅拿到 latest available daily snapshot 时，必须：
+- 当任一市场仅拿到 latest available daily snapshot 时，必须：
   - 返回 `quote.mode = daily_fallback`
   - 返回 `meta.partial = true`
   - 不得将整体状态标记为等同 realtime 的完整 `ok`
+- 对 A 股“盘中最新数据”的验收必须同时满足：
+  - `quote.mode = realtime`
+  - `meta.degradation.quote_is_realtime = true`
+  - `quote.as_of` 为当前请求时间，而不是最新日线日期
 - `meta.degradation` 至少包含：
   - `quote_mode`
   - `quote_is_realtime`
@@ -93,7 +97,12 @@
 - 只保留一个公共盯盘接口，不新增 cursor / monitor_id / health / rules 公共接口
 - 盯盘 route 层不复用 `/stock/analyze`、`/earnings`、`/competitive` 的整包输出
 - baseline cache 以 `symbol` 为 key，TTL 为 24 小时
-- A 股历史日线优先使用本地 SQLite canonical 日线仓，缺失时通过 `daily_data_read_service -> daily_data_write_service` 自动补数并回写；实时行情仍优先使用现有实时行情链路
+- A 股历史日线优先使用本地 SQLite canonical 日线仓，缺失时通过 `daily_data_read_service -> daily_data_write_service` 自动补数并回写
+- A 股实时行情链路固定优先级为：
+  - `Tushare`
+  - `Efinance`
+  - `Pytdx`
+- 若 A 股 realtime source 全部失败，允许降级为 `daily_fallback`，但必须显式标记为非盘中实时
 - 美股允许降级为 latest available daily snapshot
 - 缺失字段显式返回 `null`，不得伪造实时性
 

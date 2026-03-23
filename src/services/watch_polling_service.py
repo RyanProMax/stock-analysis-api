@@ -105,7 +105,7 @@ class WatchPollingService:
         missing_quote = quote_payload.get("price") is None
         missing_daily = daily_df is None or daily_df.empty
         quote_mode = quote_payload.get("mode")
-        us_daily_fallback = market == "us" and quote_mode == "daily_fallback"
+        daily_fallback_used = quote_mode == "daily_fallback"
         status = "ok"
         partial = False
         if missing_quote and missing_daily:
@@ -113,7 +113,7 @@ class WatchPollingService:
             partial = True
         elif (
             missing_quote
-            or us_daily_fallback
+            or daily_fallback_used
             or fundamentals_payload.get("partial")
             or earnings_watch.get("partial")
         ):

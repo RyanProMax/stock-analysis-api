@@ -11,6 +11,7 @@ import pandas as pd
 import tushare as ts
 
 from ..base import BaseStockDataSource
+from ..realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from ...model.contracts import normalize_percent_to_ratio
 
 load_dotenv()
@@ -53,6 +54,85 @@ class TushareDataSource(BaseStockDataSource):
             return None
 
     # ==================== 日线数据实现 ====================
+
+    def get_realtime_quote(self, symbol: str) -> Optional[UnifiedRealtimeQuote]:
+        """获取 A 股实时行情，优先 Pro realtime，失败后降级到旧版接口。"""
+        normalized = str(symbol).strip().upper()
+        if not normalized or any(ch.isalpha() for ch in normalized):
+            return None
+
+        pro = self.get_pro()
+        if pro is None:
+            return None
+
+        ts_symbol = self._build_cn_ts_code(normalized)
+
+        # 优先尝试 Pro 实时接口；若源端未开通或不可用，则继续降级。
+        try:
+            df = self._safe_query_dataframe(pro, "quotation", ts_code=ts_symbol)
+            if df is not None and not df.empty:
+                row = df.iloc[0]
+                return UnifiedRealtimeQuote(
+                    code=normalized,
+                    name=str(row.get("name", "") or ""),
+                    source=RealtimeSource.TUSHARE,
+                    price=self._safe_float(row.get("price")),
+                    change_pct=self._safe_float(row.get("pct_chg")),
+                    change_amount=self._safe_float(row.get("change")),
+                    volume=self._safe_int(row.get("vol")),
+                    amount=self._safe_float(row.get("amount")),
+                    volume_ratio=self._safe_float(row.get("volume_ratio")),
+                    turnover_rate=self._safe_float(
+                        row.get("turnover_ratio", row.get("turnover_rate"))
+                    ),
+                    amplitude=self._safe_float(row.get("amplitude")),
+                    open_price=self._safe_float(row.get("open")),
+                    high=self._safe_float(row.get("high")),
+                    low=self._safe_float(row.get("low")),
+                    pre_close=self._safe_float(row.get("pre_close")),
+                    pe_ratio=self._safe_float(row.get("pe")),
+                    pb_ratio=self._safe_float(row.get("pb")),
+                    total_mv=self._safe_float(row.get("total_mv")),
+                    circ_mv=self._safe_float(row.get("circ_mv")),
+                )
+        except Exception:
+            pass
+
+        try:
+            legacy_symbol = self._build_legacy_realtime_symbol(normalized)
+            df = ts.get_realtime_quotes(legacy_symbol)
+            if df is None or df.empty:
+                return None
+
+            row = df.iloc[0]
+            price = self._safe_float(row.get("price"))
+            pre_close = self._safe_float(row.get("pre_close"))
+            change_amount = None
+            change_pct = None
+            if price is not None and pre_close not in (None, 0):
+                change_amount = round(price - float(pre_close), 4)
+                change_pct = round((change_amount / float(pre_close)) * 100.0, 4)
+
+            volume = self._safe_int(row.get("volume"))
+            if volume is not None:
+                volume = volume // 100
+
+            return UnifiedRealtimeQuote(
+                code=normalized,
+                name=str(row.get("name", "") or ""),
+                source=RealtimeSource.TUSHARE,
+                price=price,
+                change_pct=change_pct,
+                change_amount=change_amount,
+                volume=volume,
+                amount=self._safe_float(row.get("amount")),
+                open_price=self._safe_float(row.get("open")),
+                high=self._safe_float(row.get("high")),
+                low=self._safe_float(row.get("low")),
+                pre_close=pre_close,
+            )
+        except Exception:
+            return None
 
     def _fetch_raw_daily(self, symbol: str) -> Optional[pd.DataFrame]:
         """获取原始日线数据"""
@@ -424,6 +504,43 @@ class TushareDataSource(BaseStockDataSource):
         if text.endswith(".SZ"):
             return "SZSE"
         return None
+
+    @staticmethod
+    def _build_legacy_realtime_symbol(symbol: str) -> str:
+        normalized = str(symbol).strip().upper()
+        if normalized == "000001":
+            return "sh000001"
+        if normalized in {"399001", "399006"}:
+            return f"sz{normalized}"
+        if normalized == "000300":
+            return "sh000300"
+        if normalized.startswith(("4", "8", "92")):
+            return f"bj{normalized.lower()}"
+        return normalized.lower()
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        try:
+            if value is None or pd.isna(value):
+                return None
+            text = str(value).strip().replace(",", "")
+            if not text:
+                return None
+            return float(text)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _safe_int(value: Any) -> Optional[int]:
+        try:
+            if value is None or pd.isna(value):
+                return None
+            text = str(value).strip().replace(",", "")
+            if not text:
+                return None
+            return int(float(text))
+        except Exception:
+            return None
 
     # ==================== 财务数据 ====================
 
