@@ -12,6 +12,8 @@
 
 ## 最近完成项
 
+- 新增 `docs/api.md`，统一沉淀当前所有 HTTP 接口的用途、调用方式、入参、出参和字段含义
+- 更新 `AGENTS.md` 文档索引，明确 `docs/api.md` 是 HTTP 接口设计说明的唯一文档
 - 审计当前 `/watch/poll` A 股实时链路，确认此前真实可用源主要是 `Efinance / Pytdx`，`Tushare` 未实现 realtime quote
 - 参考 DSA 迁入 `TushareDataSource.get_realtime_quote()`，改为先尝试 Pro `quotation`，失败后降级到旧版 `ts.get_realtime_quotes`
 - 保持 A 股 realtime manager 优先级为 `Tushare -> Efinance -> Pytdx`，不新增独立 realtime manager
