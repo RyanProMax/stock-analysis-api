@@ -4,6 +4,7 @@ Tushare 数据源
 使用 Tushare API 获取 A 股和美股股票列表、A股日线数据
 """
 
+import logging
 import os
 from dotenv import load_dotenv
 from typing import List, Dict, Any, ClassVar, Optional
@@ -15,6 +16,9 @@ from ..realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from ...model.contracts import normalize_percent_to_ratio
 
 load_dotenv()
+
+
+logger = logging.getLogger(__name__)
 
 
 class TushareDataSource(BaseStockDataSource):
@@ -597,7 +601,7 @@ class TushareDataSource(BaseStockDataSource):
                     if pd.notna(latest.get("pb")) and latest["pb"] > 0:
                         financial_data["pb_ratio"] = float(latest["pb"])
             except Exception as e:
-                print(f"⚠️ 获取估值指标失败: {e}")
+                cls._log_financial_issue(symbol, "daily_basic", e)
 
             # 获取财务指标 (ROE/资产负债率)
             try:
@@ -623,7 +627,7 @@ class TushareDataSource(BaseStockDataSource):
                         ),
                     }
             except Exception as e:
-                print(f"⚠️ 获取财务指标失败: {e}")
+                cls._log_financial_issue(symbol, "fina_indicator", e)
 
             # 获取利润表用于计算营收增长率
             try:
@@ -637,13 +641,10 @@ class TushareDataSource(BaseStockDataSource):
                         financial_data["revenue_growth"] = float(revenue_growth * 100.0)
                     raw_data["income_meta"] = cls._extract_income_meta(df_income, revenue_growth)
             except Exception as e:
-                print(f"⚠️ 获取利润表失败: {e}")
+                cls._log_financial_issue(symbol, "income", e)
 
         except Exception as e:
-            import traceback
-
-            print(f"❌ Tushare获取A股财务数据失败: {e}")
-            traceback.print_exc()
+            cls._log_financial_issue(symbol, "financial_data", e)
 
         return financial_data if financial_data else None, raw_data
 
@@ -698,3 +699,13 @@ class TushareDataSource(BaseStockDataSource):
         if revenue_growth_ratio is not None:
             meta["revenue_growth_ratio"] = revenue_growth_ratio
         return meta
+
+    @staticmethod
+    def _log_financial_issue(symbol: str, stage: str, exc: Exception) -> None:
+        logger.warning(
+            "Tushare A股财务数据不可用 symbol=%s stage=%s error_type=%s error=%s",
+            symbol,
+            stage,
+            type(exc).__name__,
+            str(exc),
+        )

@@ -63,7 +63,17 @@ class WatchPollingService:
         stock_info = data_manager.get_stock_info(symbol)
         daily_df, stock_name, daily_source = daily_data_read_service.get_stock_daily(symbol)
         quote, quote_source = data_manager.get_realtime_quote(symbol)
-        financial_data, financial_source = data_manager.get_financial_data(symbol)
+        if market == "cn":
+            # A股轮询只使用轻量事实，避免对 ETF/基金触发重型财务 fallback 链路。
+            financial_data, financial_source = None, ""
+            earnings_watch = {
+                "next_earnings_date": None,
+                "earnings_proximity_days": None,
+                "partial": False,
+            }
+        else:
+            financial_data, financial_source = data_manager.get_financial_data(symbol)
+            earnings_watch = self._build_earnings_watch(financial_data=financial_data)
 
         quote_payload = self._build_quote_payload(
             daily_df=daily_df,
@@ -80,7 +90,6 @@ class WatchPollingService:
             financial_source=financial_source,
             market=market,
         )
-        earnings_watch = self._build_earnings_watch(financial_data=financial_data)
 
         source_chain = self._dedupe_sources(
             {
@@ -266,9 +275,13 @@ class WatchPollingService:
                 normalized_fields, "book_value_per_share"
             ),
             "source": financial_source or quote_source or ("yfinance.info" if market == "us" else None),
-            "partial": any(
-                value is None
-                for value in [pe_ratio, pb_ratio, market_cap, dividend_yield, revenue_ttm]
+            "partial": (
+                all(value is None for value in [pe_ratio, pb_ratio, market_cap])
+                if market == "cn"
+                else any(
+                    value is None
+                    for value in [pe_ratio, pb_ratio, market_cap, dividend_yield, revenue_ttm]
+                )
             ),
         }
         return payload

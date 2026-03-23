@@ -86,6 +86,8 @@ src/
 - 公共 HTTP 接口默认先读 SQLite，若最新日线超过 7 个自然日则按需回退外部源并回写，不暴露强制 `refresh`
 - A 股列表与日线优先级默认是 `Tushare -> fallback`，URL 与 token 必须通过环境变量读取，不允许硬编码
 - A 股盘中 realtime quote 优先级固定为 `Tushare -> Efinance -> Pytdx`；`Baostock` 不参与 realtime 主链路
+- A 股 `/watch/poll` 基本面固定为轻量模式：优先消费 realtime quote 与本地 canonical daily 事实，不再触发重型多源财务 fallback
+- provider 不支持某项能力时，应视为 `not_supported`，不能计入失败、不能污染熔断状态
 - `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`

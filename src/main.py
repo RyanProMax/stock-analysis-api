@@ -77,6 +77,16 @@ def read_root():
 @app.get("/ping", tags=["Health"])
 async def ping():
     """Health check endpoint to verify server availability"""
+    return _health_payload()
+
+
+@app.get("/health", tags=["Health"])
+async def health():
+    """Compatibility health check alias for external probes."""
+    return _health_payload()
+
+
+def _health_payload() -> StandardResponse:
     return StandardResponse(
         status_code=200,
         data={"message": "pong", "status": "healthy"},

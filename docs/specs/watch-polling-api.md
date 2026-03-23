@@ -102,6 +102,11 @@
   - `Tushare`
   - `Efinance`
   - `Pytdx`
+- A 股 `facts.fundamentals` 固定走轻量基本面模式：
+  - 优先使用 realtime quote 已带出的 `pe / pb / total_mv / circ_mv`
+  - 必要时只允许读取本地 canonical daily / daily_basic 已落库事实
+  - 不再为 `/watch/poll` 触发重型多源 `get_financial_data()` fallback
+- A 股 ETF / 基金 / 非普通股票若不适用股票财务口径，应直接返回轻量 `partial`，不能反复触发 `CN财务 数据获取全失败`
 - 若 A 股 realtime source 全部失败，允许降级为 `daily_fallback`，但必须显式标记为非盘中实时
 - 美股允许降级为 latest available daily snapshot
 - 缺失字段显式返回 `null`，不得伪造实时性
