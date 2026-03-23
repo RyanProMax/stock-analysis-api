@@ -106,7 +106,7 @@ class DailyDataReadService:
         if date_col not in df.columns:
             return df
 
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df[date_col] = BaseStockDataSource._normalize_datetime_series(df[date_col])
         df = df.dropna(subset=[date_col]).sort_values(date_col, ascending=True).reset_index(drop=True)
         if df.empty:
             return df

@@ -200,7 +200,7 @@ class BaseStockDataSource(ABC):
 
         # 确保日期列为 datetime 类型
         if "date" in df.columns:
-            df["date"] = pd.to_datetime(df["date"])
+            df["date"] = BaseStockDataSource._normalize_datetime_series(df["date"])
 
         # 数值列类型转换
         numeric_cols = ["open", "high", "low", "close", "volume"]
@@ -217,6 +217,13 @@ class BaseStockDataSource(ABC):
             df = df.sort_values("date", ascending=True).reset_index(drop=True)
 
         return df
+
+    @staticmethod
+    def _normalize_datetime_series(series: pd.Series) -> pd.Series:
+        parsed = pd.to_datetime(series, errors="coerce")
+        if getattr(parsed.dt, "tz", None) is not None:
+            parsed = parsed.dt.tz_localize(None)
+        return parsed
 
     @staticmethod
     def _calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:

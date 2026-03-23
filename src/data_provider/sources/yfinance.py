@@ -1,9 +1,11 @@
 """
 yfinance 数据源
 
-使用 yfinance 获取美股股票列表、日线数据、财务数据
+使用 yfinance 获取美股股票列表、日线数据、财务数据与实时行情
 """
 
+import logging
+import re
 from typing import List, Dict, Any, Optional
 import pandas as pd
 
@@ -12,10 +14,14 @@ from ..fundamental_adapter import (
     build_dividend_payload_from_series,
     enrich_dividend_payload_with_yield,
 )
+from ..realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from ...model.contracts import (
     build_standard_field,
     format_ratio_as_percent,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class YfinanceDataSource(BaseStockDataSource):
@@ -73,6 +79,91 @@ class YfinanceDataSource(BaseStockDataSource):
         df.columns = [c.lower() for c in df.columns]
 
         return df
+
+    # ==================== 实时行情 ====================
+
+    def get_realtime_quote(self, symbol: str) -> Optional[UnifiedRealtimeQuote]:
+        """获取美股实时行情，优先 fast_info，失败后回退到最近 2 日 history。"""
+        normalized = str(symbol).strip().upper()
+        if not self._is_us_stock_symbol(normalized):
+            return None
+
+        try:
+            import yfinance as yf
+
+            ticker = yf.Ticker(normalized)
+
+            try:
+                info = ticker.fast_info
+                if info is None:
+                    raise ValueError("fast_info is None")
+
+                price = self._safe_float(
+                    getattr(info, "lastPrice", None) or getattr(info, "last_price", None)
+                )
+                pre_close = self._safe_float(
+                    getattr(info, "previousClose", None) or getattr(info, "previous_close", None)
+                )
+                open_price = self._safe_float(getattr(info, "open", None))
+                high = self._safe_float(
+                    getattr(info, "dayHigh", None) or getattr(info, "day_high", None)
+                )
+                low = self._safe_float(
+                    getattr(info, "dayLow", None) or getattr(info, "day_low", None)
+                )
+                volume = self._safe_int(
+                    getattr(info, "lastVolume", None) or getattr(info, "last_volume", None)
+                )
+                market_cap = self._safe_float(
+                    getattr(info, "marketCap", None) or getattr(info, "market_cap", None)
+                )
+            except Exception:
+                history = ticker.history(period="2d")
+                if history is None or history.empty:
+                    return None
+
+                latest = history.iloc[-1]
+                previous = history.iloc[-2] if len(history) > 1 else latest
+
+                price = self._safe_float(latest.get("Close"))
+                pre_close = self._safe_float(previous.get("Close"))
+                open_price = self._safe_float(latest.get("Open"))
+                high = self._safe_float(latest.get("High"))
+                low = self._safe_float(latest.get("Low"))
+                volume = self._safe_int(latest.get("Volume"))
+                market_cap = None
+
+            change_amount = None
+            change_pct = None
+            if price is not None and pre_close not in (None, 0):
+                change_amount = price - float(pre_close)
+                change_pct = (change_amount / float(pre_close)) * 100.0
+
+            amplitude = None
+            if high is not None and low is not None and pre_close not in (None, 0):
+                amplitude = ((high - low) / float(pre_close)) * 100.0
+
+            return UnifiedRealtimeQuote(
+                code=normalized,
+                name="",
+                source=RealtimeSource.YFINANCE,
+                price=price,
+                change_pct=round(change_pct, 4) if change_pct is not None else None,
+                change_amount=round(change_amount, 4) if change_amount is not None else None,
+                volume=volume,
+                amount=None,
+                volume_ratio=None,
+                turnover_rate=None,
+                amplitude=round(amplitude, 4) if amplitude is not None else None,
+                open_price=open_price,
+                high=high,
+                low=low,
+                pre_close=pre_close,
+                total_mv=market_cap,
+            )
+        except Exception as e:
+            logger.warning(f"yfinance 获取美股实时行情失败 [{normalized}]: {e}")
+            return None
 
     # ==================== 财务数据 ====================
 
@@ -241,3 +332,26 @@ class YfinanceDataSource(BaseStockDataSource):
             )
 
         return normalized
+
+    @staticmethod
+    def _is_us_stock_symbol(symbol: str) -> bool:
+        text = str(symbol).strip().upper()
+        return bool(re.match(r"^[A-Z][A-Z0-9]{0,4}(?:[.-][A-Z])?$", text))
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        try:
+            if value is None or pd.isna(value):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_int(value: Any) -> Optional[int]:
+        try:
+            if value is None or pd.isna(value):
+                return None
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None

@@ -9,6 +9,7 @@ from typing import Any, Callable, Iterable, Optional
 
 import pandas as pd
 
+from ..data_provider.base import BaseStockDataSource
 from ..data_provider.sources.akshare import AkShareDataSource
 from ..data_provider.sources.efinance import EfinanceDataSource
 from ..data_provider.sources.tushare import TushareDataSource
@@ -451,7 +452,7 @@ class DailyDataWriteService:
         if date_col not in df.columns:
             return df
 
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df[date_col] = BaseStockDataSource._normalize_datetime_series(df[date_col])
         df = df.dropna(subset=[date_col])
         if start_date:
             df = df[df[date_col] >= pd.Timestamp(start_date)]

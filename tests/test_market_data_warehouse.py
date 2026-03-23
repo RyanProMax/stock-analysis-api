@@ -302,8 +302,44 @@ class TestDailyDataReadService:
         assert latest == fresh_df.iloc[-1]["date"]
         assert len(loaded) >= 6
 
+    def test_slice_persist_window_accepts_timezone_aware_dates(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        service = DailyDataReadService(repository=storage)
+        daily_df = pd.DataFrame(
+            {
+                "date": pd.date_range("2026-03-20", periods=3, freq="D", tz="America/New_York"),
+                "open": [1.0, 2.0, 3.0],
+                "high": [1.1, 2.1, 3.1],
+                "low": [0.9, 1.9, 2.9],
+                "close": [1.0, 2.0, 3.0],
+                "volume": [100, 200, 300],
+            }
+        )
+
+        sliced = service._slice_persist_window(daily_df, latest_trade_date="2026-03-19")
+
+        assert len(sliced) == 3
+        assert sliced["date"].dt.tz is None
+
 
 class TestDailyDataWriteService:
+    def test_slice_daily_window_accepts_timezone_aware_dates(self):
+        daily_df = pd.DataFrame(
+            {
+                "date": pd.date_range("2026-03-20", periods=3, freq="D", tz="America/New_York"),
+                "open": [1.0, 2.0, 3.0],
+                "high": [1.1, 2.1, 3.1],
+                "low": [0.9, 1.9, 2.9],
+                "close": [1.0, 2.0, 3.0],
+                "volume": [100, 200, 300],
+            }
+        )
+
+        sliced = DailyDataWriteService._slice_daily_window(daily_df, start_date="2026-03-20")
+
+        assert len(sliced) == 3
+        assert sliced["date"].dt.tz is None
+
     def test_sync_symbol_scope_records_sync_run(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         empty_source = FakeSource("EmptySource", None)

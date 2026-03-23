@@ -4,19 +4,24 @@
 
 ## 当前目标
 
-- 压低常驻服务日志噪音，避免预期 fallback 场景刷出大段错误
-- 收口 A 股 `/watch/poll` 基本面策略，改为轻量模式并避免 ETF / 基金触发重型财务链路
-- 修复 `Pytdx` 失败连接路径的资源泄漏告警
-- 为外部探针补齐 `/health` 健康检查兼容别名
+- 下线 `/ping`，统一收口到 `/health`
+- 将 `/watch/poll` 的美股链路提升为正式 realtime 轮询能力
+- 保持 A 股轻量基本面轮询与既有降级语义稳定
 
 ## 最近完成项
 
+- 删除 `GET /ping`，收口 `GET /health` 为唯一健康检查接口，并将 `data.message` 固定为 `ok`
+- 参考 DSA 为 `YfinanceDataSource` 新增美股 realtime quote，实现 `fast_info -> history(period=\"2d\")` 回退链路
+- 收口 `/watch/poll` 的美股 realtime 语义：美股股票 realtime 命中时明确返回 `quote.mode = realtime`
+- 修复美股日线 timezone-aware 日期与 naive `Timestamp` 比较导致的 `/watch/poll` 运行时 `500`
+- 更新 README、`docs/api.md`、`docs/specs/watch-polling-api.md`，统一说明 `/health` 与美股 realtime 轮询能力
+- 补充健康检查下线测试、美股 realtime source 测试与美股轮询行为测试
 - 将 A 股 `/watch/poll` 改为轻量基本面模式；A 股轮询不再调用重型 `get_financial_data()` fallback 链路
 - 修正 `DataManager.get_financial_data()` 的 provider 能力过滤，只让真正支持财务接口的 source 参与 fallback 与熔断
 - 为 `AkShare`、`Tushare` 的 A 股财务失败路径移除 `traceback.print_exc()`，改为单行结构化 warning
 - 下调 `Efinance` 盘中 realtime 的预期源端异常噪音，避免东方财富脏响应重复刷 warning
 - 修复 `Pytdx` 多 host 连接失败路径，失败时显式断开 candidate socket，避免 `unclosed TrafficStatSocket`
-- 新增 `GET /health` 兼容别名，返回与 `/ping` 一致的健康结果
+- 已将健康检查统一收口到 `GET /health`
 - 补充 provider 稳定性测试，覆盖能力过滤、A 股轻量轮询、`Pytdx` 清理和财务日志降噪
 - 新增 `docs/api.md`，统一沉淀当前所有 HTTP 接口的用途、调用方式、入参、出参和字段含义
 - 更新 `AGENTS.md` 文档索引，明确 `docs/api.md` 是 HTTP 接口设计说明的唯一文档
@@ -89,9 +94,10 @@
 - 文件缓存已下线，持久层收敛为 SQLite + 进程内内存态
 - Tushare 现为股票列表与 A 股日线的主优先级数据源
 - Tushare 现已成为 A 股 realtime quote 的主优先级数据源；若 realtime 不可用，再依次降级到 `Efinance`、`Pytdx`
+- `Yfinance` 当前已成为美股 `/watch/poll` realtime quote 主源；失败时仍按 `daily_fallback / unavailable` 处理
 - A 股 `/watch/poll` 当前只使用轻量基本面字段，不再为轮询触发重型多源财务抓取
 - `get_financial_data()` 当前会先过滤不支持财务能力的 provider，避免误计失败和污染熔断状态
-- `/health` 与 `/ping` 当前都可用于健康检查，返回 payload 一致
+- `/health` 当前是唯一健康检查接口，返回 `message=ok`、`status=healthy`
 - `repositories/` 和 `services/` 已成为正式业务层，`storage/` 只保留兼容导入
 - 当前 A 股 listed universe 以 Tushare `list_status='L'` 为准，实时计数为 `5000`
 - `cn_symbols` 当前为 `5000`
@@ -105,7 +111,7 @@
   - compact snapshot
   - delta / alerts
   - symbol 级 baseline memory state
-  - A 股实时优先、美股降级可用
+  - A 股实时优先、美股 realtime 已正式接入 `Yfinance`
   - quote 降级模式显式暴露
   - 任一市场的 daily fallback 都不再伪装为 realtime `ok`
   - `cn_* / us_*` 拆分的 SQLite symbol / daily 仓
@@ -124,9 +130,9 @@
 
 ### P0
 
-- 重启常驻服务并回看日志，确认 ETF 样本轮询时不再出现连续 `CN财务 数据获取全失败`
-- 实测 `/health` 探针命中常驻服务，确认 404 噪音消失
-- 开盘时继续抽样验证 A 股 `/watch/poll` 返回 `realtime` 且 `quote_is_realtime = true`
+- 重启常驻服务并验证 `/health` 已成为唯一健康检查入口
+- 抽样验证 `NVDA / AAPL` 的 `/watch/poll` 返回 `quote.mode = realtime`
+- 继续观察 A 股轮询日志，确认此前降噪改动未回退
 
 ### P1
 
@@ -136,7 +142,7 @@
 ## 已知风险与阻塞
 
 - A 股长历史回填和扩展字段完整性高度依赖 `Tushare` 可用性，fallback 源可能只能提供较短窗口
-- 美股缺少与 A 股同等级的统一 realtime quote，首版需要接受 partial 降级
+- 美股 realtime 当前仍为单源 `Yfinance`，稳定性与覆盖度低于 A 股链路；源端失败时仍需接受 `daily_fallback` / `partial`
 - symbol 级 baseline 为进程内全局共享，不区分调用方，且重启后丢失，会影响多 Agent 并发观测语义
 - SQLite 方案当前只适合单机、单写多读场景，不适合未来多实例共享写入
 - 东方财富相关链路仍可能因环境或源端不稳定返回空响应 / 脏响应；本轮只做 graceful degradation，不修改全局代理策略

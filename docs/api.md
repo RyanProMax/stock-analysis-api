@@ -99,26 +99,15 @@
 
 - `data.message`: 欢迎文案
 
-### `GET /ping`
-
-用途：
-
-- 健康检查
-
-响应：
-
-- `data.message`: 固定为 `pong`
-- `data.status`: 固定为 `healthy`
-
 ### `GET /health`
 
 用途：
 
-- 健康检查兼容别名，返回值与 `/ping` 完全一致
+- 唯一健康检查接口
 
 响应：
 
-- `data.message`: 固定为 `pong`
+- `data.message`: 固定为 `ok`
 - `data.status`: 固定为 `healthy`
 
 ## 股票基础接口
@@ -285,6 +274,12 @@ A 股轮询补充约束：
 - A 股普通股票优先使用 realtime quote 已带出的 `pe / pb / total_mv / circ_mv` 等轻量字段
 - A 股 ETF / 基金 / 非普通股票若缺少适用基本面字段，可返回 `partial` 或 `null`，但不会再触发整条股票财务抓取链路
 
+美股轮询补充约束：
+
+- 美股股票正式支持 realtime quote
+- 美股 realtime 主源为 `yfinance`
+- 当 `yfinance` 无法提供实时 quote 时，仍允许降级为 `daily_fallback` 或 `unavailable`
+
 `facts.quote` 常见字段：
 
 - `price`: 当前价格
@@ -344,6 +339,7 @@ A 股轮询补充约束：
 
 - A 股轮询场景下，`source` 可能直接来自 realtime quote 源，例如 `CN_Tushare`
 - 当 A 股标的不适用股票财务口径，或轻量字段不足时，`fundamentals_partial = true`
+- 美股轮询场景下，`quote.source` 与 realtime 命中源应明确为 `yfinance`
 
 ## 估值接口
 
