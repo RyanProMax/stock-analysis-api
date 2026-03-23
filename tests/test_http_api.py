@@ -42,20 +42,17 @@ class StubResult:
 
 
 class TestHealthEndpoints:
-    def test_ping(self, client: TestClient):
-        response = client.get("/ping")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        assert data["data"]["message"] == "pong"
-
-    def test_health_alias(self, client: TestClient):
+    def test_health(self, client: TestClient):
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status_code"] == 200
-        assert data["data"]["message"] == "pong"
+        assert data["data"]["message"] == "ok"
         assert data["data"]["status"] == "healthy"
+
+    def test_ping_not_found(self, client: TestClient):
+        response = client.get("/ping")
+        assert response.status_code == 404
 
 
 class TestStockEndpoints:

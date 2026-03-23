@@ -20,7 +20,7 @@ uv run start
 服务启动后访问：
 
 - Swagger UI: `http://127.0.0.1:8080/docs`
-- 健康检查: `http://127.0.0.1:8080/ping`
+- 健康检查: `http://127.0.0.1:8080/health`
 
 ## 常用命令
 
@@ -58,7 +58,7 @@ black --line-length 100 .
 - `POST /stock/analyze`: 单股或多股综合分析，返回标准化的 `entity / facts / analysis / meta`
 - `GET /stock/list`: 按市场分页获取股票列表
 - `POST /stock/search`: 按代码、名称或拼音搜索股票
-- `POST /watch/poll`: 多股票轮询盯盘，返回 snapshot、delta 和 alerts
+- `POST /watch/poll`: 多股票轮询盯盘，支持 A 股和美股，返回 snapshot、delta 和 alerts
 - `GET /valuation/dcf`: DCF 估值结果
 - `GET /valuation/comps`: 可比公司估值结果
 - `GET /model/lbo`: LBO 情景测算

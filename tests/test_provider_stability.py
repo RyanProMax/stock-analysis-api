@@ -1,6 +1,8 @@
 import logging
+import sys
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 import requests
 
@@ -8,6 +10,7 @@ from src.data_provider.manager import DataManager
 from src.data_provider.sources.akshare import AkShareDataSource
 from src.data_provider.sources.pytdx import PytdxDataSource
 from src.data_provider.sources.tushare import TushareDataSource
+from src.data_provider.sources.yfinance import YfinanceDataSource
 
 
 class TestDataManagerFinancialCapabilityFiltering:
@@ -169,3 +172,145 @@ class TestWatchPollingCnLightMode:
         assert result["fundamentals"]["market_cap"] == 1800000000000.0
         assert result["fundamentals"]["source"] == "CN_Tushare"
         assert result["earnings_watch"]["partial"] is False
+
+
+class TestWatchPollingUsRealtime:
+    def test_us_snapshot_uses_realtime_quote_and_keeps_us_fundamentals(self, monkeypatch):
+        from src.core.watch_polling import WatchPollingService
+
+        service = WatchPollingService()
+        quote = SimpleNamespace(
+            price=100.0,
+            change_pct=1.5,
+            change_amount=1.48,
+            open_price=99.5,
+            high=101.0,
+            low=99.0,
+            pre_close=98.52,
+            volume=123456,
+            total_mv=3000000000000.0,
+        )
+
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_stock_info",
+            lambda symbol: {"name": "NVIDIA"},
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.daily_market_data_service.get_stock_daily",
+            lambda symbol: (None, "NVIDIA", "US_yfinance"),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_realtime_quote",
+            lambda symbol: (quote, "yfinance"),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_financial_data",
+            lambda symbol: (
+                {
+                    "raw_data": {
+                        "info": {
+                            "trailingPE": 40.0,
+                            "priceToBook": 20.0,
+                            "marketCap": 3000000000000.0,
+                            "totalRevenue": 1000000000.0,
+                        }
+                    }
+                },
+                "yfinance.info",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_technical_payload",
+            lambda **kwargs: {
+                "trend": "盘整",
+                "ma_alignment": "数据不足",
+                "breakout_state": "none",
+                "volume_ratio": None,
+                "volume_ratio_state": "unknown",
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_earnings_watch",
+            lambda **kwargs: {
+                "next_earnings_date": "2026-03-30T00:00:00+00:00",
+                "earnings_proximity_days": 7,
+                "partial": False,
+            },
+        )
+
+        result = service._build_current_snapshot("NVDA")
+
+        assert result["status"] == "partial"
+        assert result["degradation"]["quote_mode"] == "realtime"
+        assert result["degradation"]["quote_is_realtime"] is True
+        assert result["quote"]["source"] == "yfinance"
+        assert result["fundamentals"]["source"] == "yfinance.info"
+        assert result["earnings_watch"]["partial"] is False
+
+
+class TestYfinanceRealtimeSource:
+    def test_yfinance_realtime_quote_prefers_fast_info(self, monkeypatch):
+        class FastInfo:
+            lastPrice = 100.0
+            previousClose = 98.5
+            open = 99.0
+            dayHigh = 101.0
+            dayLow = 97.5
+            lastVolume = 123456
+            marketCap = 3000000000000.0
+
+        class TickerStub:
+            fast_info = FastInfo()
+
+        class YFModule:
+            @staticmethod
+            def Ticker(symbol):
+                assert symbol == "NVDA"
+                return TickerStub()
+
+        monkeypatch.setitem(sys.modules, "yfinance", YFModule())
+
+        quote = YfinanceDataSource().get_realtime_quote("NVDA")
+
+        assert quote is not None
+        assert quote.source.value == "yfinance"
+        assert quote.price == 100.0
+        assert quote.pre_close == 98.5
+        assert quote.volume == 123456
+        assert quote.total_mv == 3000000000000.0
+
+    def test_yfinance_realtime_quote_falls_back_to_history(self, monkeypatch):
+        class TickerStub:
+            @property
+            def fast_info(self):
+                raise RuntimeError("fast_info unavailable")
+
+            def history(self, period="2d"):
+                assert period == "2d"
+                return pd.DataFrame(
+                    [
+                        {"Open": 97.0, "High": 99.0, "Low": 96.5, "Close": 98.0, "Volume": 1000},
+                        {"Open": 99.5, "High": 101.0, "Low": 99.0, "Close": 100.0, "Volume": 2000},
+                    ]
+                )
+
+        class YFModule:
+            @staticmethod
+            def Ticker(symbol):
+                assert symbol == "AAPL"
+                return TickerStub()
+
+        monkeypatch.setitem(sys.modules, "yfinance", YFModule())
+
+        quote = YfinanceDataSource().get_realtime_quote("AAPL")
+
+        assert quote is not None
+        assert quote.source.value == "yfinance"
+        assert quote.price == 100.0
+        assert quote.pre_close == 98.0
+        assert quote.open_price == 99.5
+        assert quote.high == 101.0
+        assert quote.low == 99.0
+        assert quote.volume == 2000
