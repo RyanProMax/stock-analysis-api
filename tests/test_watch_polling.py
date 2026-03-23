@@ -206,6 +206,88 @@ class TestWatchPollingService:
             if isinstance(source, dict)
         )
 
+    def test_build_current_snapshot_marks_cn_daily_fallback_partial(self, monkeypatch):
+        service = WatchPollingService()
+
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_stock_info",
+            lambda symbol: {"name": "贵州茅台"},
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.daily_market_data_service.get_stock_daily",
+            lambda symbol: (None, "贵州茅台", "CN_SQLiteDailyWarehouse"),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_realtime_quote",
+            lambda symbol: (None, ""),
+        )
+        monkeypatch.setattr(
+            "src.core.watch_polling.data_manager.get_financial_data",
+            lambda symbol: ({}, ""),
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_quote_payload",
+            lambda **kwargs: {
+                "price": 1500.0,
+                "change_pct": 0.01,
+                "change_amount": 15.0,
+                "open": 1490.0,
+                "high": 1510.0,
+                "low": 1480.0,
+                "pre_close": 1485.0,
+                "volume": 1000.0,
+                "amount": 100000.0,
+                "turnover_rate": None,
+                "amplitude": 0.03,
+                "volume_ratio": 1.1,
+                "source": "CN_SQLiteDailyWarehouse",
+                "as_of": "2026-03-22T10:00:00+00:00",
+                "mode": "daily_fallback",
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_technical_payload",
+            lambda **kwargs: {
+                "trend": "盘整",
+                "ma_alignment": "数据不足",
+                "breakout_state": "none",
+                "volume_ratio": 1.1,
+                "volume_ratio_state": "normal",
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_fundamentals_payload",
+            lambda **kwargs: {
+                "pe_ratio": 20.0,
+                "pb_ratio": 5.0,
+                "market_cap": 1000000000.0,
+                "dividend_yield": 0.01,
+                "revenue_ttm": 500000000.0,
+                "source": "CN_Tushare",
+                "partial": False,
+            },
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_earnings_watch",
+            lambda **kwargs: {
+                "next_earnings_date": None,
+                "earnings_proximity_days": None,
+                "partial": False,
+            },
+        )
+
+        result = service._build_current_snapshot("600519")
+
+        assert result["status"] == "partial"
+        assert result["partial"] is True
+        assert result["degradation"]["quote_mode"] == "daily_fallback"
+        assert result["degradation"]["quote_is_realtime"] is False
+        assert result["degradation"]["quote_fallback_used"] is True
+
     def test_extract_next_earnings_date_prefers_future_calendar_candidates(self):
         future_date = "2026-03-28T00:00:00+00:00"
         payload = {

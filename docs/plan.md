@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-03-22
+更新时间：2026-03-23
 
 ## 当前目标
 
@@ -8,9 +8,16 @@
 - 收口停牌语义，明确 `is_suspended` / `suspend_d` 的边界
 - 让 `sync-market-data` 基于覆盖摘要做前置判断，并在 stale / current 判定中引入停牌豁免
 - 压缩 `README.md`，只保留项目使用说明
+- 收口 `/watch/poll` 的 A 股 realtime 语义，改为 Tushare 优先且严格区分 realtime / daily fallback
 
 ## 最近完成项
 
+- 审计当前 `/watch/poll` A 股实时链路，确认此前真实可用源主要是 `Efinance / Pytdx`，`Tushare` 未实现 realtime quote
+- 参考 DSA 迁入 `TushareDataSource.get_realtime_quote()`，改为先尝试 Pro `quotation`，失败后降级到旧版 `ts.get_realtime_quotes`
+- 保持 A 股 realtime manager 优先级为 `Tushare -> Efinance -> Pytdx`，不新增独立 realtime manager
+- 将 `/watch/poll` 的 `daily_fallback` 语义改为市场无关：A 股和美股只要走日线降级，都必须返回 `partial`
+- 更新 `docs/specs/watch-polling-api.md` 与 `docs/architecture.md`，明确 A 股盘中验收必须检查 `quote.mode = realtime`
+- 补充 Tushare realtime source 测试，以及 A 股 `daily_fallback` 语义单测
 - 为本机开发环境新增 LaunchAgent 常驻方案，落地 `scripts/run_http_service.sh`、`scripts/restart_http_service.sh`、`scripts/status_http_service.sh`
 - 已将 HTTP 服务注册为用户级 LaunchAgent，并保持后台运行
 - 在 `README.md` 中补充 HTTP API 端点用途说明，同时保持 README 只承担使用说明职责
@@ -73,6 +80,7 @@
 - 当前唯一对外盯盘能力应收敛为单一轮询接口
 - 文件缓存已下线，持久层收敛为 SQLite + 进程内内存态
 - Tushare 现为股票列表与 A 股日线的主优先级数据源
+- Tushare 现已成为 A 股 realtime quote 的主优先级数据源；若 realtime 不可用，再依次降级到 `Efinance`、`Pytdx`
 - `repositories/` 和 `services/` 已成为正式业务层，`storage/` 只保留兼容导入
 - 当前 A 股 listed universe 以 Tushare `list_status='L'` 为准，实时计数为 `5000`
 - `cn_symbols` 当前为 `5000`
@@ -88,7 +96,7 @@
   - symbol 级 baseline memory state
   - A 股实时优先、美股降级可用
   - quote 降级模式显式暴露
-  - US daily fallback 不再伪装为 realtime `ok`
+  - 任一市场的 daily fallback 都不再伪装为 realtime `ok`
   - `cn_* / us_*` 拆分的 SQLite symbol / daily 仓
   - `extra` JSON 扩展字段与 tushare 核心主列
   - 统一 `sync-market-data` 命令入口
@@ -108,6 +116,7 @@
 - 用真实库再验一次覆盖摘要、停牌豁免和 `skipped` 判定是否稳定
 - 继续观察 source-limited symbol，确认 `suspend_d` 证据不足时的保守处理是否足够
 - 评估是否需要为完整停牌区间单独引入持久化表
+- 开盘时实测 `/watch/poll`，确认 A 股返回的是 `realtime` 盘中 quote 而不是昨日日线 fallback
 
 ### P1
 

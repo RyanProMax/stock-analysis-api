@@ -247,6 +247,79 @@ class TestSourceFieldNormalizationFixes:
 
         assert round(growth, 4) == 0.25
 
+    def test_tushare_realtime_quote_prefers_pro_quotation(self, monkeypatch):
+        class ProStub:
+            def quotation(self, **kwargs):
+                assert kwargs["ts_code"] == "600519.SH"
+                return pd.DataFrame(
+                    [
+                        {
+                            "name": "贵州茅台",
+                            "price": 1500.0,
+                            "pct_chg": 1.23,
+                            "change": 18.2,
+                            "vol": 12345,
+                            "amount": 987654321.0,
+                            "volume_ratio": 1.5,
+                            "turnover_ratio": 0.8,
+                            "amplitude": 2.1,
+                            "open": 1490.0,
+                            "high": 1510.0,
+                            "low": 1485.0,
+                            "pre_close": 1481.8,
+                            "pe": 30.5,
+                            "pb": 10.2,
+                            "total_mv": 1880000000000.0,
+                            "circ_mv": 1880000000000.0,
+                        }
+                    ]
+                )
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+
+        quote = TushareDataSource().get_realtime_quote("600519")
+
+        assert quote is not None
+        assert quote.source.value == "tushare"
+        assert quote.price == 1500.0
+        assert quote.change_pct == 1.23
+        assert quote.turnover_rate == 0.8
+        assert quote.total_mv == 1880000000000.0
+
+    def test_tushare_realtime_quote_falls_back_to_legacy_api(self, monkeypatch):
+        class ProStub:
+            def quotation(self, **kwargs):
+                raise RuntimeError("pro realtime unavailable")
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+        monkeypatch.setattr(
+            "src.data_provider.sources.tushare.ts.get_realtime_quotes",
+            lambda symbol: pd.DataFrame(
+                [
+                    {
+                        "name": "贵州茅台",
+                        "price": "1500.00",
+                        "pre_close": "1485.00",
+                        "volume": "120000",
+                        "amount": "987654321.00",
+                        "open": "1490.00",
+                        "high": "1510.00",
+                        "low": "1480.00",
+                    }
+                ]
+            ),
+        )
+
+        quote = TushareDataSource().get_realtime_quote("600519")
+
+        assert quote is not None
+        assert quote.source.value == "tushare"
+        assert quote.price == 1500.0
+        assert quote.pre_close == 1485.0
+        assert quote.change_amount == 15.0
+        assert round(quote.change_pct, 4) == round((15.0 / 1485.0) * 100.0, 4)
+        assert quote.volume == 1200
+
     def test_akshare_uses_latest_named_metric_column_not_position(self):
         df = pd.DataFrame(
             {

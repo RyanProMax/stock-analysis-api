@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-03-22
+更新时间：2026-03-23
 
 ## 系统边界
 
@@ -85,6 +85,8 @@ src/
   - `watch_polling_service`
 - 公共 HTTP 接口默认先读 SQLite，若最新日线超过 7 个自然日则按需回退外部源并回写，不暴露强制 `refresh`
 - A 股列表与日线优先级默认是 `Tushare -> fallback`，URL 与 token 必须通过环境变量读取，不允许硬编码
+- A 股盘中 realtime quote 优先级固定为 `Tushare -> Efinance -> Pytdx`；`Baostock` 不参与 realtime 主链路
+- `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日
