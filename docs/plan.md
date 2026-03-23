@@ -11,6 +11,8 @@
 
 ## 最近完成项
 
+- 为本机开发环境新增 LaunchAgent 常驻方案，落地 `scripts/run_http_service.sh`、`scripts/restart_http_service.sh`、`scripts/status_http_service.sh`
+- 已将 HTTP 服务注册为用户级 LaunchAgent，并保持后台运行
 - 在 `README.md` 中补充 HTTP API 端点用途说明，同时保持 README 只承担使用说明职责
 - 为 `cn_symbols` 新增 `daily_start_date`、`daily_end_date`，并在日线写入后自动回写覆盖摘要
 - 为旧库新增覆盖摘要回填逻辑，避免 schema 升级后误判全量缺口
