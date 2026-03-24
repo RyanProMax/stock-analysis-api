@@ -73,6 +73,53 @@ class TestSymbolSnapshotRefreshService:
         assert service._state["cn"]["last_checked_date"] == market_date
         assert service._state["cn"]["last_error"] is None
 
+    def test_market_refresh_does_not_treat_single_row_update_as_full_snapshot_current(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        yesterday = "2026-03-23T10:00:00Z"
+        today = "2026-03-24T09:00:00Z"
+        storage.upsert_symbols(
+            [
+                {
+                    "symbol": "000001",
+                    "ts_code": "000001.SZ",
+                    "name": "平安银行",
+                    "market": "主板",
+                },
+                {
+                    "symbol": "588320",
+                    "ts_code": "588320.SH",
+                    "name": "科创板人工智能ETF",
+                    "market": "ETF",
+                },
+            ],
+            market="cn",
+        )
+        with storage.connect() as conn:
+            conn.execute(
+                "UPDATE cn_symbols SET updated_at = ? WHERE symbol = ?",
+                (yesterday, "000001"),
+            )
+            conn.execute(
+                "UPDATE cn_symbols SET updated_at = ? WHERE symbol = ?",
+                (today, "588320"),
+            )
+        catalog = FakeSymbolCatalog()
+        service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=catalog)
+        service._is_market_open_today = lambda *, market, market_date: {  # type: ignore[method-assign]
+            "is_open": True,
+            "used_fallback": False,
+        }
+
+        service._run_market_refresh(
+            market="cn",
+            trigger_path="/health",
+            market_date="2026-03-24",
+        )
+
+        assert catalog.calls == ["cn"]
+        assert service._state["cn"]["last_checked_date"] == "2026-03-24"
+        assert service._state["cn"]["last_error"] is None
+
     def test_market_refresh_marks_closed_day_as_checked_without_refresh(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         catalog = FakeSymbolCatalog()
