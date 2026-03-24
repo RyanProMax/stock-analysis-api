@@ -99,6 +99,12 @@ class MarketDataRepository:
         "sector_raw",
         "act_name",
         "act_ent_type",
+        "fund_type",
+        "invest_type",
+        "benchmark",
+        "status",
+        "management",
+        "custodian",
     )
     DAILY_EXTRA_KEYS = ("vwap",)
     DAILY_ALIAS_KEYS = {"date", "volume", "turnover"}
