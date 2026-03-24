@@ -210,7 +210,103 @@ class TestSourceFieldNormalizationFixes:
         assert TushareDataSource._build_cn_ts_code("430001") == "430001.BJ"
         assert TushareDataSource._build_cn_ts_code("600519") == "600519.SH"
         assert TushareDataSource._build_cn_ts_code("000001") == "000001.SZ"
+        assert TushareDataSource._build_cn_ts_code("510300") == "510300.SH"
+        assert TushareDataSource._build_cn_ts_code("159001") == "159001.SZ"
         assert TushareDataSource._infer_exchange_from_ts_code("920000.BJ") == "BSE"
+
+    def test_tushare_fetch_cn_etfs_prefers_fund_basic_name_and_canonical_code(self, monkeypatch):
+        class ProStub:
+            def etf_basic(self, **kwargs):
+                return pd.DataFrame(
+                    [
+                        {
+                            "ts_code": "159001.OF",
+                            "name": "159001",
+                            "exchange": "SZ",
+                            "list_date": "20130101",
+                        },
+                        {
+                            "ts_code": "510300.SH",
+                            "name": "510300",
+                            "exchange": "SH",
+                            "list_date": "20120401",
+                        },
+                    ]
+                )
+
+            def fund_basic(self, **kwargs):
+                return pd.DataFrame(
+                    [
+                        {
+                            "ts_code": "159001.OF",
+                            "name": "保证金ETF",
+                            "fullname": "保证金交易型开放式指数基金",
+                            "market": "SZ",
+                            "fund_type": "股票型",
+                            "management": "示例基金",
+                        },
+                        {
+                            "ts_code": "510300.OF",
+                            "name": "沪深300ETF",
+                            "fullname": "沪深300交易型开放式指数证券投资基金",
+                            "market": "SH",
+                            "fund_type": "股票型",
+                            "management": "示例基金",
+                        },
+                    ]
+                )
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+
+        rows = TushareDataSource().fetch_cn_etfs()
+
+        assert len(rows) == 2
+        row_map = {row["symbol"]: row for row in rows}
+        assert row_map["159001"]["name"] == "保证金ETF"
+        assert row_map["159001"]["ts_code"] == "159001.SZ"
+        assert row_map["159001"]["exchange"] == "SZSE"
+        assert row_map["159001"]["fullname"] == "保证金交易型开放式指数基金"
+        assert row_map["510300"]["name"] == "沪深300ETF"
+        assert row_map["510300"]["ts_code"] == "510300.SH"
+        assert row_map["510300"]["exchange"] == "SSE"
+
+    def test_tushare_fetch_cn_etfs_falls_back_to_per_symbol_fund_basic_lookup(self, monkeypatch):
+        class ProStub:
+            def etf_basic(self, **kwargs):
+                return pd.DataFrame(
+                    [
+                        {
+                            "ts_code": "159002.OF",
+                            "name": None,
+                            "exchange": "SZ",
+                            "list_date": "20141020",
+                        }
+                    ]
+                )
+
+            def fund_basic(self, **kwargs):
+                if "ts_code" in kwargs:
+                    return pd.DataFrame(
+                        [
+                            {
+                                "ts_code": "159002.OF",
+                                "name": "易方达保证金B",
+                                "market": "O",
+                                "status": "L",
+                            }
+                        ]
+                    )
+                return pd.DataFrame(columns=["ts_code", "name", "market", "status"])
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+
+        rows = TushareDataSource().fetch_cn_etfs()
+
+        assert len(rows) == 1
+        assert rows[0]["symbol"] == "159002"
+        assert rows[0]["name"] == "易方达保证金B"
+        assert rows[0]["ts_code"] == "159002.SZ"
+        assert rows[0]["exchange"] == "SZSE"
 
     def test_yfinance_normalized_fields_use_canonical_names(self):
         class TickerStub:

@@ -26,6 +26,8 @@ class TushareDataSource(BaseStockDataSource):
 
     SOURCE_NAME: str = "Tushare"
     priority: int = 0  # 优先级最高
+    ETF_SH_PREFIXES: ClassVar[tuple[str, ...]] = ("51", "52", "56", "58")
+    ETF_SZ_PREFIXES: ClassVar[tuple[str, ...]] = ("15", "16", "18")
     TOKEN: ClassVar[str] = os.environ.get("TUSHARE_TOKEN", "")
     TUSHARE_HTTP_URL: ClassVar[str] = os.environ.get("TUSHARE_HTTP_URL", "")
     _pro: ClassVar[Optional[Any]] = None
@@ -206,38 +208,152 @@ class TushareDataSource(BaseStockDataSource):
         if df is None or df.empty:
             return []
 
+        etf_rows = self.normalize_dataframe(df)
+        expected_symbols = {
+            (
+                str(row.get("symbol") or "").strip().upper()
+                or str(row.get("ts_code") or "").strip().upper().split(".")[0]
+            )
+            for row in etf_rows
+        }
+        fund_basic_map = self._fetch_cn_fund_basic_map(pro, expected_symbols=expected_symbols)
         etfs: List[Dict[str, Any]] = []
+        for row in etf_rows:
+            raw_ts_code = str(row.get("ts_code") or "").strip().upper()
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol and raw_ts_code:
+                symbol = raw_ts_code.split(".")[0]
+            if not symbol:
+                continue
+
+            fund_row = dict(fund_basic_map.get(symbol, {}))
+            name = self._pick_cn_etf_name(
+                symbol,
+                raw_ts_code=raw_ts_code,
+                row=row,
+                fund_row=fund_row,
+            )
+            if name == symbol:
+                fallback_fund_row = self._fetch_cn_fund_basic_row(
+                    pro,
+                    symbol=symbol,
+                    raw_ts_code=raw_ts_code,
+                )
+                if fallback_fund_row:
+                    fund_row.update(fallback_fund_row)
+            exchange = self._normalize_cn_exchange(
+                fund_row.get("market") or row.get("exchange"),
+                ts_code=fund_row.get("ts_code") or raw_ts_code,
+                symbol=symbol,
+            )
+            ts_code = self._build_cn_ts_code(symbol)
+            name = self._pick_cn_etf_name(
+                symbol,
+                raw_ts_code=raw_ts_code,
+                row=row,
+                fund_row=fund_row,
+            )
+            fullname = self._pick_nonempty(
+                fund_row.get("fullname"),
+                fund_row.get("fund_fullname"),
+                row.get("fullname"),
+                row.get("fund_fullname"),
+                name,
+            )
+            list_date = self._pick_nonempty(
+                fund_row.get("list_date"),
+                row.get("list_date"),
+                fund_row.get("found_date"),
+                row.get("found_date"),
+                fund_row.get("setup_date"),
+                row.get("setup_date"),
+            )
+
+            etf_payload = {
+                "symbol": symbol,
+                "ts_code": ts_code,
+                "name": name,
+                "area": row.get("area") or fund_row.get("area"),
+                "industry": None,
+                "market": "ETF",
+                "exchange": exchange,
+                "list_date": list_date,
+                "fullname": fullname,
+            }
+            for key in ("fund_type", "invest_type", "benchmark", "status", "management", "custodian"):
+                value = fund_row.get(key) or row.get(key)
+                if value not in (None, ""):
+                    etf_payload[key] = value
+            etfs.append(etf_payload)
+
+        return etfs
+
+    def _fetch_cn_fund_basic_map(
+        self,
+        pro: Any,
+        *,
+        expected_symbols: set[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        df = None
+        for query_kwargs in (
+            {"market": "E", "status": "L"},
+            {"market": "E"},
+            {},
+        ):
+            df = self._safe_query_dataframe(pro, "fund_basic", **query_kwargs)
+            if df is not None and not df.empty:
+                break
+        if df is None or df.empty:
+            return {}
+
+        fund_map: Dict[str, Dict[str, Any]] = {}
         for row in self.normalize_dataframe(df):
             ts_code = str(row.get("ts_code") or "").strip().upper()
             symbol = str(row.get("symbol") or "").strip().upper()
             if not symbol and ts_code:
                 symbol = ts_code.split(".")[0]
-            if not symbol:
+            if (
+                not symbol
+                or symbol not in expected_symbols
+                or not self._is_cn_etf_symbol(symbol)
+            ):
                 continue
-
-            exchange = row.get("exchange") or self._infer_exchange_from_ts_code(ts_code)
-            name = (
-                row.get("name")
-                or row.get("fund_name")
-                or row.get("fund_fullname")
-                or row.get("fullname")
-                or symbol
+            normalized_row = dict(row)
+            normalized_row["ts_code"] = self._build_cn_ts_code(symbol)
+            normalized_row["exchange"] = self._normalize_cn_exchange(
+                row.get("market") or row.get("exchange"),
+                ts_code=ts_code,
+                symbol=symbol,
             )
-            etfs.append(
-                {
-                    "symbol": symbol,
-                    "ts_code": ts_code or self._build_cn_ts_code(symbol),
-                    "name": name,
-                    "area": row.get("area"),
-                    "industry": None,
-                    "market": "ETF",
-                    "exchange": exchange,
-                    "list_date": row.get("list_date") or row.get("found_date") or row.get("setup_date"),
-                    "fullname": row.get("fullname") or row.get("fund_fullname") or name,
-                }
-            )
+            fund_map[symbol] = normalized_row
+        return fund_map
 
-        return etfs
+    def _fetch_cn_fund_basic_row(
+        self,
+        pro: Any,
+        *,
+        symbol: str,
+        raw_ts_code: str,
+    ) -> Dict[str, Any]:
+        candidates: list[str] = []
+        for candidate in (raw_ts_code, f"{symbol}.OF", self._build_cn_ts_code(symbol)):
+            text = str(candidate or "").strip().upper()
+            if text and text not in candidates:
+                candidates.append(text)
+
+        for ts_code in candidates:
+            df = self._safe_query_dataframe(pro, "fund_basic", ts_code=ts_code)
+            if df is None or df.empty:
+                continue
+            row = self.normalize_dataframe(df.iloc[[0]])[0]
+            row["ts_code"] = ts_code
+            row["exchange"] = self._normalize_cn_exchange(
+                row.get("market") or row.get("exchange"),
+                ts_code=ts_code,
+                symbol=symbol,
+            )
+            return row
+        return {}
 
     def fetch_us_stocks(self) -> List[Dict[str, Any]]:
         """获取美股股票列表"""
@@ -560,6 +676,10 @@ class TushareDataSource(BaseStockDataSource):
     @staticmethod
     def _build_cn_ts_code(symbol: str) -> str:
         normalized = str(symbol).strip().upper()
+        if normalized.startswith(TushareDataSource.ETF_SH_PREFIXES):
+            return f"{normalized}.SH"
+        if normalized.startswith(TushareDataSource.ETF_SZ_PREFIXES):
+            return f"{normalized}.SZ"
         if normalized.startswith(("4", "8", "92")):
             return f"{normalized}.BJ"
         return f"{normalized}.SH" if normalized.startswith("6") else f"{normalized}.SZ"
@@ -573,6 +693,92 @@ class TushareDataSource(BaseStockDataSource):
             return "SSE"
         if text.endswith(".SZ"):
             return "SZSE"
+        return None
+
+    @classmethod
+    def _normalize_cn_exchange(
+        cls,
+        exchange: Any,
+        *,
+        ts_code: Optional[str] = None,
+        symbol: Optional[str] = None,
+    ) -> Optional[str]:
+        text = str(exchange or "").strip().upper()
+        if text in {"SSE", "SH", "SHSE"}:
+            return "SSE"
+        if text in {"SZSE", "SZ"}:
+            return "SZSE"
+        if text in {"BSE", "BJ"}:
+            return "BSE"
+        inferred = cls._infer_exchange_from_ts_code(ts_code or "")
+        if inferred:
+            return inferred
+        if symbol:
+            return cls._infer_cn_exchange_from_symbol(symbol)
+        return None
+
+    @classmethod
+    def _infer_cn_exchange_from_symbol(cls, symbol: str) -> Optional[str]:
+        normalized = str(symbol or "").strip().upper()
+        if normalized.startswith(cls.ETF_SH_PREFIXES):
+            return "SSE"
+        if normalized.startswith(cls.ETF_SZ_PREFIXES):
+            return "SZSE"
+        if normalized.startswith(("4", "8", "92")):
+            return "BSE"
+        if normalized.startswith("6"):
+            return "SSE"
+        if normalized.startswith(("0", "2", "3")):
+            return "SZSE"
+        return None
+
+    @classmethod
+    def _is_cn_etf_symbol(cls, symbol: str) -> bool:
+        normalized = str(symbol or "").strip().upper()
+        return (
+            len(normalized) == 6
+            and normalized.isdigit()
+            and (
+                normalized.startswith(cls.ETF_SH_PREFIXES)
+                or normalized.startswith(cls.ETF_SZ_PREFIXES)
+            )
+        )
+
+    @classmethod
+    def _pick_cn_etf_name(
+        cls,
+        symbol: str,
+        *,
+        raw_ts_code: str,
+        row: Dict[str, Any],
+        fund_row: Dict[str, Any],
+    ) -> str:
+        candidates = (
+            fund_row.get("name"),
+            row.get("name"),
+            row.get("fund_name"),
+            fund_row.get("fund_name"),
+            fund_row.get("fullname"),
+            fund_row.get("fund_fullname"),
+            row.get("fullname"),
+            row.get("fund_fullname"),
+        )
+        invalid_names = {str(symbol).strip().upper()}
+        if raw_ts_code:
+            invalid_names.add(raw_ts_code.strip().upper())
+            invalid_names.add(raw_ts_code.strip().upper().split(".")[0])
+        for candidate in candidates:
+            text = str(candidate or "").strip()
+            if text and text.upper() not in invalid_names:
+                return text
+        return str(symbol).strip().upper()
+
+    @staticmethod
+    def _pick_nonempty(*values: Any) -> Optional[str]:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
         return None
 
     @staticmethod

@@ -26,6 +26,9 @@
 - 已定位当前本地库 `cn_symbols` 未落入 ETF 的直接原因：preflight 用 `MAX(updated_at)` 判断“今日快照已最新”，被单条 symbol upsert 误判为整表 current
 - 已将 symbols 快照新鲜度判断改为同时检查整表 `MIN(updated_at)` 与 `MAX(updated_at)`；单条 row 的今日更新时间不再把整张表误判为当日全量快照
 - 已对默认库 `.cache/market_data.sqlite` 重刷一次 `cn_symbols`；当前 `cn_symbols=6460`，其中 `market=ETF` 为 `1460`
+- 已按 DSA 思路对齐 ETF 元信息链路：批量快照继续使用 `etf_basic`，ETF 名称与基金元信息优先通过 `fund_basic` 回填
+- 已统一 ETF `ts_code/exchange` 标准化口径：A 股 ETF 不再写入 `.OF`，统一落为 `.SH/.SZ` 与 `SSE/SZSE`
+- 已再次重刷默认库；当前 `1460` 个 ETF 中仍有 `64` 个名称等于代码，抽样确认这些 symbol 在 Tushare `fund_basic(ts_code=...)` 下也返回空，属于上游缺口
 
 ## 当前状态
 
@@ -42,13 +45,14 @@
 - `sync-market-data` 当前仍只覆盖股票日线 universe；ETF 不进入 `cn_daily` 全市场补库
 - `/health` 当前仍是唯一健康检查接口，且已纳入“任意 HTTP 请求”范围，会触发后台 symbols preflight
 - 当前默认库 `.cache/market_data.sqlite` 已完成重刷，`cn_symbols` 中 ETF 已实际落库
+- 默认库中的 ETF 名称与基金扩展信息已明显改善，例如 `159002 -> 易方达保证金B`、`510300 -> 沪深300ETF华泰柏瑞`
 
 ## 下一步计划
 
 ### P0
 
 - 继续观察每日 preflight 在真实请求中的触发日志，确认不会再被单条 symbol upsert 提前封账
-- 若后续发现 ETF 元数据字段仍偏弱，再单独收口 `etf_basic` 的名称和交易所标准化
+- 继续观察残留 `64` 个代码名 ETF；若后续需要进一步补齐，只能引入额外数据源或离线映射，单靠当前 Tushare 接口无法完全覆盖
 
 ### P1
 
