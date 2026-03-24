@@ -884,6 +884,22 @@ class MarketDataRepository:
             rows = conn.execute(query, params).fetchall()
         return [self._decode_symbol_row(dict(row)) for row in rows]
 
+    def get_symbol_snapshot_meta(self, market: str) -> Dict[str, Any]:
+        normalized_market = self._normalize_market(market)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS symbol_count, MAX(updated_at) AS updated_at
+                FROM {self._symbols_table(normalized_market)}
+                """
+            ).fetchone()
+        if row is None:
+            return {"symbol_count": 0, "updated_at": None}
+        return {
+            "symbol_count": int(row["symbol_count"] or 0),
+            "updated_at": row["updated_at"],
+        }
+
     def get_latest_trade_date(self, symbol: str, market: Optional[str] = None) -> Optional[str]:
         normalized_symbol = str(symbol).strip().upper()
         normalized_market = self._normalize_market(market or normalized_symbol)

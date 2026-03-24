@@ -80,7 +80,10 @@ class DailyDataWriteService:
             current_symbols = {str(row.get("symbol") or "").strip().upper() for row in current_snapshot}
             if live_snapshot and live_symbols != current_symbols:
                 self.repository.replace_symbols(live_snapshot, market=normalized_market)
-            stocks = self.repository.list_symbols(market=normalized_market)
+            stocks = self._filter_daily_sync_universe(
+                self.repository.list_symbols(market=normalized_market),
+                market=normalized_market,
+            )
         else:
             universe_source = "symbol_request"
             resolved = self.symbol_catalog.resolve_symbol(str(symbol or "").strip().upper(), market=normalized_market)
@@ -90,7 +93,10 @@ class DailyDataWriteService:
 
         self.repository.backfill_symbol_daily_coverage(normalized_market)
         if scope == "all":
-            stocks = self.repository.list_symbols(market=normalized_market)
+            stocks = self._filter_daily_sync_universe(
+                self.repository.list_symbols(market=normalized_market),
+                market=normalized_market,
+            )
         else:
             symbol_row = self.repository.get_symbol_record(
                 str(symbol or "").strip().upper(),
@@ -361,6 +367,20 @@ class DailyDataWriteService:
             "status": status,
             "error_summary": errors[:20],
         }
+
+    @staticmethod
+    def _filter_daily_sync_universe(
+        stocks: list[dict],
+        *,
+        market: str,
+    ) -> list[dict]:
+        if market != "cn":
+            return stocks
+        return [
+            stock
+            for stock in stocks
+            if str((stock or {}).get("market") or "").strip().upper() != "ETF"
+        ]
 
     def sync_symbol_daily(
         self,

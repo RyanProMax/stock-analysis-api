@@ -192,6 +192,53 @@ class TushareDataSource(BaseStockDataSource):
             row["exchange"] = row.get("exchange") or self._infer_exchange_from_ts_code(ts_code)
         return rows
 
+    def fetch_cn_etfs(self) -> List[Dict[str, Any]]:
+        """获取 A 股 ETF 列表。"""
+        pro = self.get_pro()
+        if pro is None:
+            return []
+
+        df = None
+        for query_kwargs in ({"list_status": "L"}, {"status": "L"}, {}):
+            df = self._safe_query_dataframe(pro, "etf_basic", **query_kwargs)
+            if df is not None and not df.empty:
+                break
+        if df is None or df.empty:
+            return []
+
+        etfs: List[Dict[str, Any]] = []
+        for row in self.normalize_dataframe(df):
+            ts_code = str(row.get("ts_code") or "").strip().upper()
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol and ts_code:
+                symbol = ts_code.split(".")[0]
+            if not symbol:
+                continue
+
+            exchange = row.get("exchange") or self._infer_exchange_from_ts_code(ts_code)
+            name = (
+                row.get("name")
+                or row.get("fund_name")
+                or row.get("fund_fullname")
+                or row.get("fullname")
+                or symbol
+            )
+            etfs.append(
+                {
+                    "symbol": symbol,
+                    "ts_code": ts_code or self._build_cn_ts_code(symbol),
+                    "name": name,
+                    "area": row.get("area"),
+                    "industry": None,
+                    "market": "ETF",
+                    "exchange": exchange,
+                    "list_date": row.get("list_date") or row.get("found_date") or row.get("setup_date"),
+                    "fullname": row.get("fullname") or row.get("fund_fullname") or name,
+                }
+            )
+
+        return etfs
+
     def fetch_us_stocks(self) -> List[Dict[str, Any]]:
         """获取美股股票列表"""
         pro = self.get_pro()
@@ -394,6 +441,25 @@ class TushareDataSource(BaseStockDataSource):
         if cal_dates.empty:
             return []
         return [pd.Timestamp(value).strftime("%Y-%m-%d") for value in cal_dates.tolist()]
+
+    @classmethod
+    def is_cn_market_open_on(cls, trade_date: str) -> Optional[bool]:
+        pro = cls.get_pro()
+        if pro is None:
+            return None
+
+        trade_date_text = cls._format_tushare_date(trade_date)
+        if not trade_date_text:
+            return None
+
+        try:
+            cal_df = pro.trade_cal(exchange="", start_date=trade_date_text, end_date=trade_date_text)
+        except Exception:
+            return None
+
+        if cal_df is None or cal_df.empty or "is_open" not in cal_df.columns:
+            return None
+        return str(cal_df.iloc[0].get("is_open") or "0") == "1"
 
     @classmethod
     def fetch_cn_daily_basic_by_trade_date(cls, trade_date: str) -> Optional[pd.DataFrame]:

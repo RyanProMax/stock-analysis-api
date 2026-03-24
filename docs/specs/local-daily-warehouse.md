@@ -1,6 +1,6 @@
 # 本地 SQLite 日线仓规格
 
-更新时间：2026-03-22
+更新时间：2026-03-24
 
 ## 目标
 
@@ -98,15 +98,20 @@
 
 - v1 只存 canonical symbol 与日线事实，不存多 source 原始表，不存技术指标，不存分析结果
 - SQLite 只保存数据源返回的必要信息与事实型扩展字段，不保存分析报告缓存，也不保存 watch baseline
-- `cn_symbols` 只保存当前上市 A 股最新快照；刷新列表时按市场快照覆盖写入
-- `cn_symbols` 当前 listed 口径固定为 `Tushare stock_basic(exchange='', list_status='L')`
+- `cn_symbols` 只保存当前上市 A 股股票 + ETF 最新快照；刷新列表时按市场快照覆盖写入
+- `cn_symbols` 当前 listed 口径固定为 `Tushare stock_basic(exchange='', list_status='L') + etf_basic(list_status='L')`
+- `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 固定为 `ETF`
+- `cn_symbols` 不新增 `security_type`
 - `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚 `trade_date`
 - 这两个字段是本地覆盖摘要，不是上市区间，不是交易所日历，也不是 source truth
 - 写入 `cn_daily` 后必须回写对应 symbol 的覆盖摘要；仅做 `daily_basic` 回填时不改变覆盖摘要
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
+- `sync-market-data --market cn --scope all` 仍只覆盖股票日线 universe，不把 `market=ETF` 的记录纳入 `cn_daily`
 - API 查询历史日线时，应优先读 SQLite 仓；若最近一条数据超过 7 个自然日，则回退外部源并回写仓库
 - `/watch/poll` 与 `/stock/analyze` 不改对外 contract，只改内部历史日线路径
 - 公共 HTTP 接口不暴露 `refresh` 参数
+- 每日首次任意 HTTP 请求都会后台触发一次 symbols preflight；`/health` 与业务接口包含在内，`/docs`、`/redoc`、`/openapi.json` 排除
+- symbols preflight 只在对应市场开市时触发刷新；检查或刷新失败时，当天后续请求仍允许再次尝试
 - `/watch/poll` 的 baseline 仅保留进程内内存态，TTL 为 24 小时
 - A 股 symbols 优先源为 `Tushare`，fallback 为 `Efinance`、`AkShare`
 - A 股 daily 优先源为 `Tushare`，fallback 为 `AkShare`、`Efinance`

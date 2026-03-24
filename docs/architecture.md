@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-03-23
+更新时间：2026-03-24
 
 ## 系统边界
 
@@ -55,10 +55,11 @@ src/
   - `us_symbols`
   - `us_daily`
   - `sync_runs`
-- `cn_symbols` 只保存当前上市 A 股最新快照，不建模历史状态
+- `cn_symbols` 只保存当前上市 A 股股票 + ETF 最新快照，不建模历史状态
+- `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 固定为 `ETF`
 - `cn_symbols.daily_start_date` / `daily_end_date` 是本地 `cn_daily` 覆盖摘要，只表示本地已落库的最早 / 最晚交易日
 - 覆盖摘要用于同步前置剪枝和快速状态判断，但不能替代对 `cn_daily` 的精确校验
-- A 股 current universe 固定以 `Tushare stock_basic(exchange='', list_status='L')` 为准；截至 `2026-03-22` 当前实时计数为 `5000`
+- A 股 current universe 固定以 `Tushare stock_basic(exchange='', list_status='L') + etf_basic(list_status='L')` 为准
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
 - `cn_daily` 只保存真实存在的日线事实，不为停牌日期补 synthetic row
@@ -84,6 +85,9 @@ src/
   - `daily_data_write_service`
   - `watch_polling_service`
 - 公共 HTTP 接口默认先读 SQLite，若最新日线超过 7 个自然日则按需回退外部源并回写，不暴露强制 `refresh`
+- 每日首次任意 HTTP 请求都要后台执行一次 symbols preflight；`cn/us` 分市场独立判断、独立封账，且不阻塞当前请求
+- symbols preflight 覆盖 `/health` 与业务接口，但排除 `/docs`、`/redoc`、`/openapi.json`
+- `cn_symbols` preflight 仅在 A 股开市日触发刷新；`us_symbols` preflight 仅在美股开市日触发刷新
 - A 股列表与日线优先级默认是 `Tushare -> fallback`，URL 与 token 必须通过环境变量读取，不允许硬编码
 - A 股盘中 realtime quote 优先级固定为 `Tushare -> Efinance -> Pytdx`；`Baostock` 不参与 realtime 主链路
 - 美股 `/watch/poll` realtime quote 主源固定为 `Yfinance`

@@ -10,6 +10,7 @@ import src.api.routes.comps as comps_route
 import src.api.routes.model as model_route
 import src.api.routes.competitive as competitive_route
 import src.api.routes.earnings as earnings_route
+import src.main as main_module
 
 from tests.conftest import TEST_SYMBOL
 
@@ -50,6 +51,20 @@ class TestHealthEndpoints:
         assert data["data"]["message"] == "ok"
         assert data["data"]["status"] == "healthy"
 
+    def test_health_invokes_preflight_without_blocking_response(self, monkeypatch):
+        notified = []
+        monkeypatch.setattr(
+            main_module.symbol_snapshot_refresh_service,
+            "notify_request",
+            lambda path: notified.append(path),
+        )
+
+        with TestClient(main_module.app) as client:
+            response = client.get("/health")
+
+        assert response.status_code == 200
+        assert notified == ["/health"]
+
     def test_ping_not_found(self, client: TestClient):
         response = client.get("/ping")
         assert response.status_code == 404
@@ -66,12 +81,58 @@ class TestStockEndpoints:
         if data["data"]["stocks"]:
             assert "meta" in data["data"]["stocks"][0]
 
+    def test_stock_list_a_share_can_include_etf(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            stock_route.stock_service,
+            "get_stock_list",
+            lambda market=None: [
+                {
+                    "symbol": "510300",
+                    "ts_code": "510300.SH",
+                    "name": "沪深300ETF",
+                    "market": "ETF",
+                    "list_date": "2012-05-28",
+                }
+            ],
+        )
+
+        response = client.get("/stock/list?market=A股")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status_code"] == 200
+        assert data["data"]["stocks"][0]["symbol"] == "510300"
+        assert data["data"]["stocks"][0]["market"] == "ETF"
+
     def test_stock_search(self, client: TestClient):
         response = client.post("/stock/search", json={"keyword": "NVDA", "market": "美股"})
         assert response.status_code == 200
         data = response.json()
         assert data["status_code"] == 200
         assert "meta" in data["data"]
+
+    def test_stock_search_a_share_can_return_etf(self, client: TestClient, monkeypatch):
+        monkeypatch.setattr(
+            stock_route.stock_service,
+            "search_stocks",
+            lambda keyword, market=None: [
+                {
+                    "symbol": "510300",
+                    "ts_code": "510300.SH",
+                    "name": "沪深300ETF",
+                    "market": "ETF",
+                    "list_date": "2012-05-28",
+                }
+            ],
+        )
+
+        response = client.post("/stock/search", json={"keyword": "300ETF", "market": "A股"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status_code"] == 200
+        assert data["data"]["stocks"][0]["symbol"] == "510300"
+        assert data["data"]["stocks"][0]["market"] == "ETF"
 
     def test_stock_analyze_contract(self, client: TestClient, monkeypatch):
         monkeypatch.setattr(
