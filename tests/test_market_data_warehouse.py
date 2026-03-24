@@ -703,3 +703,99 @@ class TestSymbolCatalogService:
         assert len(results) == 1
         assert results[0]["symbol"] == "NVDA"
         assert storage.search_symbols("NVDA", market="us")[0]["name"] == "NVIDIA"
+
+    def test_refresh_market_snapshot_merges_cn_equities_and_etfs(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+
+        class FakeCnSnapshotSource:
+            SOURCE_NAME = "Tushare"
+
+            def is_available(self, market: str) -> bool:
+                return market == "A股"
+
+            def get_a_stocks(self):
+                return [
+                    {
+                        "symbol": "300827",
+                        "ts_code": "300827.SZ",
+                        "name": "上能电气",
+                        "market": "创业板",
+                        "exchange": "SZSE",
+                    }
+                ]
+
+            def get_cn_etfs(self):
+                return [
+                    {
+                        "symbol": "510300",
+                        "ts_code": "510300.SH",
+                        "name": "沪深300ETF",
+                        "market": "ETF",
+                        "exchange": "SSE",
+                    }
+                ]
+
+        service = SymbolCatalogService(
+            repository=storage,
+            cn_sources=[FakeCnSnapshotSource()],
+            us_sources=[],
+        )
+
+        rows = service.refresh_market_snapshot("cn")
+
+        assert len(rows) == 2
+        assert {row["symbol"] for row in rows} == {"300827", "510300"}
+        etf_row = storage.get_symbol_record("510300", market="cn")
+        assert etf_row is not None
+        assert etf_row["market"] == "ETF"
+
+
+class TestDailySyncUniverse:
+    def test_sync_market_data_all_excludes_cn_etfs(self, tmp_path, monkeypatch):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        stock_row = {
+            "symbol": "300827",
+            "ts_code": "300827.SZ",
+            "name": "上能电气",
+            "market": "创业板",
+            "exchange": "SZSE",
+            "list_date": "2020-04-10",
+        }
+        etf_row = {
+            "symbol": "510300",
+            "ts_code": "510300.SH",
+            "name": "沪深300ETF",
+            "market": "ETF",
+            "exchange": "SSE",
+            "list_date": "2012-05-28",
+        }
+
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog([stock_row, etf_row]),
+            cn_daily_sources=[FakeSource("Tushare", _daily_df())],
+            us_daily_sources=[],
+        )
+
+        synced_symbols = []
+        monkeypatch.setattr(
+            service,
+            "_resolve_trade_window",
+            lambda market, start_date, end_date: (start_date, end_date),
+        )
+        monkeypatch.setattr(
+            service,
+            "sync_symbol_daily",
+            lambda symbol, market, ts_code=None, start_date=None: (
+                synced_symbols.append(symbol) or {"rows": 6, "source": "CN_Tushare"}
+            ),
+        )
+
+        result = service.sync_market_data(
+            market="cn",
+            scope="all",
+            start_date="2026-01-01",
+        )
+
+        assert result["total_symbols"] == 1
+        assert synced_symbols == ["300827"]

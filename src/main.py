@@ -10,6 +10,7 @@ from src.api.routes import index as controller
 from src.api.schemas import StandardResponse
 from src.config import is_development
 from src.services.daily_data_write_service import daily_data_write_service
+from src.services.symbol_snapshot_refresh_service import symbol_snapshot_refresh_service
 
 port = int(os.environ.get("PORT", 8080))
 
@@ -33,6 +34,12 @@ app.add_middleware(
     allow_methods=["*"],  # 允许的方法 (GET, POST, OPTIONS 等)
     allow_headers=["*"],  # 允许的 Header (Content-Type, Authorization 等)
 )
+
+
+@app.middleware("http")
+async def symbol_snapshot_refresh_middleware(request: Request, call_next):
+    symbol_snapshot_refresh_service.notify_request(request.url.path)
+    return await call_next(request)
 
 
 # Validation error handler

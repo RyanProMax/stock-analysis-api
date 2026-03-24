@@ -77,9 +77,11 @@ src/
 - 本地行情仓主表按市场拆分为 `cn_symbols`、`cn_daily`、`us_symbols`、`us_daily`
 - 统一同步入口为 `uv run sync-market-data`
 - A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
-- `cn_symbols` 只保留当前上市 A 股最新快照，不保留历史状态
+- `cn_symbols` 只保留当前上市 A 股股票 + ETF 最新快照，不保留历史状态
+- `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 统一为 `ETF`
 - `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚交易日，是本地覆盖摘要，不是上市区间、交易所日历或 source truth
 - `cn_daily` 的全市场补库口径为当前上市 A 股、自 `2026-01-01` 起的日线数据
+- 每日首次任意 HTTP 请求都会后台检查一次 `cn_symbols / us_symbols` 是否需要刷新；`cn/us` 按各自市场是否开市独立判断，且不阻塞当前请求
 - `sync_runs` 采用 append-only 历史模型，但每条记录都必须表达“本次运行结束后的全局数据状态”
 - `cn_daily` 应逐步吸收 Tushare `daily_basic` 的标准事实字段，不把核心市场事实长期塞进 `extra`
 - `cn_daily.is_suspended` 是停复牌事件标记，不是持续停牌状态，也不能推导“直到下一条 row 前都停牌”

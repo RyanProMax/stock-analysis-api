@@ -4,12 +4,16 @@
 定义所有数据源的统一接口和返回格式
 """
 
+import logging
 import random
 import time
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, cast
 import pandas as pd
 from .realtime_types import UnifiedRealtimeQuote
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseStockDataSource(ABC):
@@ -118,6 +122,10 @@ class BaseStockDataSource(ABC):
             标准格式的股票列表
         """
         pass
+
+    def fetch_cn_etfs(self) -> List[Dict[str, Any]]:
+        """获取 A 股 ETF 列表，默认不支持。"""
+        return []
 
     # ==================== 抽象方法：日线数据 ====================
 
@@ -274,27 +282,11 @@ class BaseStockDataSource(ABC):
         Returns:
             标准格式的股票列表
         """
-        market = "A股"
-
-        cached = self.get_cached(market)
-        if cached is not None:
-            print(
-                f"✓ 使用{self.SOURCE_NAME}缓存的A股列表"
-                f"，共 {len(cached)} 只股票"
-            )
-            return cached
-
-        try:
-            stocks = self.fetch_a_stocks()
-            if stocks:
-                self.update_cache(market, stocks)
-                print(f"✓ 使用 {self.SOURCE_NAME} 获取A股列表，共 {len(stocks)} 只股票（已缓存）")
-                return stocks
-        except Exception as e:
-            print(f"⚠️ {self.SOURCE_NAME} 获取A股列表失败: {type(e).__name__}: {e}")
-            self.clear_cache(market)
-
-        return []
+        return self._get_symbol_rows(
+            cache_key="A股",
+            list_type="cn_equity",
+            fetcher=self.fetch_a_stocks,
+        )
 
     def get_us_stocks(self) -> List[Dict[str, Any]]:
         """
@@ -303,25 +295,57 @@ class BaseStockDataSource(ABC):
         Returns:
             标准格式的股票列表
         """
-        market = "美股"
+        return self._get_symbol_rows(
+            cache_key="美股",
+            list_type="us_equity",
+            fetcher=self.fetch_us_stocks,
+        )
 
-        cached = self.get_cached(market)
+    def get_cn_etfs(self) -> List[Dict[str, Any]]:
+        """获取 A 股 ETF 列表（带进程内缓存）。"""
+        return self._get_symbol_rows(
+            cache_key="A股ETF",
+            list_type="cn_etf",
+            fetcher=self.fetch_cn_etfs,
+        )
+
+    def _get_symbol_rows(
+        self,
+        *,
+        cache_key: str,
+        list_type: str,
+        fetcher,
+    ) -> List[Dict[str, Any]]:
+        cached = self.get_cached(cache_key)
         if cached is not None:
-            print(
-                f"✓ 使用{self.SOURCE_NAME}缓存的美股列表"
-                f"，共 {len(cached)} 只股票"
+            logger.debug(
+                "symbol source cache hit provider=%s list_type=%s count=%s",
+                self.SOURCE_NAME,
+                list_type,
+                len(cached),
             )
             return cached
 
         try:
-            stocks = self.fetch_us_stocks()
-            if stocks:
-                self.update_cache(market, stocks)
-                print(f"✓ 使用 {self.SOURCE_NAME} 获取美股列表，共 {len(stocks)} 只股票（已缓存）")
-                return stocks
+            rows = fetcher()
+            if rows:
+                self.update_cache(cache_key, rows)
+                logger.info(
+                    "symbol source fetch success provider=%s list_type=%s count=%s",
+                    self.SOURCE_NAME,
+                    list_type,
+                    len(rows),
+                )
+                return rows
         except Exception as e:
-            print(f"⚠️ {self.SOURCE_NAME} 获取美股列表失败: {type(e).__name__}: {e}")
-            self.clear_cache(market)
+            logger.warning(
+                "symbol source fetch failed provider=%s list_type=%s error_type=%s error=%s",
+                self.SOURCE_NAME,
+                list_type,
+                type(e).__name__,
+                e,
+            )
+            self.clear_cache(cache_key)
 
         return []
 

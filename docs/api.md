@@ -1,6 +1,6 @@
 # HTTP API 设计说明
 
-更新时间：2026-03-23
+更新时间：2026-03-24
 
 本文档是当前对外 HTTP REST API 的唯一接口设计说明，统一描述：
 
@@ -104,11 +104,18 @@
 用途：
 
 - 唯一健康检查接口
+- 同时属于“任意 HTTP 请求”范围，会触发后台 symbols preflight 检查
 
 响应：
 
 - `data.message`: 固定为 `ok`
 - `data.status`: 固定为 `healthy`
+
+附加行为：
+
+- 当前请求不会等待 symbols 刷新完成
+- `cn/us` 会各自按当日是否开市独立判断是否触发后台刷新
+- `/docs`、`/redoc`、`/openapi.json` 不触发该后台检查
 
 ## 股票基础接口
 
@@ -153,11 +160,16 @@
 用途：
 
 - 返回股票列表，默认来自本地 SQLite symbol 仓
+- 当 `market=A股` 时，返回的是 `cn_symbols` 结果，可能同时包含 A 股股票与 `market=ETF` 的记录
 
 Query 参数：
 
 - `market`: 可选，市场筛选；常见值为 `A股`、`美股`
 - `limit`: 可选，返回数量上限；`>= 0`
+
+附加行为：
+
+- 当前请求会触发后台 symbols preflight 检查，但不会阻塞接口返回
 
 成功响应结构：
 
@@ -201,11 +213,17 @@ Query 参数：
 - `list_date`: 上市日期
 - `meta`: 扩展元信息
 
+补充说明：
+
+- 不新增 ETF-only 过滤参数
+- 若请求 `market=A股`，`market` 字段可能为 `主板 / 创业板 / 科创板 / 北交所 / CDR / ETF`
+
 ### `POST /stock/search`
 
 用途：
 
 - 在本地 SQLite symbol 仓中按关键词搜索股票
+- 当 `market=A股` 时，搜索范围是 `cn_symbols`，结果可能包含 `market=ETF`
 
 请求体：
 
@@ -220,6 +238,10 @@ Query 参数：
 
 - `keyword`: 搜索关键词，必填
 - `market`: 可选市场筛选
+
+附加行为：
+
+- 当前请求会触发后台 symbols preflight 检查，但不会阻塞接口返回
 
 响应结构：
 
