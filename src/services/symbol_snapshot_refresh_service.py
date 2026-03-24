@@ -91,7 +91,7 @@ class SymbolSnapshotRefreshService:
         try:
             snapshot_meta = self.repository.get_symbol_snapshot_meta(market)
             if self._snapshot_updated_today(
-                updated_at=snapshot_meta.get("updated_at"),
+                snapshot_meta=snapshot_meta,
                 market=market,
                 market_date=market_date,
             ):
@@ -245,19 +245,35 @@ class SymbolSnapshotRefreshService:
         except Exception:
             return None
 
-    def _snapshot_updated_today(self, *, updated_at: Optional[str], market: str, market_date: str) -> bool:
-        if not updated_at:
+    def _snapshot_updated_today(
+        self,
+        *,
+        snapshot_meta: Dict[str, Any],
+        market: str,
+        market_date: str,
+    ) -> bool:
+        if int(snapshot_meta.get("symbol_count") or 0) <= 0:
             return False
+        min_updated_at = snapshot_meta.get("min_updated_at")
+        max_updated_at = snapshot_meta.get("max_updated_at")
+        if not min_updated_at or not max_updated_at:
+            return False
+        return (
+            self._updated_at_market_date(min_updated_at, market) == market_date
+            and self._updated_at_market_date(max_updated_at, market) == market_date
+        )
+
+    def _updated_at_market_date(self, updated_at: str, market: str) -> Optional[str]:
         try:
             parsed = pd.Timestamp(updated_at)
         except Exception:
-            return False
+            return None
         market_tz = self.MARKET_TIMEZONES[market]
         if parsed.tzinfo is None:
             parsed = parsed.tz_localize(ZoneInfo("UTC"))
         else:
             parsed = parsed.tz_convert(ZoneInfo("UTC"))
-        return parsed.tz_convert(market_tz).strftime("%Y-%m-%d") == market_date
+        return parsed.tz_convert(market_tz).strftime("%Y-%m-%d")
 
     def _market_today(self, market: str) -> str:
         return datetime.now(self.MARKET_TIMEZONES[market]).strftime("%Y-%m-%d")

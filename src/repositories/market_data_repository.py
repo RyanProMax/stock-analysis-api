@@ -889,15 +889,19 @@ class MarketDataRepository:
         with self.connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT COUNT(*) AS symbol_count, MAX(updated_at) AS updated_at
+                SELECT
+                    COUNT(*) AS symbol_count,
+                    MIN(updated_at) AS min_updated_at,
+                    MAX(updated_at) AS max_updated_at
                 FROM {self._symbols_table(normalized_market)}
                 """
             ).fetchone()
         if row is None:
-            return {"symbol_count": 0, "updated_at": None}
+            return {"symbol_count": 0, "min_updated_at": None, "max_updated_at": None}
         return {
             "symbol_count": int(row["symbol_count"] or 0),
-            "updated_at": row["updated_at"],
+            "min_updated_at": row["min_updated_at"],
+            "max_updated_at": row["max_updated_at"],
         }
 
     def get_latest_trade_date(self, symbol: str, market: Optional[str] = None) -> Optional[str]:

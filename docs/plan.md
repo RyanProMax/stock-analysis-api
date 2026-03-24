@@ -23,6 +23,9 @@
 - 新增 `MarketDataRepository.get_symbol_snapshot_meta()`，用于判断今日 symbols 快照是否已是最新
 - 保持 `sync-market-data --market cn --scope all` 只同步股票日线，不把 `market=ETF` 记录纳入 `cn_daily` 全市场补库 universe
 - 已补充并通过本轮定向测试：`tests/test_symbol_snapshot_refresh.py`、`tests/test_market_data_warehouse.py`
+- 已定位当前本地库 `cn_symbols` 未落入 ETF 的直接原因：preflight 用 `MAX(updated_at)` 判断“今日快照已最新”，被单条 symbol upsert 误判为整表 current
+- 已将 symbols 快照新鲜度判断改为同时检查整表 `MIN(updated_at)` 与 `MAX(updated_at)`；单条 row 的今日更新时间不再把整张表误判为当日全量快照
+- 已对默认库 `.cache/market_data.sqlite` 重刷一次 `cn_symbols`；当前 `cn_symbols=6460`，其中 `market=ETF` 为 `1460`
 
 ## 当前状态
 
@@ -38,14 +41,14 @@
 - 美股开市判断为基于 `SPY` 的 `yfinance` best-effort 策略；当会话信息不可用时会退化为工作日 fallback
 - `sync-market-data` 当前仍只覆盖股票日线 universe；ETF 不进入 `cn_daily` 全市场补库
 - `/health` 当前仍是唯一健康检查接口，且已纳入“任意 HTTP 请求”范围，会触发后台 symbols preflight
+- 当前默认库 `.cache/market_data.sqlite` 已完成重刷，`cn_symbols` 中 ETF 已实际落库
 
 ## 下一步计划
 
 ### P0
 
-- 统一 `SymbolSnapshotRefreshService` 的 preflight 日志字段，补齐 `market`、`trigger`、`is_open`、`fallback`
-- 补充 `/redoc` 跳过、失败不封账、`in_flight` 去重、美股 fallback 成功检查等测试
-- 补充 `/stock/list`、`/stock/search` 的 ETF 可见性测试，以及 `/health` 的 middleware 非阻塞测试
+- 继续观察每日 preflight 在真实请求中的触发日志，确认不会再被单条 symbol upsert 提前封账
+- 若后续发现 ETF 元数据字段仍偏弱，再单独收口 `etf_basic` 的名称和交易所标准化
 
 ### P1
 
