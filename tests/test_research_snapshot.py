@@ -11,6 +11,16 @@ def _rows_payload(rows=None, status="ok", error=None):
     return {"rows": rows or [], "status": status, "error": error}
 
 
+def _assert_flat_block(block):
+    assert "records" in block
+    assert "source" in block
+    assert "source_status" in block
+    assert "source_error" in block
+    assert "attempted_sources" in block
+    assert "items" not in block
+    assert "source_meta" not in block
+
+
 class FakeResearchProvider:
     def __init__(
         self,
@@ -151,6 +161,12 @@ class TestResearchSnapshotService:
         assert payload["status"] == "ok"
         item = payload["items"][0]
         assert item["status"] == "ok"
+        assert "capabilities" not in item
+        _assert_flat_block(item["research_report"])
+        _assert_flat_block(item["report_rc"])
+        _assert_flat_block(item["anns_d"])
+        _assert_flat_block(item["news"])
+        _assert_flat_block(item["major_news"])
         assert item["info"]["common"]["ts_code"] == "600519.SH"
         assert item["derived"]["coverage_snapshot"]["report_count"] == 1
         assert item["derived"]["estimate_snapshot"]["report_count"] == 1
@@ -182,7 +198,9 @@ class TestResearchSnapshotService:
         item = payload["items"][0]
         assert payload["status"] == "partial"
         assert item["status"] == "partial"
-        assert item["news"]["source_meta"]["source_status"] == "permission_denied"
+        assert "capabilities" not in item
+        _assert_flat_block(item["news"])
+        assert item["news"]["source_status"] == "permission_denied"
 
     def test_core_permission_denied_marks_failed(self):
         provider = FakeResearchProvider(
@@ -216,6 +234,8 @@ class TestResearchSnapshotService:
         item = payload["items"][0]
         assert item["status"] == "failed"
         assert item["error"]["code"] == "core_source_unavailable"
+        assert "capabilities" not in item
+        _assert_flat_block(item["research_report"])
 
     def test_invalid_symbol_failed(self):
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
@@ -224,6 +244,7 @@ class TestResearchSnapshotService:
 
         assert payload["items"][0]["status"] == "failed"
         assert payload["items"][0]["error"]["code"] == "invalid_symbol"
+        assert "capabilities" not in payload["items"][0]
 
     def test_etf_symbol_not_supported(self):
         provider = FakeResearchProvider(
@@ -244,6 +265,8 @@ class TestResearchSnapshotService:
         payload = service.poll_snapshot(market="cn", symbols=["510300"])
 
         assert payload["items"][0]["status"] == "not_supported"
+        assert "capabilities" not in payload["items"][0]
+        _assert_flat_block(payload["items"][0]["report_rc"])
 
     def test_empty_core_results_return_zero_derived(self):
         provider = FakeResearchProvider(
@@ -313,7 +336,7 @@ class TestResearchSnapshotService:
 
         payload = service.poll_snapshot(market="cn", symbols=["600519"])
 
-        news_items = payload["items"][0]["news"]["items"]
+        news_items = payload["items"][0]["news"]["records"]
         assert len(news_items) == 1
         assert news_items[0]["title"] == "贵州茅台盘中走强"
 
@@ -395,15 +418,13 @@ class TestResearchSnapshotService:
 
         item = payload["items"][0]
         assert history_calls["count"] == 1
-        assert item["report_rc"]["items"][0]["report_date"] == "20251105"
-        assert (
-            item["report_rc"]["source_meta"]["fallback_mode"] == "latest_stock_specific_report_date"
-        )
-        assert item["report_rc"]["source_meta"]["resolved_start_date"] == "20251105"
-        assert (
-            item["research_report"]["source_meta"]["skip_reason"]
-            == "no_stock_specific_report_rc_in_requested_window"
-        )
+        assert "capabilities" not in item
+        _assert_flat_block(item["report_rc"])
+        _assert_flat_block(item["research_report"])
+        assert item["report_rc"]["records"][0]["report_date"] == "20251105"
+        assert item["report_rc"]["fallback_mode"] == "latest_stock_specific_report_date"
+        assert item["report_rc"]["resolved_start_date"] == "20251105"
+        assert item["research_report"]["skip_reason"] == "no_stock_specific_report_rc_in_requested_window"
 
     def test_us_market_returns_not_implemented(self):
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
@@ -412,6 +433,8 @@ class TestResearchSnapshotService:
 
         assert payload["status"] == "not_implemented"
         assert payload["items"][0]["status"] == "not_implemented"
+        assert "capabilities" not in payload["items"][0]
+        _assert_flat_block(payload["items"][0]["news"])
 
 
 class TestResearchSnapshotCli:

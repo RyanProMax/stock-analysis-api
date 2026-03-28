@@ -48,7 +48,6 @@
 - `status`
 - `error`
 - `info`
-- `capabilities`
 - `research_report`
 - `report_rc`
 - `anns_d`
@@ -82,19 +81,39 @@
 
 每个数据块固定为：
 
-- `items`
-- `source_meta`
-
-`source_meta` 固定字段：
-
+- `records`
 - `source`
 - `source_status`
 - `source_error`
 - `attempted_sources`
 
+扁平 block 示例：
+
+```json
+{
+  "records": [],
+  "source": "tushare",
+  "source_status": "empty",
+  "source_error": null,
+  "attempted_sources": ["tushare"]
+}
+```
+
 `news` / `major_news` 额外返回：
 
 - `filter_rule`
+
+`research_report` 需要时额外返回：
+
+- `skip_reason`
+
+`report_rc` 需要时额外返回：
+
+- `requested_start_date`
+- `requested_end_date`
+- `resolved_start_date`
+- `resolved_end_date`
+- `fallback_mode`
 
 ### `source_status`
 
@@ -143,6 +162,7 @@
 
 ### `research_report`
 
+- 含义：券商研报列表 / 覆盖记录，偏“研报正文索引”
 - Tushare 接口：`research_report`
 - 按 `ts_code + start_date + end_date` 查询
 - 保留 Tushare 原始字段
@@ -151,6 +171,7 @@
 
 ### `report_rc`
 
+- 含义：券商盈利预测与评级记录，偏“预测 / 评级快照”
 - Tushare 接口：`report_rc`
 - 按 `ts_code + start_date + end_date` 查询
 - 保留 Tushare 原始字段
@@ -159,6 +180,7 @@
 
 ### `anns_d`
 
+- 含义：上市公司公告流
 - Tushare 接口：`anns_d`
 - 按 `ts_code + start_date + end_date` 查询
 - 保留 Tushare 原始字段
@@ -166,6 +188,7 @@
 
 ### `news`
 
+- 含义：通用新闻源中命中股票提及过滤后的新闻
 - Tushare 接口：`news`
 - 固定来源：`cls` / `sina` / `wallstreetcn` / `10jqka`
 - 按时间窗拉取后，本地按“股票名或代码命中 `title` / `content`”做确定性提及过滤
@@ -173,12 +196,15 @@
 
 ### `major_news`
 
+- 含义：重点媒体 / 长新闻源中命中股票提及过滤后的新闻
 - Tushare 接口：`major_news`
 - 固定来源：`新浪财经` / `财联社` / `中证网` / `第一财经`
 - 按时间窗拉取后，本地按“股票名或代码命中 `title` / `content`”做确定性提及过滤
 - 排序按发布时间倒序
 
 ## Derived 规则
+
+- `derived` 的含义：系统基于前述原始块做的确定性汇总，不是主观结论
 
 ### `coverage_snapshot`
 

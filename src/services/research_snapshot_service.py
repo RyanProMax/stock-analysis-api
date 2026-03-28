@@ -145,7 +145,7 @@ class ResearchSnapshotService:
             end_date=end_date,
         )
         report_rc_requested_items = self._sort_and_dedupe_rows(
-            report_rc_requested["items"],
+            report_rc_requested["records"],
             order=(
                 ("report_date", False),
                 ("quarter", False),
@@ -163,7 +163,7 @@ class ResearchSnapshotService:
             requested_end_date=end_date,
         )
         report_rc_items = self._sort_and_dedupe_rows(
-            report_rc["items"],
+            report_rc["records"],
             order=(
                 ("report_date", False),
                 ("quarter", False),
@@ -171,7 +171,7 @@ class ResearchSnapshotService:
                 ("report_title", True),
             ),
         )
-        report_rc["items"] = report_rc_items
+        report_rc["records"] = report_rc_items
 
         if has_requested_stock_specific_report_rc:
             research_report = self._dispatch_block(
@@ -217,7 +217,7 @@ class ResearchSnapshotService:
         )
 
         research_items = self._sort_and_dedupe_rows(
-            research_report["items"],
+            research_report["records"],
             order=(
                 ("trade_date", False),
                 ("inst_csname", True),
@@ -225,7 +225,7 @@ class ResearchSnapshotService:
             ),
         )
         anns_d_items = self._sort_and_dedupe_rows(
-            anns_d["items"],
+            anns_d["records"],
             order=(
                 ("ann_date", False),
                 ("rec_time", False),
@@ -233,28 +233,28 @@ class ResearchSnapshotService:
             ),
         )
         news_items = self._sort_and_dedupe_rows(
-            news["items"],
+            news["records"],
             order=(("datetime", False), ("pub_time", False), ("src", True)),
         )
         major_news_items = self._sort_and_dedupe_rows(
-            major_news["items"],
+            major_news["records"],
             order=(("pub_time", False), ("datetime", False), ("src", True)),
         )
 
-        research_report["items"] = research_items
-        report_rc["items"] = report_rc_items
-        anns_d["items"] = anns_d_items
-        news["items"] = news_items
-        major_news["items"] = major_news_items
+        research_report["records"] = research_items
+        report_rc["records"] = report_rc_items
+        anns_d["records"] = anns_d_items
+        news["records"] = news_items
+        major_news["records"] = major_news_items
 
         core_statuses = [
-            research_report["source_meta"]["source_status"],
-            report_rc["source_meta"]["source_status"],
+            research_report["source_status"],
+            report_rc["source_status"],
         ]
         optional_statuses = [
-            anns_d["source_meta"]["source_status"],
-            news["source_meta"]["source_status"],
-            major_news["source_meta"]["source_status"],
+            anns_d["source_status"],
+            news["source_status"],
+            major_news["source_status"],
         ]
 
         if any(
@@ -275,20 +275,11 @@ class ResearchSnapshotService:
             item_status = "ok"
             error = None
 
-        capabilities = self._build_capabilities(
-            research_report=research_report,
-            report_rc=report_rc,
-            anns_d=anns_d,
-            news=news,
-            major_news=major_news,
-        )
-
         return {
             "requested_symbol": requested_symbol,
             "status": item_status,
             "error": error,
             "info": info,
-            "capabilities": capabilities,
             "research_report": research_report,
             "report_rc": report_rc,
             "anns_d": anns_d,
@@ -317,10 +308,6 @@ class ResearchSnapshotService:
             "status": "failed",
             "error": {"code": code, "message": message},
             "info": self._empty_identity(),
-            "capabilities": self._empty_capabilities(
-                attempted_sources=attempted_sources,
-                source_status="error",
-            ),
             "research_report": self._empty_block(
                 attempted_sources=attempted_sources,
                 source_status="error",
@@ -364,10 +351,6 @@ class ResearchSnapshotService:
             "status": "not_supported",
             "error": {"code": "security_not_supported", "message": message},
             "info": info or self._empty_identity(),
-            "capabilities": self._empty_capabilities(
-                attempted_sources=attempted_sources,
-                source_status="not_supported",
-            ),
             "research_report": self._empty_block(
                 attempted_sources=attempted_sources,
                 source_status="not_supported",
@@ -410,10 +393,6 @@ class ResearchSnapshotService:
             "status": "not_implemented",
             "error": {"code": "market_not_implemented", "message": message},
             "info": self._empty_identity(),
-            "capabilities": self._empty_capabilities(
-                attempted_sources=attempted_sources,
-                source_status="not_supported",
-            ),
             "research_report": self._empty_block(
                 attempted_sources=attempted_sources,
                 source_status="not_supported",
@@ -497,10 +476,9 @@ class ResearchSnapshotService:
     def _dispatch_block(self, method_name: str, **kwargs: Any) -> Dict[str, Any]:
         attempted_sources: list[str] = []
         best_failure = {
-            "status": "not_supported",
-            "error": None,
+            "source_status": "not_supported",
+            "source_error": None,
             "source": None,
-            "rows": [],
         }
         for provider_name in self.PROVIDER_ORDER:
             attempted_sources.append(provider_name)
@@ -509,10 +487,9 @@ class ResearchSnapshotService:
                 best_failure = self._pick_failure(
                     best_failure,
                     {
-                        "status": "not_supported",
-                        "error": f"{method_name} not supported by {provider_name}",
+                        "source_status": "not_supported",
+                        "source_error": f"{method_name} not supported by {provider_name}",
                         "source": provider_name,
-                        "rows": [],
                     },
                 )
                 continue
@@ -520,34 +497,29 @@ class ResearchSnapshotService:
             response = getattr(provider, method_name)(**kwargs)
             status = response.get("status", "error")
             if status in {"ok", "empty"}:
-                return {
-                    "items": response.get("rows", []),
-                    "source_meta": self._build_source_meta(
-                        source=provider_name,
-                        source_status=status,
-                        source_error=response.get("error"),
-                        attempted_sources=attempted_sources,
-                    ),
-                }
+                return self._build_block(
+                    records=response.get("rows", []),
+                    source=provider_name,
+                    source_status=status,
+                    source_error=response.get("error"),
+                    attempted_sources=attempted_sources,
+                )
             best_failure = self._pick_failure(
                 best_failure,
                 {
-                    "status": status,
-                    "error": response.get("error"),
+                    "source_status": status,
+                    "source_error": response.get("error"),
                     "source": provider_name,
-                    "rows": [],
                 },
             )
 
-        return {
-            "items": [],
-            "source_meta": self._build_source_meta(
-                source=best_failure.get("source"),
-                source_status=best_failure.get("status", "error"),
-                source_error=best_failure.get("error"),
-                attempted_sources=attempted_sources,
-            ),
-        }
+        return self._build_block(
+            records=[],
+            source=best_failure.get("source"),
+            source_status=best_failure.get("source_status", "error"),
+            source_error=best_failure.get("source_error"),
+            attempted_sources=attempted_sources,
+        )
 
     def _resolve_report_rc_block(
         self,
@@ -558,7 +530,7 @@ class ResearchSnapshotService:
         requested_end_date: str,
     ) -> Dict[str, Any]:
         requested_items = self._sort_and_dedupe_rows(
-            requested_block["items"],
+            requested_block["records"],
             order=(
                 ("report_date", False),
                 ("quarter", False),
@@ -568,8 +540,8 @@ class ResearchSnapshotService:
         )
         specific_requested_items = self._filter_stock_specific_report_rc_rows(requested_items)
         if specific_requested_items:
-            requested_block["items"] = specific_requested_items
-            requested_block["source_meta"].update(
+            requested_block["records"] = specific_requested_items
+            requested_block.update(
                 {
                     "requested_start_date": requested_start_date,
                     "requested_end_date": requested_end_date,
@@ -582,7 +554,7 @@ class ResearchSnapshotService:
 
         history_block = self._dispatch_block("fetch_report_rc", ts_code=ts_code)
         history_items = self._sort_and_dedupe_rows(
-            history_block["items"],
+            history_block["records"],
             order=(
                 ("report_date", False),
                 ("quarter", False),
@@ -592,8 +564,8 @@ class ResearchSnapshotService:
         )
         specific_history_items = self._filter_stock_specific_report_rc_rows(history_items)
         if not specific_history_items:
-            requested_block["items"] = requested_items
-            requested_block["source_meta"].update(
+            requested_block["records"] = requested_items
+            requested_block.update(
                 {
                     "requested_start_date": requested_start_date,
                     "requested_end_date": requested_end_date,
@@ -610,22 +582,20 @@ class ResearchSnapshotService:
             for row in specific_history_items
             if str(row.get("report_date") or "").strip() == latest_specific_date
         ]
-        return {
-            "items": latest_specific_group,
-            "source_meta": self._build_source_meta(
-                source=history_block["source_meta"].get("source"),
-                source_status=history_block["source_meta"].get("source_status", "ok"),
-                source_error=history_block["source_meta"].get("source_error"),
-                attempted_sources=history_block["source_meta"].get("attempted_sources", []),
-                extra={
-                    "requested_start_date": requested_start_date,
-                    "requested_end_date": requested_end_date,
-                    "resolved_start_date": latest_specific_date,
-                    "resolved_end_date": latest_specific_date,
-                    "fallback_mode": "latest_stock_specific_report_date",
-                },
-            ),
-        }
+        return self._build_block(
+            records=latest_specific_group,
+            source=history_block.get("source"),
+            source_status=history_block.get("source_status", "ok"),
+            source_error=history_block.get("source_error"),
+            attempted_sources=history_block.get("attempted_sources", []),
+            extra={
+                "requested_start_date": requested_start_date,
+                "requested_end_date": requested_end_date,
+                "resolved_start_date": latest_specific_date,
+                "resolved_end_date": latest_specific_date,
+                "fallback_mode": "latest_stock_specific_report_date",
+            },
+        )
 
     def _collect_news_block(
         self,
@@ -648,11 +618,11 @@ class ResearchSnapshotService:
                 start_date=start_date,
                 end_date=end_date,
             )
-            status = block["source_meta"]["source_status"]
+            status = block["source_status"]
             if status in {"ok", "empty"}:
-                all_rows.extend(block["items"])
+                all_rows.extend(block["records"])
             else:
-                failures.append(block["source_meta"])
+                failures.append(block)
 
         filtered_rows = self._filter_rows_by_mentions(
             rows=all_rows,
@@ -670,16 +640,14 @@ class ResearchSnapshotService:
             source_status = "empty"
             source_error = None
 
-        return {
-            "items": filtered_rows,
-            "source_meta": self._build_source_meta(
-                source=self.PROVIDER_ORDER[0],
-                source_status=source_status,
-                source_error=source_error,
-                attempted_sources=attempted_sources,
-                extra={"filter_rule": self._filter_rule_text()},
-            ),
-        }
+        return self._build_block(
+            records=filtered_rows,
+            source=self.PROVIDER_ORDER[0],
+            source_status=source_status,
+            source_error=source_error,
+            attempted_sources=attempted_sources,
+            extra={"filter_rule": self._filter_rule_text()},
+        )
 
     def _build_identity(self, record: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -732,31 +700,6 @@ class ResearchSnapshotService:
                 "delist_date": None,
             },
         }
-
-    def _build_capabilities(self, **blocks: Dict[str, Any]) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {}
-        for block_name, block in blocks.items():
-            status = block["source_meta"]["source_status"]
-            payload[block_name] = {
-                "available": status in {"ok", "empty"},
-                "status": status,
-            }
-        return payload
-
-    def _empty_capabilities(
-        self,
-        *,
-        attempted_sources: Sequence[str],
-        source_status: str,
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {}
-        for block_name in (*self.CORE_BLOCKS, *self.OPTIONAL_BLOCKS):
-            payload[block_name] = {
-                "available": False,
-                "status": source_status,
-                "attempted_sources": list(attempted_sources),
-            }
-        return payload
 
     def _build_derived(
         self,
@@ -977,23 +920,25 @@ class ResearchSnapshotService:
         return normalized
 
     @staticmethod
-    def _build_source_meta(
+    def _build_block(
         *,
+        records: Sequence[Dict[str, Any]],
         source: Optional[str],
         source_status: str,
         source_error: Optional[str],
         attempted_sources: Sequence[str],
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        meta = {
+        block = {
+            "records": list(records),
             "source": source,
             "source_status": source_status,
             "source_error": source_error,
             "attempted_sources": list(attempted_sources),
         }
         if extra:
-            meta.update(extra)
-        return meta
+            block.update(extra)
+        return block
 
     def _empty_block(
         self,
@@ -1003,16 +948,14 @@ class ResearchSnapshotService:
         source_error: Optional[str],
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return {
-            "items": [],
-            "source_meta": self._build_source_meta(
-                source=self.PROVIDER_ORDER[0] if self.PROVIDER_ORDER else None,
-                source_status=source_status,
-                source_error=source_error,
-                attempted_sources=attempted_sources,
-                extra=extra,
-            ),
-        }
+        return self._build_block(
+            records=[],
+            source=self.PROVIDER_ORDER[0] if self.PROVIDER_ORDER else None,
+            source_status=source_status,
+            source_error=source_error,
+            attempted_sources=attempted_sources,
+            extra=extra,
+        )
 
     @staticmethod
     def _filter_rows_by_mentions(
@@ -1109,7 +1052,9 @@ class ResearchSnapshotService:
     @staticmethod
     def _pick_failure(current: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Any]:
         priority = {"permission_denied": 4, "error": 3, "not_supported": 2, "empty": 1}
-        if priority.get(candidate.get("status"), 0) >= priority.get(current.get("status"), 0):
+        if priority.get(candidate.get("source_status"), 0) >= priority.get(
+            current.get("source_status"), 0
+        ):
             return candidate
         return current
 
