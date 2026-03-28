@@ -21,6 +21,7 @@
 - 已修复 `report_rc` 请求窗口仅命中 `非个股` 时的回退策略，改为回退到最近个股研报日期
 - 已补充 `docs/strategy.md`，明确当前项目的分析边界是“确定性 workflow / derived”，不包含主观研判
 - 已将 `docs/strategy.md` 改为结合 `300827` 真实返回的带注释 JSON 示例，直接在示例中解释关键字段
+- 已将 research snapshot 的 block contract 扁平化：删除 `capabilities`，并把各 block 改为 `records + source_status...` 单层结构
 
 ## 当前状态
 
@@ -32,6 +33,7 @@
 - `/analysis/earnings/earnings` 已移除旧 `analysis.research_strategy`，仅保留确定性字段
 - `docs/specs/tushare-first-research-snapshot.md` 已补充本轮 contract、状态语义和 derived 规则
 - `docs/strategy.md` 已明确说明：research snapshot 不是原始透传，但也不包含 LLM 或主观研究结论层
+- research snapshot 各原始数据块当前统一直接返回 `records`、`source`、`source_status`、`source_error`、`attempted_sources`
 
 ## 下一步计划
 
@@ -47,6 +49,6 @@
 
 ## 已知风险与阻塞
 
-- `research_report`、`anns_d`、`news`、`major_news` 都可能受 Tushare 单独权限限制，必须在 `source_meta` 中清晰区分 `permission_denied` 与空结果
+- `research_report`、`anns_d`、`news`、`major_news` 都可能受 Tushare 单独权限限制，必须在 block 顶层字段中清晰区分 `permission_denied` 与空结果
 - `news` / `major_news` 的提及过滤依赖标题与正文文本命中，存在一定召回 / 精度折中，但本阶段不做主观合并或语义扩展
 - `US` 本轮只做 schema 预留，不交付实际研报策略

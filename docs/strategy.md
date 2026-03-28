@@ -66,54 +66,29 @@
         }
       },
 
-      "capabilities": {
-        "research_report": {
-          "available": true, // 该块是否拿到了可用能力
-          "status": "empty" // empty 表示接口可用但本次没有命中有效数据
-        },
-        "report_rc": {
-          "available": true,
-          "status": "ok" // ok 表示该块成功拿到数据
-        },
-        "anns_d": {
-          "available": false,
-          "status": "permission_denied" // 当前 Tushare 账号对这个接口无权限
-        },
-        "news": {
-          "available": false,
-          "status": "permission_denied"
-        },
-        "major_news": {
-          "available": false,
-          "status": "permission_denied"
-        }
-      },
-
       "research_report": {
-        "items": [], // 原始 research_report 行数组；当前窗口没有命中
-        "source_meta": {
-          "source": "tushare",
-          "source_status": "empty", // 这个块自己的状态，不等于 item 总状态
-          "source_error": null, // 只有 error / permission_denied 时才通常有值
-          "attempted_sources": [
-            "tushare" // 当前虽然只有一个 provider，也会保留尝试链
-          ],
-          "skip_reason": "no_stock_specific_report_rc_in_requested_window", // 说明 research_report 为什么没继续查
-          "requested_start_date": "20260226",
-          "requested_end_date": "20260328"
-        }
+        "records": [], // 券商研报列表 / 覆盖记录；这里为空
+        "source": "tushare",
+        "source_status": "empty", // 该块自己的状态，不等于 item 总状态
+        "source_error": null,
+        "attempted_sources": [
+          "tushare"
+        ],
+        "skip_reason": "no_stock_specific_report_rc_in_requested_window", // 因请求窗口里没有个股 report_rc，所以跳过 research_report 查询
+        "requested_start_date": "20260226",
+        "requested_end_date": "20260328"
       },
 
       "report_rc": {
-        "items": [
+        "records": [
           {
             "ts_code": "300827.SZ",
             "name": "上能电气",
             "report_date": "20251105", // 预测发布日期
-            "report_title": "上能电气：营收稳健增长，费用及汇兑短期扰动Q3利润", // 原始标题，保持 Tushare 命名
-            "report_type": "点评", // 报告类型；这里是个股点评，不是“非个股”
+            "report_title": "上能电气：营收稳健增长，费用及汇兑短期扰动Q3利润",
+            "report_type": "点评", // 个股报告类型；不是“非个股”
             "classify": "一般报告",
-            "org_name": "华安证券", // 机构名
+            "org_name": "华安证券",
             "author_name": "张志邦",
             "quarter": "2027Q4", // 预测对应季度
             "op_rt": 939300.0,
@@ -125,75 +100,67 @@
             "rd": null,
             "roe": 21.1,
             "ev_ebitda": 13.18,
-            "rating": "买入", // 原始评级
+            "rating": "买入",
             "max_price": null,
             "min_price": null
           }
           // 实际还有 2 条同标题同日期记录，分别对应 2026Q4 与 2025Q4
         ],
-        "source_meta": {
-          "source": "tushare",
-          "source_status": "ok",
-          "source_error": null,
-          "attempted_sources": [
-            "tushare"
-          ],
-          "requested_start_date": "20260226", // 用户请求窗口
-          "requested_end_date": "20260328",
-          "resolved_start_date": "20251105", // 实际最终返回数据的日期窗口
-          "resolved_end_date": "20251105",
-          "fallback_mode": "latest_stock_specific_report_date" // 说明发生了“回退到最近个股 report_rc 日期”
-        }
+        "source": "tushare",
+        "source_status": "ok",
+        "source_error": null,
+        "attempted_sources": [
+          "tushare"
+        ],
+        "requested_start_date": "20260226", // 用户请求窗口
+        "requested_end_date": "20260328",
+        "resolved_start_date": "20251105", // 实际返回数据的日期窗口
+        "resolved_end_date": "20251105",
+        "fallback_mode": "latest_stock_specific_report_date" // 说明发生了“回退到最近个股 report_rc 日期”
       },
 
       "anns_d": {
-        "items": [],
-        "source_meta": {
-          "source": "tushare",
-          "source_status": "permission_denied", // 这块失败不会直接导致 item failed
-          "source_error": "抱歉，您没有该接口访问权限。",
-          "attempted_sources": [
-            "tushare"
-          ]
-        }
+        "records": [], // 上市公司公告流
+        "source": "tushare",
+        "source_status": "permission_denied",
+        "source_error": "抱歉，您没有该接口访问权限。",
+        "attempted_sources": [
+          "tushare"
+        ]
       },
 
       "news": {
-        "items": [], // 命中过滤后的新闻列表
-        "source_meta": {
-          "source": "tushare",
-          "source_status": "permission_denied",
-          "source_error": "抱歉，您没有该接口访问权限。",
-          "attempted_sources": [
-            "tushare"
-          ],
-          "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)" // 本地过滤规则
-        }
+        "records": [], // 通用新闻源中过滤后的新闻
+        "source": "tushare",
+        "source_status": "permission_denied",
+        "source_error": "抱歉，您没有该接口访问权限。",
+        "attempted_sources": [
+          "tushare"
+        ],
+        "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)" // 本地提及过滤规则
       },
 
       "major_news": {
-        "items": [],
-        "source_meta": {
-          "source": "tushare",
-          "source_status": "permission_denied",
-          "source_error": "抱歉，您没有该接口访问权限。",
-          "attempted_sources": [
-            "tushare"
-          ],
-          "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)"
-        }
+        "records": [], // 重点媒体 / 长新闻源中过滤后的新闻
+        "source": "tushare",
+        "source_status": "permission_denied",
+        "source_error": "抱歉，您没有该接口访问权限。",
+        "attempted_sources": [
+          "tushare"
+        ],
+        "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)"
       },
 
       "derived": {
         "coverage_snapshot": {
-          "report_count": 0, // 来自 research_report 的数量
-          "latest_trade_date": null, // 最新研报交易日期；没有 research_report 时为 null
-          "institution_count": 0, // research_report 覆盖机构数
-          "report_type_distribution": {} // research_report 的类型分布
+          "report_count": 0, // 来自 research_report.records 的数量
+          "latest_trade_date": null, // 最新研报交易日期
+          "institution_count": 0, // 研报覆盖机构数
+          "report_type_distribution": {} // 研报类型分布
         },
 
         "estimate_snapshot": {
-          "report_count": 3, // 来自 report_rc 的预测记录数
+          "report_count": 3, // 来自 report_rc.records 的预测记录数
           "latest_report_date": "20251105", // 最新预测发布日期
           "latest_records": [
             {
@@ -223,10 +190,10 @@
           ],
           "by_quarter": {
             "2027Q4": {
-              "count": 1, // 该季度预测记录数
-              "latest_report_date": "20251105", // 该季度最新预测日期
+              "count": 1,
+              "latest_report_date": "20251105",
               "rating_distribution": {
-                "买入": 1 // 该季度评级分布
+                "买入": 1
               }
             },
             "2026Q4": {
@@ -245,11 +212,11 @@
             }
           },
           "rating_distribution": {
-            "买入": 3 // 全部 report_rc 记录的评级分布
+            "买入": 3
           }
         },
 
-        "catalyst_timeline": [], // 公告 / news / major_news 合并后的事件流；这次因权限原因为空
+        "catalyst_timeline": [], // 公告 / news / major_news 合并后的事件流
         "change_flags": {
           "has_new_report_7d": false, // 最近 7 天是否有新 research_report
           "has_new_estimate_7d": false, // 最近 7 天是否有新 report_rc
@@ -266,13 +233,13 @@
 - 先看 `status`
   - `ok` 代表全部 item 完整成功
   - `partial` 代表至少一个块降级了，但不一定没有核心数据
-- 再看 `items[].capabilities`
-  - 这是最直观的能力摘要
-  - 可以先判断哪些块可用，哪些块是空结果，哪些块是权限不足
-- 再看 `items[].source_meta`
-  - 这是排查问题最关键的地方
-  - 它会告诉你到底是 `empty`、`permission_denied` 还是发生了 fallback
-- 最后看 `items[].derived`
+- 再看每个 block 的 `source_status`
+  - 这是最直观的调试入口
+  - 能区分是 `ok`、`empty`、`permission_denied` 还是 `error`
+- 再看 block 的 `records`
+  - 这里放的是原始 Tushare 行数组
+  - 字段名尽量保持 Tushare 原样，不再额外包一层 `items`
+- 最后看 `derived`
   - 这是程序做的确定性汇总视图
   - 如果只关心“有没有覆盖、最近日期、评级分布”，优先看这一层
 
@@ -311,15 +278,20 @@
 - 各数据块独立调度，不做跨块联表拼接
 - 各数据块命中首个可用源后立即停止
 
-### 当前请求的数据块
+### 当前请求的数据块分别是什么
 
-- 核心块：
-  - `research_report`
-  - `report_rc`
-- 可选块：
-  - `anns_d`
-  - `news`
-  - `major_news`
+- `research_report`
+  - 券商研报列表 / 覆盖记录，偏“研报正文索引”
+- `report_rc`
+  - 券商盈利预测与评级记录，偏“预测 / 评级快照”
+- `anns_d`
+  - 上市公司公告流
+- `news`
+  - 通用新闻源中命中股票提及过滤后的新闻
+- `major_news`
+  - 重点媒体 / 长新闻源中命中股票提及过滤后的新闻
+- `derived`
+  - 系统基于上述原始块做的确定性汇总，不是主观结论
 
 ### 当前“自有策略”具体做了什么
 
@@ -335,10 +307,8 @@
 
 #### 2. 数据块级状态判定
 
-- 每个数据块都单独输出：
-  - `items`
-  - `source_meta`
-- `source_meta` 固定包含：
+- 每个数据块都直接输出：
+  - `records`
   - `source`
   - `source_status`
   - `source_error`
@@ -352,25 +322,24 @@
 
 #### 3. 排序与去重
 
-- `research_report`：
+- `research_report`
   - 按 `trade_date desc, inst_csname asc, title asc`
   - 只做精确重复行去重
-- `report_rc`：
+- `report_rc`
   - 按 `report_date desc, quarter desc, org_name asc, report_title asc`
   - 只做精确重复行去重
-- `anns_d`：
+- `anns_d`
   - 按 `ann_date desc, rec_time desc, title asc`
-- `news` / `major_news`：
+- `news` / `major_news`
   - 统一按发布时间倒序
 
 #### 4. 可选块权限降级
 
 - `anns_d` / `news` / `major_news` 当前可能被 Tushare 权限限制
 - 这些块失败时不会直接让整条 item 失败
-- 它们会在：
-  - `capabilities`
-  - `source_meta`
-  中明确标记为 `permission_denied`
+- 它们会在各自 block 顶层明确标记：
+  - `source_status = permission_denied`
+  - `source_error = ...`
 
 #### 5. `news` / `major_news` 的确定性提及过滤
 
@@ -389,7 +358,12 @@
   - 继续查询该股票历史 `report_rc`
   - 找到最近一个“个股研报日期”
   - 回退到该日期返回一组最新个股预测记录
-- 这是当前代码里的硬编码补救策略，目的是避免把“只有行业报告”误呈现成“个股研究为空”
+- `report_rc` block 会直接标记：
+  - `fallback_mode`
+  - `requested_start_date`
+  - `requested_end_date`
+  - `resolved_start_date`
+  - `resolved_end_date`
 - `research_report` 在这种情况下会明确返回：
   - `source_status = empty`
   - `skip_reason = no_stock_specific_report_rc_in_requested_window`
@@ -439,20 +413,6 @@
 - 没有做事件重要性评分
 - 没有做跨源证据融合
 - 没有用模型推断新闻与股价关系
-
-## 当前哪些接口仍有“确定性分析”
-
-### `/analysis/earnings/earnings`
-
-- 当前只保留确定性字段
-- 不再返回旧的 `analysis.research_strategy` 叙事结构
-- 仍然会做固定规则下的字段归一、口径整理和分析块输出
-
-### 估值与模型类接口
-
-- `DCF` / `LBO` / `three-statement` 这类接口仍然包含模型计算
-- 但它们的“分析”也是模型参数和公式驱动的确定性结果
-- 不属于主观文本分析
 
 ## 当前策略的边界
 
