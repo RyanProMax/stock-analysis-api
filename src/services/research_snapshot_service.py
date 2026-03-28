@@ -138,18 +138,59 @@ class ResearchSnapshotService:
             )
 
         ts_code = str(security_record.get("ts_code") or "").strip().upper()
-        research_report = self._dispatch_block(
-            "fetch_research_report",
-            ts_code=ts_code,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        report_rc = self._dispatch_block(
+        report_rc_requested = self._dispatch_block(
             "fetch_report_rc",
             ts_code=ts_code,
             start_date=start_date,
             end_date=end_date,
         )
+        report_rc_requested_items = self._sort_and_dedupe_rows(
+            report_rc_requested["items"],
+            order=(
+                ("report_date", False),
+                ("quarter", False),
+                ("org_name", True),
+                ("report_title", True),
+            ),
+        )
+        has_requested_stock_specific_report_rc = self._has_stock_specific_report_rc_rows(
+            report_rc_requested_items
+        )
+        report_rc = self._resolve_report_rc_block(
+            requested_block=report_rc_requested,
+            ts_code=ts_code,
+            requested_start_date=start_date,
+            requested_end_date=end_date,
+        )
+        report_rc_items = self._sort_and_dedupe_rows(
+            report_rc["items"],
+            order=(
+                ("report_date", False),
+                ("quarter", False),
+                ("org_name", True),
+                ("report_title", True),
+            ),
+        )
+        report_rc["items"] = report_rc_items
+
+        if has_requested_stock_specific_report_rc:
+            research_report = self._dispatch_block(
+                "fetch_research_report",
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            research_report = self._empty_block(
+                attempted_sources=attempted_sources,
+                source_status="empty",
+                source_error=None,
+                extra={
+                    "skip_reason": "no_stock_specific_report_rc_in_requested_window",
+                    "requested_start_date": start_date,
+                    "requested_end_date": end_date,
+                },
+            )
         anns_d = self._dispatch_block(
             "fetch_anns_d",
             ts_code=ts_code,
@@ -181,15 +222,6 @@ class ResearchSnapshotService:
                 ("trade_date", False),
                 ("inst_csname", True),
                 ("title", True),
-            ),
-        )
-        report_rc_items = self._sort_and_dedupe_rows(
-            report_rc["items"],
-            order=(
-                ("report_date", False),
-                ("quarter", False),
-                ("org_name", True),
-                ("report_title", True),
             ),
         )
         anns_d_items = self._sort_and_dedupe_rows(
@@ -514,6 +546,84 @@ class ResearchSnapshotService:
                 source_status=best_failure.get("status", "error"),
                 source_error=best_failure.get("error"),
                 attempted_sources=attempted_sources,
+            ),
+        }
+
+    def _resolve_report_rc_block(
+        self,
+        *,
+        requested_block: Dict[str, Any],
+        ts_code: str,
+        requested_start_date: str,
+        requested_end_date: str,
+    ) -> Dict[str, Any]:
+        requested_items = self._sort_and_dedupe_rows(
+            requested_block["items"],
+            order=(
+                ("report_date", False),
+                ("quarter", False),
+                ("org_name", True),
+                ("report_title", True),
+            ),
+        )
+        specific_requested_items = self._filter_stock_specific_report_rc_rows(requested_items)
+        if specific_requested_items:
+            requested_block["items"] = specific_requested_items
+            requested_block["source_meta"].update(
+                {
+                    "requested_start_date": requested_start_date,
+                    "requested_end_date": requested_end_date,
+                    "resolved_start_date": requested_start_date,
+                    "resolved_end_date": requested_end_date,
+                    "fallback_mode": "requested_window",
+                }
+            )
+            return requested_block
+
+        history_block = self._dispatch_block("fetch_report_rc", ts_code=ts_code)
+        history_items = self._sort_and_dedupe_rows(
+            history_block["items"],
+            order=(
+                ("report_date", False),
+                ("quarter", False),
+                ("org_name", True),
+                ("report_title", True),
+            ),
+        )
+        specific_history_items = self._filter_stock_specific_report_rc_rows(history_items)
+        if not specific_history_items:
+            requested_block["items"] = requested_items
+            requested_block["source_meta"].update(
+                {
+                    "requested_start_date": requested_start_date,
+                    "requested_end_date": requested_end_date,
+                    "resolved_start_date": requested_start_date,
+                    "resolved_end_date": requested_end_date,
+                    "fallback_mode": "requested_window_no_specific_history",
+                }
+            )
+            return requested_block
+
+        latest_specific_date = str(specific_history_items[0].get("report_date") or "").strip()
+        latest_specific_group = [
+            row
+            for row in specific_history_items
+            if str(row.get("report_date") or "").strip() == latest_specific_date
+        ]
+        return {
+            "items": latest_specific_group,
+            "source_meta": self._build_source_meta(
+                source=history_block["source_meta"].get("source"),
+                source_status=history_block["source_meta"].get("source_status", "ok"),
+                source_error=history_block["source_meta"].get("source_error"),
+                attempted_sources=history_block["source_meta"].get("attempted_sources", []),
+                extra={
+                    "requested_start_date": requested_start_date,
+                    "requested_end_date": requested_end_date,
+                    "resolved_start_date": latest_specific_date,
+                    "resolved_end_date": latest_specific_date,
+                    "fallback_mode": "latest_stock_specific_report_date",
+                },
             ),
         }
 
@@ -928,6 +1038,21 @@ class ResearchSnapshotService:
     @staticmethod
     def _filter_rule_text() -> str:
         return "title_or_content_contains_any(symbol, ts_code, name)"
+
+    @staticmethod
+    def _filter_stock_specific_report_rc_rows(
+        rows: Sequence[Dict[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        filtered: list[Dict[str, Any]] = []
+        for row in rows:
+            report_type = str(row.get("report_type") or "").strip()
+            if report_type == "非个股":
+                continue
+            filtered.append(dict(row))
+        return filtered
+
+    def _has_stock_specific_report_rc_rows(self, rows: Sequence[Dict[str, Any]]) -> bool:
+        return bool(self._filter_stock_specific_report_rc_rows(rows))
 
     @staticmethod
     def _dedupe_rows(rows: Sequence[Dict[str, Any]]) -> list[Dict[str, Any]]:
