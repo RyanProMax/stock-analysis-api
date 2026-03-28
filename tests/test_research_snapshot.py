@@ -197,7 +197,17 @@ class TestResearchSnapshotService:
                 "error": None,
             },
             research_report=_rows_payload([], status="permission_denied", error="权限不足"),
-            report_rc=_rows_payload([], status="empty"),
+            report_rc=_rows_payload(
+                [
+                    {
+                        "report_date": "20260301",
+                        "report_title": "贵州茅台点评",
+                        "report_type": "点评",
+                        "quarter": "2026Q4",
+                        "org_name": "中信证券",
+                    }
+                ]
+            ),
         )
         service = ResearchSnapshotService(providers={"tushare": provider})
 
@@ -306,6 +316,94 @@ class TestResearchSnapshotService:
         news_items = payload["items"][0]["news"]["items"]
         assert len(news_items) == 1
         assert news_items[0]["title"] == "贵州茅台盘中走强"
+
+    def test_report_rc_falls_back_to_latest_stock_specific_history_when_window_is_generic_only(
+        self,
+    ):
+        provider = FakeResearchProvider(
+            security={
+                "record": {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "security_type": "stock",
+                },
+                "status": "ok",
+                "error": None,
+            },
+            report_rc=_rows_payload(
+                [
+                    {
+                        "report_date": "20260302",
+                        "report_title": "行业专题",
+                        "report_type": "非个股",
+                        "quarter": "2026Q4",
+                        "org_name": "东吴证券",
+                    }
+                ]
+            ),
+        )
+
+        history_calls = {"count": 0}
+
+        def report_rc_with_history(**kwargs):
+            if "start_date" in kwargs or "end_date" in kwargs:
+                return {
+                    "rows": [
+                        {
+                            "report_date": "20260302",
+                            "report_title": "行业专题",
+                            "report_type": "非个股",
+                            "quarter": "2026Q4",
+                            "org_name": "东吴证券",
+                        }
+                    ],
+                    "status": "ok",
+                    "error": None,
+                }
+            history_calls["count"] += 1
+            return {
+                "rows": [
+                    {
+                        "report_date": "20251105",
+                        "report_title": "上能电气：营收稳健增长",
+                        "report_type": "点评",
+                        "quarter": "2026Q4",
+                        "org_name": "华安证券",
+                    },
+                    {
+                        "report_date": "20251105",
+                        "report_title": "上能电气：营收稳健增长",
+                        "report_type": "点评",
+                        "quarter": "2025Q4",
+                        "org_name": "华安证券",
+                    },
+                ],
+                "status": "ok",
+                "error": None,
+            }
+
+        provider.fetch_report_rc = report_rc_with_history
+        service = ResearchSnapshotService(providers={"tushare": provider})
+
+        payload = service.poll_snapshot(
+            market="cn",
+            symbols=["300827"],
+            start_date="20260226",
+            end_date="20260328",
+        )
+
+        item = payload["items"][0]
+        assert history_calls["count"] == 1
+        assert item["report_rc"]["items"][0]["report_date"] == "20251105"
+        assert (
+            item["report_rc"]["source_meta"]["fallback_mode"] == "latest_stock_specific_report_date"
+        )
+        assert item["report_rc"]["source_meta"]["resolved_start_date"] == "20251105"
+        assert (
+            item["research_report"]["source_meta"]["skip_reason"]
+            == "no_stock_specific_report_rc_in_requested_window"
+        )
 
     def test_us_market_returns_not_implemented(self):
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
