@@ -59,13 +59,7 @@ src/
 | `/stock/list` | GET | 获取股票列表 |
 | `/stock/search` | POST | 搜索股票 |
 | `/watch/poll` | POST | 多股票盯盘轮询 |
-| `/valuation/dcf` | GET | DCF 估值模型 |
-| `/valuation/comps` | GET | 可比公司分析 |
-| `/model/lbo` | GET | LBO 情景模型 |
-| `/model/three-statement` | GET | 三表预测模型 |
-| `/model/three-statement/scenarios` | GET | 三表情景对比 |
-| `/analysis/competitive/competitive` | GET | 竞争格局分析 |
-| `/analysis/earnings/earnings` | GET | 季报分析 |
+| `/analysis/research/snapshot` | POST | 统一的客观研究快照入口 |
 
 ## 数据标准
 
