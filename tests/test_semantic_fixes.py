@@ -34,7 +34,6 @@ from src.model.comps import CompCompany
 from src.model.report import AnalysisReport, FactorAnalysis, FearGreed
 from src.model.trend import TrendAnalysisResult, TrendStatus
 from src.data_provider.fundamental_context import build_fundamental_context
-from src.analyzer.research_strategy import build_earnings_research_strategy
 
 
 class TestEarningsSemanticFixes:
@@ -190,7 +189,13 @@ class TestCompetitiveSemanticFixes:
     def test_positioning_and_comparative_use_raw_peer_metrics(self):
         analyzer = CompetitiveAnalyzer()
         target = {"symbol": "NVDA", "marketCap": 1000, "revenueGrowth": 0.5, "revenue": 400}
-        peer = {"symbol": "AMD", "longName": "AMD", "marketCap": 500, "revenueGrowth": 0.2, "revenue": 200}
+        peer = {
+            "symbol": "AMD",
+            "longName": "AMD",
+            "marketCap": 500,
+            "revenueGrowth": 0.2,
+            "revenue": 200,
+        }
 
         positioning = analyzer._generate_positioning(target, [peer], "technology")
         comparative = analyzer._generate_comparative(target, [peer], "technology")
@@ -451,7 +456,10 @@ class TestSourceFieldNormalizationFixes:
                         "operatingCashflow": 120,
                     },
                     "normalized_fields": {
-                        "dividend_metrics": {"ttm_cash_dividend_per_share": 1.0, "ttm_dividend_yield_pct": 0.5},
+                        "dividend_metrics": {
+                            "ttm_cash_dividend_per_share": 1.0,
+                            "ttm_dividend_yield_pct": 0.5,
+                        },
                         "held_percent_insiders": {"value": 0.01},
                         "held_percent_institutions": {"value": 0.65},
                         "shares_percent_shares_out": {"value": 0.02},
@@ -492,24 +500,3 @@ class TestSourceFieldNormalizationFixes:
         assert earnings_data["forecast_summary"] == ""
         assert earnings_data["quick_report_summary"] == ""
         assert earnings_data["dividend"]["ttm_cash_dividend_per_share"] == 1.0
-
-    def test_research_strategy_uses_plugin_style_sections(self):
-        strategy = build_earnings_research_strategy(
-            {
-                "earnings_summary": {
-                    "revenue": {"actual": "$10.00B"},
-                    "earnings_per_share": {"eps": "$1.00"},
-                },
-                "key_metrics": {
-                    "growth": {"revenue_growth": "10.0%", "earnings_growth": "12.0%"},
-                    "profitability": {"gross_margin": "40.0%", "operating_margin": "20.0%"},
-                    "dividends": {"dividend_yield": "1.00%"},
-                },
-                "guidance": {"direction": "Maintaining"},
-                "beat_miss_analysis": {"status": "unavailable"},
-            }
-        )
-
-        assert "earnings_summary_box" in strategy
-        assert "thesis_scorecard" in strategy
-        assert strategy["investment_impact"]["guidance_direction"] == "Maintaining"

@@ -146,7 +146,9 @@ class TestStockEndpoints:
             lambda payload: stub_structured_payload("mixed"),
         )
 
-        response = client.post("/stock/analyze", json={"symbols": [TEST_SYMBOL], "include_qlib_factors": False})
+        response = client.post(
+            "/stock/analyze", json={"symbols": [TEST_SYMBOL], "include_qlib_factors": False}
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["status_code"] == 200
@@ -250,7 +252,9 @@ class TestValuationEndpoints:
             assert data["data"]["meta"]["interface_type"] == "model"
 
     def test_comps_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(comps_route.comps_analyzer, "analyze", lambda symbol, sector=None: StubResult())
+        monkeypatch.setattr(
+            comps_route.comps_analyzer, "analyze", lambda symbol, sector=None: StubResult()
+        )
         monkeypatch.setattr(
             comps_route,
             "comps_contract",
@@ -344,6 +348,50 @@ class TestAnalysisEndpoints:
         if data["data"]:
             assert_structured_payload(data["data"])
             assert data["data"]["meta"]["interface_type"] == "mixed"
+
+    def test_earnings_response_no_longer_contains_research_strategy(
+        self, client: TestClient, monkeypatch
+    ):
+        monkeypatch.setattr(
+            earnings_route.EarningsAnalyzer,
+            "analyze",
+            lambda self, symbol, quarter=None, fiscal_year=None: StubResult(
+                payload={
+                    "symbol": symbol,
+                    "company_name": "NVIDIA",
+                    "report_date": "2026-01-31",
+                    "as_of": "2026-01-31",
+                    "earnings_summary": {
+                        "revenue": {"actual": "$68.13B"},
+                        "earnings_per_share": {"eps": "$1.76"},
+                    },
+                    "beat_miss_analysis": {"status": "unavailable"},
+                    "fundamental_context": {
+                        "earnings": {
+                            "data": {
+                                "dividend": {
+                                    "ttm_cash_dividend_per_share": 0.04,
+                                    "ttm_dividend_yield_pct": 0.02,
+                                }
+                            }
+                        }
+                    },
+                    "segment_performance": [],
+                    "guidance": {},
+                    "key_metrics": {},
+                    "trends": {},
+                    "sources": [],
+                }
+            ),
+        )
+
+        response = client.get(f"/analysis/earnings/earnings?symbol={TEST_SYMBOL}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status_code"] == 200
+        assert "research_strategy" not in data["data"]["analysis"]
+        assert "key_metrics" in data["data"]["analysis"]
 
 
 class TestErrorHandling:

@@ -1,6 +1,7 @@
 # AGENTS.md
 
-Stock Analysis API 后端项目，当前仅保留 HTTP REST API。
+Stock Analysis API 后端项目，当前公共接口仅保留 HTTP REST API。
+仓库可以包含供内部 Agent / skill 调用的 `scripts/` 脚本，但这类脚本不属于公共 API。
 
 ## 文档治理
 
@@ -14,6 +15,7 @@ Stock Analysis API 后端项目，当前仅保留 HTTP REST API。
 - 涉及仓表、同步流程、状态模型和字段口径的重构，必须先更新 `AGENTS.md` / `docs/`，再实施代码变更
 - 不再新增重复职责的阶段性文档；如需迁移旧文档内容，迁移完成后删除原文档并校正 `docs/plan.md`
 - `docs/specs/` 只保留未完成、仍需执行的规格；已完成的迁移说明、审计快照或阶段性治理文档应删除，不作长期归档
+- 内部 skill / agent 调用脚本的 contract、状态语义和输入输出说明统一沉淀在 `docs/specs/`，不写入 `docs/api.md`
 
 ## 技术栈
 
@@ -34,6 +36,7 @@ black --line-length 100 .
 ## 项目结构
 
 ```text
+scripts/            # 内部脚本入口（skill / agent 调用），不属于公共 API
 src/
 ├── analyzer/         # 因子计算与标准化适配
 ├── api/              # FastAPI 路由、schema 与 deps
@@ -67,6 +70,7 @@ src/
 ## 数据标准
 
 - 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
+- 内部 research snapshot 脚本统一返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
 - 比例型机器值统一存 `ratio`
@@ -103,7 +107,8 @@ src/
 
 ## 代码规范
 
-- 新增能力时只更新 HTTP 路由、schema、文档和测试
+- 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
+- 内部 skill / agent 脚本能力统一放在 `scripts/`，其业务逻辑仍应放在 `src/services/`、`src/data_provider/` 或 `src/analyzer/`
 - 业务逻辑优先放在 `src/services/`、`src/repositories/` 或 `src/analyzer/`
 - 标准化 contract 放在 `src/model/contracts.py` 和 `src/analyzer/normalizers.py`
 - `src/storage/` 只保留兼容导入，不再新增正式实现
