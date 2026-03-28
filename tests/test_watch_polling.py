@@ -54,7 +54,9 @@ def _snapshot(
             "volume_ratio_state": "normal",
         },
         "earnings_watch": {
-            "next_earnings_date": "2026-03-25T00:00:00+00:00" if earnings_days is not None else None,
+            "next_earnings_date": (
+                "2026-03-25T00:00:00+00:00" if earnings_days is not None else None
+            ),
             "earnings_proximity_days": earnings_days,
             "partial": earnings_days is None,
         },
@@ -89,7 +91,9 @@ class TestWatchPollingService:
 
     def test_follow_up_poll_emits_expected_alerts(self, monkeypatch):
         service = WatchPollingService()
-        previous = _snapshot(price=100.0, high=101.0, low=95.0, turnover_rate=0.01, volume_ratio=1.0)
+        previous = _snapshot(
+            price=100.0, high=101.0, low=95.0, turnover_rate=0.01, volume_ratio=1.0
+        )
         current = _snapshot(
             price=105.0,
             high=105.2,
@@ -289,25 +293,25 @@ class TestWatchPollingService:
         assert result["degradation"]["quote_fallback_used"] is True
 
     def test_extract_next_earnings_date_prefers_future_calendar_candidates(self):
-        future_date = "2026-03-28T00:00:00+00:00"
+        future_date = "2030-03-28T00:00:00+00:00"
         payload = {
             "raw_data": {
                 "info": {
                     "earningsDate": ["2026-03-18", "2026-03-27"],
                 },
                 "calendar": {
-                    "Earnings Date": [future_date, "2026-03-29T00:00:00+00:00"],
+                    "Earnings Date": [future_date, "2030-03-29T00:00:00+00:00"],
                 },
                 "earnings_dates": [
-                    "2026-03-26T00:00:00+00:00",
-                    "2026-04-01T00:00:00+00:00",
+                    "2030-03-26T00:00:00+00:00",
+                    "2030-04-01T00:00:00+00:00",
                 ],
             }
         }
 
         result = WatchPollingService._extract_next_earnings_date(payload)
 
-        assert result == "2026-03-26T00:00:00+00:00"
+        assert result == "2030-03-26T00:00:00+00:00"
 
     def test_build_earnings_watch_uses_calendar_backfill(self):
         service = WatchPollingService()
@@ -315,13 +319,13 @@ class TestWatchPollingService:
             "raw_data": {
                 "info": {},
                 "calendar": {
-                    "Earnings Date": ["2026-03-30T00:00:00+00:00"],
+                    "Earnings Date": ["2030-03-30T00:00:00+00:00"],
                 },
             }
         }
 
         result = service._build_earnings_watch(payload)
 
-        assert result["next_earnings_date"] == "2026-03-30T00:00:00+00:00"
+        assert result["next_earnings_date"] == "2030-03-30T00:00:00+00:00"
         assert result["earnings_proximity_days"] is not None
         assert result["partial"] is False

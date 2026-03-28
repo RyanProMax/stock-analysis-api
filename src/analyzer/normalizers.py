@@ -15,7 +15,6 @@ from ..data_provider.fundamental_context import (
     extract_company_profile_fields,
     extract_fundamental_detail_fields,
 )
-from .research_strategy import build_earnings_research_strategy
 
 
 def _parse_percent(display_value: Any) -> Optional[float]:
@@ -297,7 +296,9 @@ def watch_poll_contract(item: Dict[str, Any]) -> Dict[str, Any]:
                 "derived",
                 fundamentals.get("source") or "financial_data",
                 computed_at,
-                status="available" if fundamentals.get("dividend_yield") is not None else "unavailable",
+                status=(
+                    "available" if fundamentals.get("dividend_yield") is not None else "unavailable"
+                ),
             ),
             "revenue_ttm": make_field(
                 "revenue_ttm",
@@ -308,7 +309,9 @@ def watch_poll_contract(item: Dict[str, Any]) -> Dict[str, Any]:
                 "reported",
                 fundamentals.get("source") or "financial_data",
                 computed_at,
-                status="available" if fundamentals.get("revenue_ttm") is not None else "unavailable",
+                status=(
+                    "available" if fundamentals.get("revenue_ttm") is not None else "unavailable"
+                ),
             ),
         },
     }
@@ -386,7 +389,16 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
     }
     analysis = {
         "fear_greed": {
-            "index": make_field("fear_greed_index", report.get("fear_greed", {}).get("index"), report.get("fear_greed", {}).get("label"), "score", "spot", "derived", "technical_analysis", as_of),
+            "index": make_field(
+                "fear_greed_index",
+                report.get("fear_greed", {}).get("index"),
+                report.get("fear_greed", {}).get("label"),
+                "score",
+                "spot",
+                "derived",
+                "technical_analysis",
+                as_of,
+            ),
         },
         "technical_signals": report.get("technical", {}).get("factors", []),
         "trend": report.get("trend_analysis"),
@@ -426,10 +438,46 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     dividend_metrics = detail_fields.get("dividend_metrics") or {}
     facts = {
         "quarterly": {
-            "revenue": make_field("revenue", _parse_number(summary.get("revenue", {}).get("actual")), summary.get("revenue", {}).get("actual"), "currency", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
-            "net_income": make_field("net_income", _parse_number(summary.get("net_income", {}).get("actual")), summary.get("net_income", {}).get("actual"), "currency", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
-            "ebitda": make_field("ebitda", _parse_number(summary.get("ebitda", {}).get("actual")), summary.get("ebitda", {}).get("actual"), "currency", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
-            "eps": make_field("eps", _parse_number(summary.get("earnings_per_share", {}).get("eps")), summary.get("earnings_per_share", {}).get("eps"), "currency_per_share", "quarterly", "reported", "yfinance.quarterly_income_stmt", as_of),
+            "revenue": make_field(
+                "revenue",
+                _parse_number(summary.get("revenue", {}).get("actual")),
+                summary.get("revenue", {}).get("actual"),
+                "currency",
+                "quarterly",
+                "reported",
+                "yfinance.quarterly_income_stmt",
+                as_of,
+            ),
+            "net_income": make_field(
+                "net_income",
+                _parse_number(summary.get("net_income", {}).get("actual")),
+                summary.get("net_income", {}).get("actual"),
+                "currency",
+                "quarterly",
+                "reported",
+                "yfinance.quarterly_income_stmt",
+                as_of,
+            ),
+            "ebitda": make_field(
+                "ebitda",
+                _parse_number(summary.get("ebitda", {}).get("actual")),
+                summary.get("ebitda", {}).get("actual"),
+                "currency",
+                "quarterly",
+                "reported",
+                "yfinance.quarterly_income_stmt",
+                as_of,
+            ),
+            "eps": make_field(
+                "eps",
+                _parse_number(summary.get("earnings_per_share", {}).get("eps")),
+                summary.get("earnings_per_share", {}).get("eps"),
+                "currency_per_share",
+                "quarterly",
+                "reported",
+                "yfinance.quarterly_income_stmt",
+                as_of,
+            ),
         },
         "consensus_comparison": result.get("beat_miss_analysis"),
         "fundamentals": fundamental_context,
@@ -437,7 +485,6 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     if result.get("beat_miss_analysis", {}).get("status") == "unavailable":
         facts["consensus_comparison"]["status"] = "unavailable"
     analysis = {
-        "research_strategy": build_earnings_research_strategy(result),
         "estimated_segments": result.get("segment_performance", []),
         "guidance_interpretation": result.get("guidance", {}),
         "key_metrics": {
@@ -452,9 +499,13 @@ def earnings_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         analysis=analysis,
         meta=InterfaceMeta(
             as_of=as_of,
-            sources=_normalize_sources(result.get("sources", []), fundamental_context.get("source_chain", [])),
+            sources=_normalize_sources(
+                result.get("sources", []), fundamental_context.get("source_chain", [])
+            ),
             data_completeness="partial",
-            limitations=["Segment data may be estimated when company-level segment disclosure is unavailable"],
+            limitations=[
+                "Segment data may be estimated when company-level segment disclosure is unavailable"
+            ],
             interface_type="mixed",
         ),
     )
@@ -497,27 +548,153 @@ def _standard_company_profile(raw_profile: Dict[str, Any], as_of: Optional[str])
         "sector": raw_profile.get("sector"),
         "industry": raw_profile.get("industry"),
         "overview": {
-            "current_price": make_field("current_price", raw_profile["overview"].get("current_price"), raw_profile["overview"].get("current_price"), "currency", "spot", "reported", "yfinance.info", as_of),
-            "total_mv": make_field("total_mv", raw_profile["overview"].get("total_mv"), raw_profile["overview"].get("total_mv"), "currency", "spot", "reported", "yfinance.info", as_of),
-            "revenue": make_field("revenue", raw_profile["overview"].get("revenue"), raw_profile["overview"].get("revenue"), "currency", "ttm", "reported", "yfinance.info", as_of),
-            "revenue_yoy": make_field("revenue_yoy", raw_profile["overview"].get("revenue_yoy"), raw_profile["overview"].get("revenue_yoy"), "ratio", "ttm", "reported", "yfinance.info", as_of),
+            "current_price": make_field(
+                "current_price",
+                raw_profile["overview"].get("current_price"),
+                raw_profile["overview"].get("current_price"),
+                "currency",
+                "spot",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "total_mv": make_field(
+                "total_mv",
+                raw_profile["overview"].get("total_mv"),
+                raw_profile["overview"].get("total_mv"),
+                "currency",
+                "spot",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "revenue": make_field(
+                "revenue",
+                raw_profile["overview"].get("revenue"),
+                raw_profile["overview"].get("revenue"),
+                "currency",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "revenue_yoy": make_field(
+                "revenue_yoy",
+                raw_profile["overview"].get("revenue_yoy"),
+                raw_profile["overview"].get("revenue_yoy"),
+                "ratio",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
         },
         "financials": {
-            "gross_margin": make_field("gross_margin", raw_profile["financials"].get("gross_margin"), raw_profile["financials"].get("gross_margin"), "ratio", "ttm", "reported", "yfinance.info", as_of),
-            "ebitda_margin": make_field("ebitda_margin", raw_profile["financials"].get("ebitda_margin"), raw_profile["financials"].get("ebitda_margin"), "ratio", "ttm", "reported", "yfinance.info", as_of),
-            "operating_margin": make_field("operating_margin", raw_profile["financials"].get("operating_margin"), raw_profile["financials"].get("operating_margin"), "ratio", "ttm", "reported", "yfinance.info", as_of),
-            "net_margin": make_field("net_margin", raw_profile["financials"].get("net_margin"), raw_profile["financials"].get("net_margin"), "ratio", "ttm", "reported", "yfinance.info", as_of),
+            "gross_margin": make_field(
+                "gross_margin",
+                raw_profile["financials"].get("gross_margin"),
+                raw_profile["financials"].get("gross_margin"),
+                "ratio",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "ebitda_margin": make_field(
+                "ebitda_margin",
+                raw_profile["financials"].get("ebitda_margin"),
+                raw_profile["financials"].get("ebitda_margin"),
+                "ratio",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "operating_margin": make_field(
+                "operating_margin",
+                raw_profile["financials"].get("operating_margin"),
+                raw_profile["financials"].get("operating_margin"),
+                "ratio",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "net_margin": make_field(
+                "net_margin",
+                raw_profile["financials"].get("net_margin"),
+                raw_profile["financials"].get("net_margin"),
+                "ratio",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
         },
         "valuation": {
-            "pe_ratio": make_field("pe_ratio", raw_profile["valuation"].get("pe_ratio"), raw_profile["valuation"].get("pe_ratio"), "number", "spot", "reported", "yfinance.info", as_of),
-            "forward_pe": make_field("forward_pe", raw_profile["valuation"].get("forward_pe"), raw_profile["valuation"].get("forward_pe"), "number", "forward", "reported", "yfinance.info", as_of),
-            "peg_ratio": make_field("peg_ratio", raw_profile["valuation"].get("peg_ratio"), raw_profile["valuation"].get("peg_ratio"), "number", "forward", "reported", "yfinance.info", as_of),
-            "pb_ratio": make_field("pb_ratio", raw_profile["valuation"].get("pb_ratio"), raw_profile["valuation"].get("pb_ratio"), "number", "spot", "reported", "yfinance.info", as_of),
-            "price_to_sales": make_field("price_to_sales", raw_profile["valuation"].get("price_to_sales"), raw_profile["valuation"].get("price_to_sales"), "number", "ttm", "reported", "yfinance.info", as_of),
+            "pe_ratio": make_field(
+                "pe_ratio",
+                raw_profile["valuation"].get("pe_ratio"),
+                raw_profile["valuation"].get("pe_ratio"),
+                "number",
+                "spot",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "forward_pe": make_field(
+                "forward_pe",
+                raw_profile["valuation"].get("forward_pe"),
+                raw_profile["valuation"].get("forward_pe"),
+                "number",
+                "forward",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "peg_ratio": make_field(
+                "peg_ratio",
+                raw_profile["valuation"].get("peg_ratio"),
+                raw_profile["valuation"].get("peg_ratio"),
+                "number",
+                "forward",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "pb_ratio": make_field(
+                "pb_ratio",
+                raw_profile["valuation"].get("pb_ratio"),
+                raw_profile["valuation"].get("pb_ratio"),
+                "number",
+                "spot",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
+            "price_to_sales": make_field(
+                "price_to_sales",
+                raw_profile["valuation"].get("price_to_sales"),
+                raw_profile["valuation"].get("price_to_sales"),
+                "number",
+                "ttm",
+                "reported",
+                "yfinance.info",
+                as_of,
+            ),
         },
         "analyst_consensus": {
             "rating": raw_profile["analyst_consensus"].get("rating"),
-            "target_mean_price": make_field("target_mean_price", raw_profile["analyst_consensus"].get("target_mean_price"), raw_profile["analyst_consensus"].get("target_mean_price"), "currency", "forward", "consensus", "yfinance.info", as_of),
+            "target_mean_price": make_field(
+                "target_mean_price",
+                raw_profile["analyst_consensus"].get("target_mean_price"),
+                raw_profile["analyst_consensus"].get("target_mean_price"),
+                "currency",
+                "forward",
+                "consensus",
+                "yfinance.info",
+                as_of,
+            ),
             "analyst_count": raw_profile["analyst_consensus"].get("analyst_count"),
         },
     }
@@ -525,7 +702,9 @@ def _standard_company_profile(raw_profile: Dict[str, Any], as_of: Optional[str])
 
 def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     as_of = None
-    target_metrics = result.get("target_metrics", {}) if isinstance(result.get("target_metrics"), dict) else {}
+    target_metrics = (
+        result.get("target_metrics", {}) if isinstance(result.get("target_metrics"), dict) else {}
+    )
     fundamental_context = (
         result.get("fundamental_context", {})
         if isinstance(result.get("fundamental_context"), dict)
@@ -537,9 +716,36 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "symbol": item.get("symbol"),
                 "name": item.get("name"),
-                "total_mv": make_field("total_mv", item.get("market_cap", 0) * 1e9, item.get("market_cap"), "currency", "spot", "reported", "yfinance.info", as_of),
-                "revenue": make_field("revenue", item.get("revenue", 0) * 1e9, item.get("revenue"), "currency", "ttm", "reported", "yfinance.info", as_of),
-                "revenue_yoy": make_field("revenue_yoy", (item.get("growth", 0) / 100.0), item.get("growth"), "ratio", "ttm", "reported", "yfinance.info", as_of),
+                "total_mv": make_field(
+                    "total_mv",
+                    item.get("market_cap", 0) * 1e9,
+                    item.get("market_cap"),
+                    "currency",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "revenue": make_field(
+                    "revenue",
+                    item.get("revenue", 0) * 1e9,
+                    item.get("revenue"),
+                    "currency",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "revenue_yoy": make_field(
+                    "revenue_yoy",
+                    (item.get("growth", 0) / 100.0),
+                    item.get("growth"),
+                    "ratio",
+                    "ttm",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
             }
         )
     company_profile = result.get("target_profile", {})
@@ -573,7 +779,9 @@ def competitive_contract(result: Dict[str, Any]) -> Dict[str, Any]:
                 "yfinance.info",
                 fundamental_context.get("source_chain", []),
                 result.get("market_context", {}).get("methodology"),
-                result.get("market_context", {}).get("estimated_market_context", {}).get("methodology"),
+                result.get("market_context", {})
+                .get("estimated_market_context", {})
+                .get("methodology"),
             ),
             data_completeness="partial",
             limitations=["Market context, moat, and scenario outputs are heuristic analysis"],
@@ -601,17 +809,39 @@ def dcf_contract(result: Dict[str, Any]) -> Dict[str, Any]:
     )
     valuation_metrics = detail_fields.get("valuation_metrics") or {}
     payload = InterfacePayload(
-        entity={"symbol": result.get("symbol"), "name": result.get("company_name"), "currency": result.get("currency")},
+        entity={
+            "symbol": result.get("symbol"),
+            "name": result.get("company_name"),
+            "currency": result.get("currency"),
+        },
         facts={
             "fundamentals": fundamental_context,
             "inputs": {
-                "current_price": make_field("current_price", valuation_metrics.get("price", result.get("current_price")), valuation_metrics.get("price", result.get("current_price")), "currency", "spot", "reported", "yfinance.info", as_of),
-                "wacc": make_field("wacc", result.get("wacc") / 100.0 if result.get("wacc") is not None else None, result.get("wacc"), "ratio", "forward", "derived", "dcf_model", as_of),
+                "current_price": make_field(
+                    "current_price",
+                    valuation_metrics.get("price", result.get("current_price")),
+                    valuation_metrics.get("price", result.get("current_price")),
+                    "currency",
+                    "spot",
+                    "reported",
+                    "yfinance.info",
+                    as_of,
+                ),
+                "wacc": make_field(
+                    "wacc",
+                    result.get("wacc") / 100.0 if result.get("wacc") is not None else None,
+                    result.get("wacc"),
+                    "ratio",
+                    "forward",
+                    "derived",
+                    "dcf_model",
+                    as_of,
+                ),
                 "fcf_history": {
                     "source": result.get("fcf_source"),
                     "status": result.get("data_completeness", "partial"),
                 },
-            }
+            },
         },
         analysis={
             "outputs": {
@@ -661,7 +891,12 @@ def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         company_name=result.get("target_name"),
     )
     payload = InterfacePayload(
-        entity={"symbol": result.get("target_symbol"), "name": result.get("target_name"), "sector": result.get("sector"), "industry": result.get("industry")},
+        entity={
+            "symbol": result.get("target_symbol"),
+            "name": result.get("target_name"),
+            "sector": result.get("sector"),
+            "industry": result.get("industry"),
+        },
         facts={
             "fundamentals": fundamental_context,
             "target": {
@@ -686,7 +921,9 @@ def comps_contract(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         meta=InterfaceMeta(
             as_of=None,
-            sources=_normalize_sources("yfinance.info", fundamental_context.get("source_chain", [])),
+            sources=_normalize_sources(
+                "yfinance.info", fundamental_context.get("source_chain", [])
+            ),
             data_completeness="partial",
             limitations=result.get("peer_selection_limitations", []),
             interface_type="mixed",

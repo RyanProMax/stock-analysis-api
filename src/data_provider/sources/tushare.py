@@ -59,6 +59,250 @@ class TushareDataSource(BaseStockDataSource):
             print(f"⚠️ Tushare 初始化失败: {e}")
             return None
 
+    # ==================== Research / News ====================
+
+    @classmethod
+    def fetch_security_info(cls, market: str, symbol: str) -> Dict[str, Any]:
+        normalized_market = "us" if str(market).lower() == "us" else "cn"
+        if normalized_market == "us":
+            return {"record": None, "status": "empty", "error": None}
+
+        normalized = str(symbol or "").strip().upper()
+        if len(normalized) != 6 or not normalized.isdigit():
+            return {"record": None, "status": "empty", "error": None}
+
+        pro = cls.get_pro()
+        if pro is None:
+            return {"record": None, "status": "error", "error": "Tushare unavailable"}
+
+        ts_code = cls._build_cn_ts_code(normalized)
+        security_record, security_status, security_error = cls._fetch_cn_stock_security_info(
+            ts_code=ts_code
+        )
+        if security_record is not None:
+            return {
+                "record": security_record,
+                "status": security_status,
+                "error": security_error,
+            }
+
+        fund_record = cls._fetch_cn_fund_security_info(pro, symbol=normalized, ts_code=ts_code)
+        if fund_record is not None:
+            return {"record": fund_record, "status": "ok", "error": None}
+
+        return {"record": None, "status": "empty", "error": None}
+
+    @classmethod
+    def fetch_research_report(
+        cls,
+        *,
+        ts_code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._fetch_table_payload(
+            "research_report",
+            ts_code=ts_code,
+            start_date=cls._format_tushare_date(start_date),
+            end_date=cls._format_tushare_date(end_date),
+        )
+
+    @classmethod
+    def fetch_report_rc(
+        cls,
+        *,
+        ts_code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._fetch_table_payload(
+            "report_rc",
+            ts_code=ts_code,
+            start_date=cls._format_tushare_date(start_date),
+            end_date=cls._format_tushare_date(end_date),
+        )
+
+    @classmethod
+    def fetch_anns_d(
+        cls,
+        *,
+        ts_code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._fetch_table_payload(
+            "anns_d",
+            ts_code=ts_code,
+            start_date=cls._format_tushare_date(start_date),
+            end_date=cls._format_tushare_date(end_date),
+        )
+
+    @classmethod
+    def fetch_news(
+        cls,
+        *,
+        src: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._fetch_table_payload(
+            "news",
+            src=src,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    @classmethod
+    def fetch_major_news(
+        cls,
+        *,
+        src: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._fetch_table_payload(
+            "major_news",
+            src=src,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    @classmethod
+    def _fetch_table_payload(cls, method_name: str, **kwargs: Any) -> Dict[str, Any]:
+        df, status, error = cls._query_dataframe_with_status(method_name, **kwargs)
+        if status is not None:
+            return {"rows": [], "status": status, "error": error}
+        rows = cls.normalize_dataframe(df) if df is not None else []
+        if not rows:
+            return {"rows": [], "status": "empty", "error": None}
+        return {"rows": rows, "status": "ok", "error": None}
+
+    @classmethod
+    def _fetch_cn_stock_security_info(
+        cls,
+        *,
+        ts_code: str,
+    ) -> tuple[Optional[Dict[str, Any]], str, Optional[str]]:
+        for list_status in ("L", "D", "P"):
+            df, status, error = cls._query_dataframe_with_status(
+                "stock_basic",
+                ts_code=ts_code,
+                list_status=list_status,
+            )
+            if status is not None:
+                if status in {"permission_denied", "error"}:
+                    return None, status, error
+                continue
+            if df is None or df.empty:
+                continue
+
+            row = cls.normalize_dataframe(df.iloc[[0]])[0]
+            row["symbol"] = str(row.get("symbol") or ts_code.split(".")[0]).strip().upper()
+            row["ts_code"] = str(row.get("ts_code") or ts_code).strip().upper()
+            row["exchange"] = row.get("exchange") or cls._infer_exchange_from_ts_code(
+                row["ts_code"]
+            )
+            row["list_status"] = row.get("list_status") or list_status
+            row["security_type"] = "stock"
+            return row, "ok", None
+
+        return None, "empty", None
+
+    @classmethod
+    def _fetch_cn_fund_security_info(
+        cls,
+        pro: Any,
+        *,
+        symbol: str,
+        ts_code: str,
+    ) -> Optional[Dict[str, Any]]:
+        etf_df = cls._safe_query_dataframe(pro, "etf_basic", ts_code=ts_code)
+        if etf_df is not None and not etf_df.empty:
+            row = cls.normalize_dataframe(etf_df.iloc[[0]])[0]
+            return {
+                "symbol": symbol,
+                "ts_code": ts_code,
+                "name": row.get("name") or symbol,
+                "list_date": row.get("list_date"),
+                "delist_date": row.get("delist_date"),
+                "exchange": row.get("exchange") or cls._infer_exchange_from_ts_code(ts_code),
+                "market": "ETF",
+                "list_status": row.get("list_status") or row.get("status") or "L",
+                "security_type": "etf",
+            }
+
+        fund_row = cls._fetch_cn_fund_basic_row(pro, symbol=symbol, raw_ts_code=ts_code)
+        if fund_row:
+            return {
+                "symbol": symbol,
+                "ts_code": str(fund_row.get("ts_code") or ts_code).strip().upper(),
+                "name": fund_row.get("name") or symbol,
+                "list_date": fund_row.get("list_date") or fund_row.get("found_date"),
+                "delist_date": fund_row.get("delist_date"),
+                "exchange": fund_row.get("exchange") or cls._infer_exchange_from_ts_code(ts_code),
+                "market": fund_row.get("fund_type") or "基金",
+                "list_status": fund_row.get("status") or "L",
+                "security_type": "fund",
+            }
+
+        if cls._is_cn_etf_symbol(symbol):
+            return {
+                "symbol": symbol,
+                "ts_code": ts_code,
+                "name": symbol,
+                "list_date": None,
+                "delist_date": None,
+                "exchange": cls._infer_exchange_from_ts_code(ts_code),
+                "market": "ETF",
+                "list_status": "L",
+                "security_type": "etf",
+            }
+        return None
+
+    @classmethod
+    def _query_dataframe_with_status(
+        cls,
+        method_name: str,
+        **kwargs: Any,
+    ) -> tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
+        pro = cls.get_pro()
+        if pro is None:
+            return None, "error", "Tushare unavailable"
+
+        try:
+            method = getattr(pro, method_name)
+        except AttributeError:
+            return None, "not_supported", f"{method_name} not supported"
+
+        query_kwargs = {key: value for key, value in kwargs.items() if value not in (None, "")}
+        try:
+            result = method(**query_kwargs)
+        except Exception as exc:
+            status = cls._classify_query_exception(exc)
+            return None, status, str(exc)
+
+        if not isinstance(result, pd.DataFrame):
+            return None, "error", f"{method_name} did not return dataframe"
+        return result, None, None
+
+    @staticmethod
+    def _classify_query_exception(exc: Exception) -> str:
+        text = str(exc).lower()
+        permission_tokens = (
+            "permission",
+            "denied",
+            "privilege",
+            "权限",
+            "无权限",
+            "未开通",
+            "请开通",
+            "积分",
+            "抱歉",
+        )
+        if any(token in text for token in permission_tokens):
+            return "permission_denied"
+        return "error"
+
     # ==================== 日线数据实现 ====================
 
     def get_realtime_quote(self, symbol: str) -> Optional[UnifiedRealtimeQuote]:
@@ -280,7 +524,14 @@ class TushareDataSource(BaseStockDataSource):
                 "list_date": list_date,
                 "fullname": fullname,
             }
-            for key in ("fund_type", "invest_type", "benchmark", "status", "management", "custodian"):
+            for key in (
+                "fund_type",
+                "invest_type",
+                "benchmark",
+                "status",
+                "management",
+                "custodian",
+            ):
                 value = fund_row.get(key) or row.get(key)
                 if value not in (None, ""):
                     etf_payload[key] = value
@@ -312,11 +563,7 @@ class TushareDataSource(BaseStockDataSource):
             symbol = str(row.get("symbol") or "").strip().upper()
             if not symbol and ts_code:
                 symbol = ts_code.split(".")[0]
-            if (
-                not symbol
-                or symbol not in expected_symbols
-                or not self._is_cn_etf_symbol(symbol)
-            ):
+            if not symbol or symbol not in expected_symbols or not self._is_cn_etf_symbol(symbol):
                 continue
             normalized_row = dict(row)
             normalized_row["ts_code"] = self._build_cn_ts_code(symbol)
@@ -396,7 +643,9 @@ class TushareDataSource(BaseStockDataSource):
             row["symbol"] = str(row.get("symbol") or symbol).strip().upper()
             row["ts_code"] = str(row.get("ts_code") or ts_symbol).strip().upper()
             row["market"] = row.get("market") or "A股"
-            row["exchange"] = row.get("exchange") or cls._infer_exchange_from_ts_code(row["ts_code"])
+            row["exchange"] = row.get("exchange") or cls._infer_exchange_from_ts_code(
+                row["ts_code"]
+            )
             return row
         except Exception:
             return None
@@ -473,14 +722,22 @@ class TushareDataSource(BaseStockDataSource):
                 )
 
             if limit_df is not None and not limit_df.empty and "trade_date" in limit_df.columns:
-                keep_columns = [col for col in ("trade_date", "up_limit", "down_limit") if col in limit_df.columns]
+                keep_columns = [
+                    col
+                    for col in ("trade_date", "up_limit", "down_limit")
+                    if col in limit_df.columns
+                ]
                 daily_df = daily_df.merge(
                     limit_df[keep_columns].drop_duplicates("trade_date"),
                     on="trade_date",
                     how="left",
                 )
 
-            if daily_basic_df is not None and not daily_basic_df.empty and "trade_date" in daily_basic_df.columns:
+            if (
+                daily_basic_df is not None
+                and not daily_basic_df.empty
+                and "trade_date" in daily_basic_df.columns
+            ):
                 keep_columns = [
                     col
                     for col in (
@@ -546,7 +803,9 @@ class TushareDataSource(BaseStockDataSource):
         end_text = cls._format_tushare_date(end_date) or cls._format_tushare_date(today_text)
 
         try:
-            cal_df = pro.trade_cal(exchange="", start_date=start_text, end_date=end_text, is_open="1")
+            cal_df = pro.trade_cal(
+                exchange="", start_date=start_text, end_date=end_text, is_open="1"
+            )
         except Exception:
             return []
 
@@ -569,7 +828,9 @@ class TushareDataSource(BaseStockDataSource):
             return None
 
         try:
-            cal_df = pro.trade_cal(exchange="", start_date=trade_date_text, end_date=trade_date_text)
+            cal_df = pro.trade_cal(
+                exchange="", start_date=trade_date_text, end_date=trade_date_text
+            )
         except Exception:
             return None
 
@@ -966,7 +1227,9 @@ class TushareDataSource(BaseStockDataSource):
         meta = {
             "latest_ann_date": latest.get("ann_date"),
             "latest_end_date": latest.get("end_date"),
-            "revenue_growth_status": "available" if revenue_growth_ratio is not None else "unavailable",
+            "revenue_growth_status": (
+                "available" if revenue_growth_ratio is not None else "unavailable"
+            ),
         }
         if revenue_growth_ratio is not None:
             meta["revenue_growth_ratio"] = revenue_growth_ratio

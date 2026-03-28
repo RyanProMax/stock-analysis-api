@@ -119,8 +119,11 @@ class TestHTTPOnlyStructuredContracts:
         )
         assert payload["meta"]["report_date"] == "2026-01-31"
         assert payload["facts"]["consensus_comparison"]["status"] == "unavailable"
-        assert payload["analysis"]["research_strategy"]["framework"].startswith("financial-services-plugins")
-        assert payload["analysis"]["key_metrics"]["dividend_metrics"]["ttm_cash_dividend_per_share"] == 0.04
+        assert "research_strategy" not in payload["analysis"]
+        assert (
+            payload["analysis"]["key_metrics"]["dividend_metrics"]["ttm_cash_dividend_per_share"]
+            == 0.04
+        )
 
     def test_dcf_contract_marks_model_interface(self):
         payload = dcf_contract(
@@ -134,7 +137,10 @@ class TestHTTPOnlyStructuredContracts:
                 "data_completeness": "partial",
                 "assumptions_source": "heuristic",
                 "as_of": "2026-01-31",
-                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
+                "fundamental_context": {
+                    "market": "us",
+                    "source_chain": [{"provider": "yfinance.info", "result": "ok"}],
+                },
             }
         )
         assert payload["meta"]["interface_type"] == "model"
@@ -171,7 +177,10 @@ class TestHTTPOnlyStructuredContracts:
         assert payload["facts"]["fundamentals"]["market"] == "us"
         assert payload["facts"]["target"]["financial_report"]["revenue"] == 1000
         assert payload["facts"]["target"]["valuation_metrics"]["price"] == 100
-        assert payload["facts"]["target"]["company_profile"]["overview"]["total_mv"]["field"] == "total_mv"
+        assert (
+            payload["facts"]["target"]["company_profile"]["overview"]["total_mv"]["field"]
+            == "total_mv"
+        )
 
     def test_competitive_contract_uses_dsa_style_peer_fields_and_normalized_sources(self):
         payload = competitive_contract(
@@ -216,7 +225,13 @@ class TestHTTPOnlyStructuredContracts:
                 "target_profile": {},
                 "comparative": {
                     "comparison_table": [
-                        {"symbol": "AMD", "name": "AMD", "market_cap": 500, "revenue": 200, "growth": 20}
+                        {
+                            "symbol": "AMD",
+                            "name": "AMD",
+                            "market_cap": 500,
+                            "revenue": 200,
+                            "growth": 20,
+                        }
                     ]
                 },
                 "market_context": {
@@ -250,7 +265,10 @@ class TestHTTPOnlyStructuredContracts:
                 "historical_source": "yfinance financial statements",
                 "as_of": "2026-01-31",
                 "limitations": [],
-                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
+                "fundamental_context": {
+                    "market": "us",
+                    "source_chain": [{"provider": "yfinance.info", "result": "ok"}],
+                },
             }
         )
         assert payload["meta"]["interface_type"] == "model"
@@ -264,7 +282,10 @@ class TestHTTPOnlyStructuredContracts:
                 "purchase_price": 1000,
                 "current_price": 100,
                 "assumptions_source": "entry_exit_multiples_leverage_and_margin_assumptions",
-                "fundamental_context": {"market": "us", "source_chain": [{"provider": "yfinance.info", "result": "ok"}]},
+                "fundamental_context": {
+                    "market": "us",
+                    "source_chain": [{"provider": "yfinance.info", "result": "ok"}],
+                },
             }
         )
         assert payload["facts"]["fundamentals"]["market"] == "us"

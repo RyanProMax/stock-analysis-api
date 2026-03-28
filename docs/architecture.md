@@ -1,19 +1,21 @@
 # 架构约束
 
-更新时间：2026-03-24
+更新时间：2026-03-28
 
 ## 系统边界
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
+- 仓库允许保留内部 `scripts/` 作为 Agent / skill 调用入口，但这类脚本不属于公共接口，不改变“HTTP 是对外协议”的边界
 - `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
-- 新增能力时只更新 HTTP 路由、schema、文档和测试
+- 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
 - 业务逻辑放在 `src/services/`、`src/repositories/` 或 `src/analyzer/`
 - 标准化 contract 放在 `src/model/contracts.py` 和 `src/analyzer/normalizers.py`
 
 ## 模块边界
 
 ```text
+scripts/            # 内部脚本入口（skill / agent 调用），不属于公共 API
 src/
 ├── analyzer/         # 因子计算、分析拼装、标准化适配
 ├── api/              # FastAPI 路由、schema 与 deps
@@ -27,6 +29,7 @@ src/
 ```
 
 - `api/` 只负责 HTTP 输入输出，不承载业务规则
+- `scripts/` 只负责内部脚本参数解析、结果输出和轻量编排，不承载核心业务规则
 - `services/` 负责工作流、读写编排和聚合逻辑
 - `repositories/` 负责单机 SQLite 行情仓访问，不承载分析规则
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
@@ -115,6 +118,7 @@ src/
   - 质量检查
   - 限制说明
 - 输出中的关键结论应可追溯到事实、证据或模型方法
+- research snapshot 内部脚本固定返回结构化数据块与确定性衍生，不输出自由文本总结、主观 thesis、评级建议或目标价结论
 
 ## 演进方向
 

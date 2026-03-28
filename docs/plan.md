@@ -1,68 +1,47 @@
 # 当前任务计划
 
-更新时间：2026-03-24
+更新时间：2026-03-28
 
 ## 当前目标
 
-- 为 `cn_symbols` 扩展当前上市 A 股 ETF 快照，并与现有 A 股股票共存于同一张表
-- 在每日首次任意 HTTP 请求时后台触发 `cn_symbols / us_symbols` 刷新检查，且不阻塞当前请求
-- 收口 symbols 刷新链路日志语义，明确区分 SQLite 命中、source 内存缓存命中、source 外部拉取与快照刷新完成
+- 新增 `scripts/poll_research_snapshot.py`，交付 Tushare-first 的 CN 股票研报快照脚本，供内部 Agent / skill 调用
+- 建立 research snapshot 的单源运行、可多源扩展 provider 骨架，并固定输出结构化 JSON contract
+- 清理现有 HTTP `/analysis/earnings/earnings` 输出中的旧 `analysis.research_strategy` 叙事结构，只保留确定性字段
 
 ## 最近完成项
 
-- 为 `BaseStockDataSource` 新增统一 symbols 拉取日志，明确区分 `symbol source cache hit` 与 `symbol source fetch success`
-- 为 `TushareDataSource` 新增 `fetch_cn_etfs()`，通过 `etf_basic` 拉取当前上市 ETF，并标准化为 `market=ETF`
-- 将 `SymbolCatalogService.refresh_market_snapshot()` 扩展为 `refresh_market_snapshot_result()`，支持返回 `success`、`source`、`partial`、`reason`
-- 将 `cn` 市场 symbols 刷新改为“股票快照 + ETF 快照”合并后统一覆盖写入 `cn_symbols`
-- 锁定 `cn` 刷新规则：股票拉取失败则整次刷新失败；ETF 拉取失败仅记为 `partial`，不阻断股票快照刷新
-- 为 `resolve_symbol()` 增加 ETF 旁路，避免 ETF 记录误走 A 股股票 metadata 补齐链路
-- 新增 `SymbolSnapshotRefreshService`，维护 `cn/us` 各自的 `last_checked_date`、`last_success_at`、`last_error`、`in_flight`
-- 在 FastAPI 全局 middleware 接入 symbols preflight；`/health` 与业务接口都会触发，`/docs`、`/redoc`、`/openapi.json` 会跳过
-- 每日 preflight 固定后台异步执行，不阻塞当前 HTTP 请求
-- A 股开市判断复用 `Tushare trade_cal`；美股开市判断使用 `yfinance` `SPY` best-effort，并允许工作日 fallback
-- 新增 `MarketDataRepository.get_symbol_snapshot_meta()`，用于判断今日 symbols 快照是否已是最新
-- 保持 `sync-market-data --market cn --scope all` 只同步股票日线，不把 `market=ETF` 记录纳入 `cn_daily` 全市场补库 universe
-- 已补充并通过本轮定向测试：`tests/test_symbol_snapshot_refresh.py`、`tests/test_market_data_warehouse.py`
-- 已定位当前本地库 `cn_symbols` 未落入 ETF 的直接原因：preflight 用 `MAX(updated_at)` 判断“今日快照已最新”，被单条 symbol upsert 误判为整表 current
-- 已将 symbols 快照新鲜度判断改为同时检查整表 `MIN(updated_at)` 与 `MAX(updated_at)`；单条 row 的今日更新时间不再把整张表误判为当日全量快照
-- 已对默认库 `.cache/market_data.sqlite` 重刷一次 `cn_symbols`；当前 `cn_symbols=6460`，其中 `market=ETF` 为 `1460`
-- 已按 DSA 思路对齐 ETF 元信息链路：批量快照继续使用 `etf_basic`，ETF 名称与基金元信息优先通过 `fund_basic` 回填
-- 已统一 ETF `ts_code/exchange` 标准化口径：A 股 ETF 不再写入 `.OF`，统一落为 `.SH/.SZ` 与 `SSE/SZSE`
-- 已再次重刷默认库；当前 `1460` 个 ETF 中仍有 `64` 个名称等于代码，抽样确认这些 symbol 在 Tushare `fund_basic(ts_code=...)` 下也返回空，属于上游缺口
+- 已确认新能力是内部脚本入口，不改变“HTTP 是公共接口”的系统边界
+- 已核实 Tushare `research_report`、`report_rc`、`anns_d` 的官方参数与字段形状，确定 schema 直接以 Tushare 字段为准
+- 已确认 `news` / `major_news` 不能按股票直接过滤，v1 固定采用“按来源拉取 + 按股票名/代码提及过滤”的确定性策略
+- 已确认仓库当前不存在 `poll_realtime_quotes.py`，本轮不追不存在的对齐脚本，只新增共享 identity helper 供 research snapshot 使用
+- 已锁定 HTTP 清理范围：删除 `src/analyzer/research_strategy.py` 及其在 earnings contract 中的引用，并同步调整测试与文档
+- 已新增 `scripts/poll_research_snapshot.py`、research snapshot service / CLI、Tushare research fetchers 与 shared identity contract
+- 已完成 `/analysis/earnings/earnings` 的旧 `analysis.research_strategy` 清理，并同步调整文档与测试
+- 已完成定向测试与全量测试，当前 `96 passed`
 
 ## 当前状态
 
-- HTTP 服务仍是唯一对外协议
-- `facts / analysis / meta` 分层仍是当前输出 contract 基线
-- symbols 相关代码已基本落地本轮方案，但 `docs/` 与 `AGENTS.md` 仍停留在旧口径，尚未同步到 ETF + 每日 preflight 语义
-- `cn_symbols` 已开始支持“当前上市 A 股股票 + ETF”统一快照，ETF 与股票共存于同一张表
-- `cn_symbols.market` 当前直接承担类型区分：股票保留原板块值，ETF 统一为 `ETF`
-- `SymbolCatalogService.list_symbols()` 与 `search_symbols()` 仍默认优先读取 SQLite；只有冷启动、显式 refresh 或每日 preflight 命中时才会走 source 刷新
-- 每日首次请求触发的 symbols preflight 当前为进程内状态，不跨进程共享，也不会持久化到 SQLite
-- 每个市场只有在“成功检查”后才会将当天封账；若检查失败或刷新失败，当天后续请求仍允许再次尝试
-- A 股开市判断依赖 `Tushare trade_cal`
-- 美股开市判断为基于 `SPY` 的 `yfinance` best-effort 策略；当会话信息不可用时会退化为工作日 fallback
-- `sync-market-data` 当前仍只覆盖股票日线 universe；ETF 不进入 `cn_daily` 全市场补库
-- `/health` 当前仍是唯一健康检查接口，且已纳入“任意 HTTP 请求”范围，会触发后台 symbols preflight
-- 当前默认库 `.cache/market_data.sqlite` 已完成重刷，`cn_symbols` 中 ETF 已实际落库
-- 默认库中的 ETF 名称与基金扩展信息已明显改善，例如 `159002 -> 易方达保证金B`、`510300 -> 沪深300ETF华泰柏瑞`
+- 公共接口仍然只有 HTTP REST API；内部 `scripts/` 允许承载 skill / agent 调用脚本
+- `scripts/poll_research_snapshot.py` 已落地，当前支持 `CN` 股票与 `US not_implemented` 占位
+- research snapshot 当前固定走 `tushare` provider registry，并保留多源 fallback 骨架与 `attempted_sources`
+- `news` / `major_news` 当前采用固定来源 + 标题/正文提及过滤，不做主观聚合
+- `/analysis/earnings/earnings` 已移除旧 `analysis.research_strategy`，仅保留确定性字段
+- `docs/specs/tushare-first-research-snapshot.md` 已补充本轮 contract、状态语义和 derived 规则
 
 ## 下一步计划
 
 ### P0
 
-- 继续观察每日 preflight 在真实请求中的触发日志，确认不会再被单条 symbol upsert 提前封账
-- 继续观察残留 `64` 个代码名 ETF；若后续需要进一步补齐，只能引入额外数据源或离线映射，单靠当前 Tushare 接口无法完全覆盖
+- 用真实 Tushare 凭证验证 `research_report`、`report_rc`、`anns_d`、`news`、`major_news` 的权限语义与线上字段稳定性
+- 观察 `news` / `major_news` 提及过滤的噪音情况，决定后续是否需要更严格的标题优先规则
 
 ### P1
 
-- 更新 `docs/architecture.md`、`docs/api.md`、`docs/specs/local-daily-warehouse.md` 与 `AGENTS.md`
-- 完成本轮定向回归并提交 commit
+- 若后续接入 US 或第二数据源，再在当前 dispatcher 上扩展 provider registry
+- 本轮代码已准备提交 commit
 
 ## 已知风险与阻塞
 
-- 美股 symbols preflight 的开市判断仍是 `yfinance` best-effort；当 `SPY` 会话信息不可用时会退化为工作日 fallback，精度低于交易所日历
-- symbols preflight 当前是进程内协调状态；多进程部署时每个进程都会独立判断并可能各自触发一次后台刷新
-- A 股 ETF 快照当前只扩到 `etf_basic`，不扩展到全部公募基金，也不提供 ETF-only 过滤参数
-- `sync-market-data` 当前仍只覆盖股票日线；若未来需要 ETF 日线 canonical 仓，需要单独设计 scope 和数据口径
-- 旧兼容导入层仍然存在，后续若要继续收敛，需要逐步清理 `src/core/` / `src/storage/` 的转发用法
+- `research_report`、`anns_d`、`news`、`major_news` 都可能受 Tushare 单独权限限制，必须在 `source_meta` 中清晰区分 `permission_denied` 与空结果
+- `news` / `major_news` 的提及过滤依赖标题与正文文本命中，存在一定召回 / 精度折中，但本阶段不做主观合并或语义扩展
+- `US` 本轮只做 schema 预留，不交付实际研报策略
