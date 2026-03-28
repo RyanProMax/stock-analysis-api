@@ -17,6 +17,7 @@
 - 已删除旧 `/valuation/*`、`/model/*`、`/analysis/*` 专项公共路由，并从 OpenAPI 中移除
 - 已将 `dcf`、`comps`、`earnings`、`competitive` 等模块统一纳入单入口输出，并在统一出口去除 `recommendation`、`confidence`、`price_target`、`moat_assessment`、`positioning`、`thesis`、`conviction`
 - 已更新 CLI、HTTP 测试与 service 测试，覆盖默认模块、显式模块、`module_options`、旧路由删除与客观字段约束
+- 已将 `docs/strategy.md` 改为基于 `300827` 的“全模块真实返回 + JSON 内联注释”文档，直接解释当前所有返回字段含义
 
 ## 当前状态
 
