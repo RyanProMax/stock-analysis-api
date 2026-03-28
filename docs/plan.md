@@ -17,7 +17,9 @@
 - 已锁定 HTTP 清理范围：删除 `src/analyzer/research_strategy.py` 及其在 earnings contract 中的引用，并同步调整测试与文档
 - 已新增 `scripts/poll_research_snapshot.py`、research snapshot service / CLI、Tushare research fetchers 与 shared identity contract
 - 已完成 `/analysis/earnings/earnings` 的旧 `analysis.research_strategy` 清理，并同步调整文档与测试
-- 已完成定向测试与全量测试，当前 `96 passed`
+- 已完成定向测试与全量测试，当前 `97 passed`
+- 已修复 `report_rc` 请求窗口仅命中 `非个股` 时的回退策略，改为回退到最近个股研报日期
+- 已补充 `docs/strategy.md`，明确当前项目的分析边界是“确定性 workflow / derived”，不包含主观研判
 
 ## 当前状态
 
@@ -25,8 +27,10 @@
 - `scripts/poll_research_snapshot.py` 已落地，当前支持 `CN` 股票与 `US not_implemented` 占位
 - research snapshot 当前固定走 `tushare` provider registry，并保留多源 fallback 骨架与 `attempted_sources`
 - `news` / `major_news` 当前采用固定来源 + 标题/正文提及过滤，不做主观聚合
+- 当请求窗口内只有 `非个股` 的 `report_rc` 时，当前会回退到最近个股 `report_rc` 日期，避免误判为无个股研究覆盖
 - `/analysis/earnings/earnings` 已移除旧 `analysis.research_strategy`，仅保留确定性字段
 - `docs/specs/tushare-first-research-snapshot.md` 已补充本轮 contract、状态语义和 derived 规则
+- `docs/strategy.md` 已明确说明：research snapshot 不是原始透传，但也不包含 LLM 或主观研究结论层
 
 ## 下一步计划
 
@@ -38,7 +42,7 @@
 ### P1
 
 - 若后续接入 US 或第二数据源，再在当前 dispatcher 上扩展 provider registry
-- 本轮代码已准备提交 commit
+- 若后续重新引入主观研究层，需要先定义与当前确定性输出分层隔离的 contract
 
 ## 已知风险与阻塞
 
