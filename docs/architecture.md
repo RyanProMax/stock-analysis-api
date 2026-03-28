@@ -6,6 +6,7 @@
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
 - 仓库允许保留内部 `scripts/` 作为 Agent / skill 调用入口，但这类脚本不属于公共接口，不改变“HTTP 是对外协议”的边界
+- 公共研究分析能力统一收敛到单一 `POST /analysis/research/snapshot` 入口，不再暴露分散的 `/valuation/*`、`/model/*`、`/analysis/*` 专项分析路由
 - `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
 - 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
@@ -39,6 +40,8 @@ src/
 ## 输出 contract 约束
 
 - 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
+- `POST /analysis/research/snapshot` 作为统一快照入口，顶层返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
+- research snapshot 的结构化分析模块可在 item 内直接展开 `entity`、`facts`、`analysis`、`meta`，并补齐 `module_status`、`module_error`、`attempted_sources`
 - 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
@@ -97,6 +100,8 @@ src/
 - A 股 `/watch/poll` 基本面固定为轻量模式：优先消费 realtime quote 与本地 canonical daily 事实，不再触发重型多源财务 fallback
 - provider 不支持某项能力时，应视为 `not_supported`，不能计入失败、不能污染熔断状态
 - `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
+- `POST /analysis/research/snapshot` 只允许输出客观、结构化、可追溯的研究能力，不输出主观 thesis、评级建议、目标价结论、morning note 或 investment idea 文案
+- unified research snapshot 的模块选择固定通过请求体 `modules` / `module_options` 表达，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日
@@ -118,7 +123,7 @@ src/
   - 质量检查
   - 限制说明
 - 输出中的关键结论应可追溯到事实、证据或模型方法
-- research snapshot 内部脚本固定返回结构化数据块与确定性衍生，不输出自由文本总结、主观 thesis、评级建议或目标价结论
+- research snapshot 脚本与公共 HTTP 入口必须保持同构 contract，不输出自由文本总结、主观 thesis、评级建议或目标价结论
 
 ## 演进方向
 

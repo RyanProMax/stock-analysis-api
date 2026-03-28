@@ -3,13 +3,10 @@ HTTP API contract tests for the HTTP-only structured response model.
 """
 
 from fastapi.testclient import TestClient
+
+import src.api.routes.research as research_route
 import src.api.routes.stock as stock_route
 import src.api.routes.watch as watch_route
-import src.api.routes.valuation as valuation_route
-import src.api.routes.comps as comps_route
-import src.api.routes.model as model_route
-import src.api.routes.competitive as competitive_route
-import src.api.routes.earnings as earnings_route
 import src.main as main_module
 
 from tests.conftest import TEST_SYMBOL
@@ -24,12 +21,38 @@ def assert_structured_payload(payload: dict):
     assert payload["meta"]["interface_type"] in {"fact", "mixed", "model"}
 
 
+def assert_no_subjective_keys(value):
+    forbidden = {
+        "recommendation",
+        "confidence",
+        "price_target",
+        "moat_assessment",
+        "thesis",
+        "conviction",
+        "positioning",
+    }
+    if isinstance(value, dict):
+        assert forbidden.isdisjoint(value.keys())
+        for item in value.values():
+            assert_no_subjective_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            assert_no_subjective_keys(item)
+
+
 def stub_structured_payload(interface_type: str = "mixed") -> dict:
     return {
         "entity": {"symbol": TEST_SYMBOL, "name": "NVIDIA"},
         "facts": {"market_snapshot": {}, "quote": {}},
         "analysis": {"technical_signals": {}, "delta": {}},
-        "meta": {"schema_version": "2.0.0", "interface_type": interface_type},
+        "meta": {
+            "schema_version": "2.0.0",
+            "as_of": None,
+            "sources": ["test"],
+            "data_completeness": "ok",
+            "limitations": [],
+            "interface_type": interface_type,
+        },
     }
 
 
@@ -40,6 +63,67 @@ class StubResult:
 
     def to_dict(self):
         return self._payload
+
+
+def stub_snapshot_payload() -> dict:
+    return {
+        "status": "ok",
+        "computed_at": "2026-03-28T10:00:00+00:00",
+        "source": "research_snapshot_dispatcher",
+        "market": "us",
+        "strategy": "fsp_objective_research_snapshot_v1",
+        "request": {
+            "market": "us",
+            "symbols": [TEST_SYMBOL],
+            "start_date": "20260301",
+            "end_date": "20260328",
+            "modules": ["earnings", "dcf"],
+            "module_options": {"dcf": {"risk_free_rate": 0.04}},
+        },
+        "items": [
+            {
+                "requested_symbol": TEST_SYMBOL,
+                "status": "ok",
+                "error": None,
+                "info": {
+                    "common": {
+                        "ts_code": None,
+                        "name": "NVIDIA",
+                        "list_date": None,
+                        "delist_date": None,
+                    },
+                    "cn_specific": {
+                        "symbol": None,
+                        "exchange": None,
+                        "list_status": None,
+                        "area": None,
+                        "industry": None,
+                        "market": None,
+                    },
+                    "us_specific": {
+                        "ts_code": TEST_SYMBOL,
+                        "name": "NVIDIA",
+                        "enname": None,
+                        "classify": "stock",
+                        "list_date": None,
+                        "delist_date": None,
+                    },
+                },
+                "earnings": {
+                    **stub_structured_payload("mixed"),
+                    "module_status": "ok",
+                    "module_error": None,
+                    "attempted_sources": ["yfinance"],
+                },
+                "dcf": {
+                    **stub_structured_payload("model"),
+                    "module_status": "ok",
+                    "module_error": None,
+                    "attempted_sources": ["yfinance"],
+                },
+            }
+        ],
+    }
 
 
 class TestHealthEndpoints:
@@ -234,167 +318,95 @@ class TestStockEndpoints:
         assert payload["meta"]["degradation"]["quote_mode"] == "realtime"
 
 
-class TestValuationEndpoints:
-    def test_dcf_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(valuation_route.DCFModel, "analyze", lambda self, symbol: StubResult())
+class TestResearchSnapshotEndpoints:
+    def test_research_snapshot_contract(self, client: TestClient, monkeypatch):
         monkeypatch.setattr(
-            valuation_route,
-            "dcf_contract",
-            lambda payload: stub_structured_payload("model"),
+            research_route.research_snapshot_service,
+            "poll_snapshot",
+            lambda **kwargs: stub_snapshot_payload(),
         )
 
-        response = client.get(f"/valuation/dcf?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "model"
-
-    def test_comps_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(
-            comps_route.comps_analyzer, "analyze", lambda symbol, sector=None: StubResult()
+        response = client.post(
+            "/analysis/research/snapshot",
+            json={
+                "market": "us",
+                "symbols": [TEST_SYMBOL],
+                "start_date": "20260301",
+                "end_date": "20260328",
+                "modules": ["earnings", "dcf"],
+                "module_options": {"dcf": {"risk_free_rate": 0.04}},
+            },
         )
-        monkeypatch.setattr(
-            comps_route,
-            "comps_contract",
-            lambda payload: stub_structured_payload("mixed"),
-        )
-
-        response = client.get(f"/valuation/comps?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "mixed"
-
-
-class TestModelEndpoints:
-    def test_lbo_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(model_route.LBOModel, "analyze", lambda self, symbol: StubResult())
-        monkeypatch.setattr(
-            model_route,
-            "lbo_contract",
-            lambda payload: stub_structured_payload("model"),
-        )
-
-        response = client.get(f"/model/lbo?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "model"
-
-    def test_three_statement_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(
-            model_route.ThreeStatementModel,
-            "analyze",
-            lambda self, symbol, scenario: StubResult(),
-        )
-        monkeypatch.setattr(
-            model_route,
-            "three_statement_contract",
-            lambda payload: stub_structured_payload("model"),
-        )
-
-        response = client.get(f"/model/three-statement?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "model"
-
-
-class TestAnalysisEndpoints:
-    def test_competitive_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(
-            competitive_route.CompetitiveAnalyzer,
-            "analyze",
-            lambda self, symbol, competitors=None, industry="technology": StubResult(),
-        )
-        monkeypatch.setattr(
-            competitive_route,
-            "competitive_contract",
-            lambda payload: stub_structured_payload("mixed"),
-        )
-
-        response = client.get(f"/analysis/competitive/competitive?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "mixed"
-
-    def test_earnings_contract(self, client: TestClient, monkeypatch):
-        monkeypatch.setattr(
-            earnings_route.EarningsAnalyzer,
-            "analyze",
-            lambda self, symbol, quarter=None, fiscal_year=None: StubResult(),
-        )
-        monkeypatch.setattr(
-            earnings_route,
-            "earnings_contract",
-            lambda payload: stub_structured_payload("mixed"),
-        )
-
-        response = client.get(f"/analysis/earnings/earnings?symbol={TEST_SYMBOL}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status_code"] == 200
-        if data["data"]:
-            assert_structured_payload(data["data"])
-            assert data["data"]["meta"]["interface_type"] == "mixed"
-
-    def test_earnings_response_no_longer_contains_research_strategy(
-        self, client: TestClient, monkeypatch
-    ):
-        monkeypatch.setattr(
-            earnings_route.EarningsAnalyzer,
-            "analyze",
-            lambda self, symbol, quarter=None, fiscal_year=None: StubResult(
-                payload={
-                    "symbol": symbol,
-                    "company_name": "NVIDIA",
-                    "report_date": "2026-01-31",
-                    "as_of": "2026-01-31",
-                    "earnings_summary": {
-                        "revenue": {"actual": "$68.13B"},
-                        "earnings_per_share": {"eps": "$1.76"},
-                    },
-                    "beat_miss_analysis": {"status": "unavailable"},
-                    "fundamental_context": {
-                        "earnings": {
-                            "data": {
-                                "dividend": {
-                                    "ttm_cash_dividend_per_share": 0.04,
-                                    "ttm_dividend_yield_pct": 0.02,
-                                }
-                            }
-                        }
-                    },
-                    "segment_performance": [],
-                    "guidance": {},
-                    "key_metrics": {},
-                    "trends": {},
-                    "sources": [],
-                }
-            ),
-        )
-
-        response = client.get(f"/analysis/earnings/earnings?symbol={TEST_SYMBOL}")
 
         assert response.status_code == 200
         data = response.json()
         assert data["status_code"] == 200
-        assert "research_strategy" not in data["data"]["analysis"]
-        assert "key_metrics" in data["data"]["analysis"]
+        payload = data["data"]
+        assert payload["source"] == "research_snapshot_dispatcher"
+        assert payload["strategy"] == "fsp_objective_research_snapshot_v1"
+        assert payload["request"]["modules"] == ["earnings", "dcf"]
+        item = payload["items"][0]
+        assert item["requested_symbol"] == TEST_SYMBOL
+        assert item["earnings"]["module_status"] == "ok"
+        assert item["dcf"]["module_status"] == "ok"
+        assert_structured_payload(item["earnings"])
+        assert_structured_payload(item["dcf"])
+        assert_no_subjective_keys(payload)
 
+    def test_research_snapshot_passes_modules_and_options(self, client: TestClient, monkeypatch):
+        captured = {}
 
-class TestErrorHandling:
-    def test_missing_required_param(self, client: TestClient):
-        response = client.get("/valuation/dcf")
-        assert response.status_code in [400, 422]
+        def fake_poll_snapshot(**kwargs):
+            captured.update(kwargs)
+            return stub_snapshot_payload()
+
+        monkeypatch.setattr(
+            research_route.research_snapshot_service,
+            "poll_snapshot",
+            fake_poll_snapshot,
+        )
+
+        response = client.post(
+            "/analysis/research/snapshot",
+            json={
+                "market": "cn",
+                "symbols": ["600519", "600519"],
+                "modules": ["screen"],
+                "module_options": {"screen": {"filters": {"pe_ratio": {"lte": 20}}}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert captured["market"] == "cn"
+        assert captured["symbols"] == ["600519", "600519"]
+        assert captured["modules"] == ["screen"]
+        assert captured["module_options"] == {"screen": {"filters": {"pe_ratio": {"lte": 20}}}}
+
+    def test_old_routes_removed_from_router_and_openapi(self, client: TestClient):
+        for path in (
+            f"/valuation/dcf?symbol={TEST_SYMBOL}",
+            f"/valuation/comps?symbol={TEST_SYMBOL}",
+            f"/model/lbo?symbol={TEST_SYMBOL}",
+            f"/model/three-statement?symbol={TEST_SYMBOL}",
+            f"/model/three-statement/scenarios?symbol={TEST_SYMBOL}",
+            f"/analysis/competitive/competitive?symbol={TEST_SYMBOL}",
+            f"/analysis/earnings/earnings?symbol={TEST_SYMBOL}",
+        ):
+            response = client.get(path)
+            assert response.status_code == 404
+
+        openapi_response = client.get("/openapi.json")
+        assert openapi_response.status_code == 200
+        paths = openapi_response.json()["paths"]
+        assert "/analysis/research/snapshot" in paths
+        assert "/valuation/dcf" not in paths
+        assert "/valuation/comps" not in paths
+        assert "/model/lbo" not in paths
+        assert "/model/three-statement" not in paths
+        assert "/model/three-statement/scenarios" not in paths
+        assert "/analysis/competitive/competitive" not in paths
+        assert "/analysis/earnings/earnings" not in paths
+
+    def test_research_snapshot_validation_error(self, client: TestClient):
+        response = client.post("/analysis/research/snapshot", json={})
+        assert response.status_code == 400

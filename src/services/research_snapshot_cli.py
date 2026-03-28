@@ -10,12 +10,14 @@ from .research_snapshot_service import ResearchSnapshotService, research_snapsho
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Poll Tushare-first research snapshot data for CN stocks."
+        description="Poll unified FSP-objective research snapshot data."
     )
     parser.add_argument("--market", choices=["cn", "us"], default="cn")
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--start-date")
     parser.add_argument("--end-date")
+    parser.add_argument("--modules")
+    parser.add_argument("--module-options")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -37,6 +39,20 @@ def main(
     if not deduped_symbols:
         raise SystemExit("`--symbols` must contain at least one valid symbol")
 
+    modules = None
+    if args.modules:
+        modules = [text.strip() for text in str(args.modules).split(",") if text.strip()]
+
+    module_options = None
+    if args.module_options:
+        try:
+            parsed_options = json.loads(args.module_options)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid JSON for `--module-options`: {exc}") from exc
+        if not isinstance(parsed_options, dict):
+            raise SystemExit("`--module-options` must be a JSON object")
+        module_options = parsed_options
+
     snapshot_service = service or research_snapshot_service
     try:
         payload = snapshot_service.poll_snapshot(
@@ -44,6 +60,8 @@ def main(
             symbols=deduped_symbols,
             start_date=args.start_date,
             end_date=args.end_date,
+            modules=modules,
+            module_options=module_options,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc

@@ -42,7 +42,7 @@
 
 ### 复杂分析接口统一结构
 
-`/stock/analyze`、`/watch/poll`、`/valuation/*`、`/model/*`、`/analysis/*` 的 `data` 通常使用统一分层：
+`/stock/analyze`、`/watch/poll`、`/analysis/research/snapshot` 的复杂 `data` 通常使用统一分层：
 
 ```json
 {
@@ -367,181 +367,133 @@ A 股轮询补充约束：
 - 当 A 股标的不适用股票财务口径，或轻量字段不足时，`fundamentals_partial = true`
 - 美股轮询场景下，`quote.source` 与 realtime 命中源应明确为 `yfinance`
 
-## 估值接口
+## 统一研究接口
 
-### `GET /valuation/dcf`
-
-用途：
-
-- 对美股执行 DCF 估值分析
-
-Query 参数：
-
-- `symbol`: 必填，美股代码
-- `risk_free_rate`: 可选，无风险利率，`0 ~ 0.2`
-- `equity_risk_premium`: 可选，股权风险溢价，`0 ~ 0.2`
-- `terminal_growth_rate`: 可选，永续增长率，`0 ~ 0.05`
-
-响应重点：
-
-- `entity`: 股票与公司标识
-- `facts`: 历史经营事实与输入前提
-- `analysis`: WACC、FCF 预测、终值、敏感性分析、估值结论
-- `meta`: 来源、假设和限制
-
-注意：
-
-- 仅支持美股
-- 返回属于模型估值，不是市场事实价格
-
-### `GET /valuation/dcf/excel`
+### `POST /analysis/research/snapshot`
 
 用途：
 
-- 导出 DCF Excel 报告
+- 提供统一的客观研究快照入口
+- 替代原有分散的 `/valuation/*`、`/model/*`、`/analysis/*` 专项分析接口
+- 单次请求可按市场、symbol 和模块集合返回结构化研究结果
 
-参数：
+请求体：
 
-- 与 `/valuation/dcf` 相同
+- `market`: 必填，`cn` / `us`
+- `symbols`: 必填，字符串数组，去重保序
+- `start_date`: 可选，`YYYYMMDD`
+- `end_date`: 可选，`YYYYMMDD`
+- `modules`: 可选，字符串数组；不传则按市场走默认核心模块
+- `module_options`: 可选，对象；承载模块级参数
 
-响应：
+默认核心模块：
 
-- 成功时返回 `.xlsx` 文件流
-- `Content-Disposition` 文件名格式：`dcf_<SYMBOL>.xlsx`
+- `cn`
+  - `research_report`
+  - `report_rc`
+  - `anns_d`
+  - `news`
+  - `major_news`
+  - `earnings`
+- `us`
+  - `earnings`
+  - `earnings_preview`
+  - `dcf`
+  - `comps`
+  - `three_statement`
 
-### `GET /valuation/comps`
+可扩展模块：
 
-用途：
+- `lbo`
+- `three_statement_scenarios`
+- `competitive`
+- `catalysts`
+- `model_update`
+- `sector_overview`
+- `screen`
 
-- 对美股执行可比公司估值分析
+`module_options` 约定：
 
-Query 参数：
+- `dcf`
+  - `risk_free_rate`
+  - `equity_risk_premium`
+  - `terminal_growth_rate`
+- `comps`
+  - `sector`
+- `lbo`
+  - `holding_period`
+  - `entry_multiple`
+  - `exit_multiple`
+  - `leverage`
+- `three_statement`
+  - `scenario`
+  - `projection_years`
+- `earnings`
+  - `quarter`
+  - `fiscal_year`
+- `catalysts`
+  - `horizon_days`
+- `screen`
+  - `filters`
 
-- `symbol`: 必填，美股代码
-- `sector`: 可选，行业分类字符串
+顶层响应：
 
-响应重点：
+- `status`
+- `computed_at`
+- `source`
+- `market`
+- `strategy`
+- `request`
+- `items`
 
-- `entity`: 目标公司标识
-- `facts`: 可比公司原始经营与估值事实
-- `analysis`: 倍数分位数、隐含估值、推荐方向
-- `meta`: 数据来源与限制
+`items[]` 固定字段：
 
-### `GET /valuation/comps/excel`
+- `requested_symbol`
+- `status`
+- `error`
+- `info`
+- 各模块结果
 
-用途：
+模块返回规则：
 
-- 导出 Comps Excel 报告
+- 原始 / 事件型模块：
+  - `records`
+  - `source`
+  - `source_status`
+  - `source_error`
+  - `attempted_sources`
+- 结构化分析型模块：
+  - 直接展开 `entity`
+  - `facts`
+  - `analysis`
+  - `meta`
+  - `module_status`
+  - `module_error`
+  - `attempted_sources`
 
-参数：
+客观边界：
 
-- 与 `/valuation/comps` 相同
+- 接口只返回客观、结构化、可追溯输出
+- 不返回 thesis、moat、positioning、recommendation、confidence、price target、morning note、idea pitch 等主观字段
 
-响应：
+状态语义：
 
-- 成功时返回 `.xlsx` 文件流
-- 文件名格式：`comps_<SYMBOL>.xlsx`
+- item `status`
+  - `ok`
+  - `partial`
+  - `failed`
+  - `not_supported`
+  - `not_implemented`
+- 顶层 `status`
+  - `ok`
+  - `partial`
+  - `not_implemented`
 
-## 模型接口
+说明：
 
-### `GET /model/lbo`
-
-用途：
-
-- 对美股执行 LBO 情景模型测算
-
-Query 参数：
-
-- `symbol`: 必填，美股代码
-- `holding_period`: 可选，持有年限，默认 `5`，范围 `3 ~ 10`
-- `entry_multiple`: 可选，入场 EV/EBITDA 倍数，默认 `10.0`
-- `exit_multiple`: 可选，退出 EV/EBITDA 倍数，默认 `10.0`
-- `leverage`: 可选，债务占比，默认 `0.65`，范围 `0.3 ~ 0.9`
-
-响应重点：
-
-- `analysis`: Sources & Uses、债务时间表、现金流、IRR、MOIC
-
-注意：
-
-- 返回是参数化情景测算，不是外部市场事实
-
-### `GET /model/three-statement`
-
-用途：
-
-- 对美股执行三表预测模型
-
-Query 参数：
-
-- `symbol`: 必填，美股代码
-- `scenario`: 可选，`bull` / `base` / `bear`，默认 `base`
-- `projection_years`: 可选，预测年限，默认 `5`，范围 `3 ~ 10`
-
-响应重点：
-
-- `analysis`: 损益表、资产负债表、现金流预测和关键指标
-
-注意：
-
-- 返回是预测模型，不是公司已披露报表
-
-### `GET /model/three-statement/scenarios`
-
-用途：
-
-- 对比 `bull` / `base` / `bear` 三种三表情景结果
-
-Query 参数：
-
-- `symbol`: 必填，美股代码
-- `projection_years`: 可选，预测年限，默认 `5`
-
-响应重点：
-
-- `analysis.scenarios`: 每个情景下的增长、关键指标和假设
-
-## 专题分析接口
-
-### `GET /analysis/competitive/competitive`
-
-用途：
-
-- 执行竞争格局分析
-
-Query 参数：
-
-- `symbol`: 必填，目标公司代码
-- `competitors`: 可选，逗号分隔的竞争对手代码，如 `AMD,INTC,AVGO`
-- `industry`: 可选，行业类型；默认 `technology`
-
-响应重点：
-
-- `entity`: 目标公司
-- `facts`: 目标公司与竞争对手的原始指标
-- `analysis`: 市场背景、定位矩阵、对比表、护城河分析
-
-注意：
-
-- 市场背景、护城河和部分场景字段包含启发式估算
-
-### `GET /analysis/earnings/earnings`
-
-用途：
-
-- 执行季报分析
-
-Query 参数：
-
-- `symbol`: 必填，股票代码
-- `quarter`: 可选，`Q1` / `Q2` / `Q3` / `Q4`
-- `fiscal_year`: 可选，财年，范围 `2020 ~ 2030`
-
-响应重点：
-
-- `facts`: 季度收入、利润、EPS、预期对比等事实
-- `analysis`: guidance 解读、关键指标、趋势分析、业务线估算
-- `meta`: 引用来源和限制说明
+- `cn` 仍复用当前 research snapshot 的 block contract 与确定性 `derived`
+- `us` 与结构化分析模块统一通过同一入口调度，不再单独暴露 HTTP 路由
+- CLI `scripts/poll_research_snapshot.py` 与该 HTTP 接口保持同构请求 / 响应语义
 
 ## 错误语义
 

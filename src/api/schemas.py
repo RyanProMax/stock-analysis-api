@@ -10,9 +10,7 @@ class StandardResponse(BaseModel, Generic[T]):
     err_msg: Optional[str] = None
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {"status_code": 200, "data": None, "err_msg": None}
-        }
+        json_schema_extra={"example": {"status_code": 200, "data": None, "err_msg": None}}
     )
 
 
@@ -55,16 +53,37 @@ class StockSearchRequest(BaseModel):
     keyword: str
     market: Optional[str] = None
 
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"keyword": "NVDA", "market": None}}
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"keyword": "NVDA", "market": None}})
 
 
 class WatchPollRequest(BaseModel):
     symbols: List[str]
 
     model_config = ConfigDict(
+        json_schema_extra={"example": {"symbols": ["NVDA", "AAPL", "600519"]}}
+    )
+
+
+class ResearchSnapshotRequest(BaseModel):
+    market: str
+    symbols: List[str]
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    modules: Optional[List[str]] = None
+    module_options: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(
         json_schema_extra={
-            "example": {"symbols": ["NVDA", "AAPL", "600519"]}
+            "example": {
+                "market": "cn",
+                "symbols": ["300827"],
+                "start_date": "20260226",
+                "end_date": "20260328",
+                "modules": ["research_report", "report_rc", "earnings"],
+                "module_options": {
+                    "earnings": {"quarter": "Q4", "fiscal_year": 2026},
+                    "screen": {"filters": {"pe_ratio": {"lte": 20}}},
+                },
+            }
         }
     )

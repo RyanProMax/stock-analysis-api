@@ -59,13 +59,7 @@ black --line-length 100 .
 - `GET /stock/list`: 按市场分页获取股票列表
 - `POST /stock/search`: 按代码、名称或拼音搜索股票
 - `POST /watch/poll`: 多股票轮询盯盘，支持 A 股和美股，返回 snapshot、delta 和 alerts
-- `GET /valuation/dcf`: DCF 估值结果
-- `GET /valuation/comps`: 可比公司估值结果
-- `GET /model/lbo`: LBO 情景测算
-- `GET /model/three-statement`: 三表预测结果
-- `GET /model/three-statement/scenarios`: 三表多情景对比
-- `GET /analysis/competitive/competitive`: 竞争格局分析
-- `GET /analysis/earnings/earnings`: 财报与业绩解读
+- `POST /analysis/research/snapshot`: FSP 客观能力统一快照入口，通过 `modules` / `module_options` 调度 `earnings`、`dcf`、`comps`、`three_statement`、`competitive`、`screen` 等模块
 
 ## 环境变量
 
