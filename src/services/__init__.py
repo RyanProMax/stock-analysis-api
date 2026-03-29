@@ -11,6 +11,10 @@ from .symbol_snapshot_refresh_service import (
 )
 from .watch_polling_service import WatchPollingService, watch_polling_service
 from .stock_analyze_service import StockAnalyzeService, stock_analyze_service
+from .realtime_quote_polling_service import (
+    RealtimeQuotePollingService,
+    realtime_quote_polling_service,
+)
 
 __all__ = [
     "DailyDataReadService",
@@ -25,4 +29,6 @@ __all__ = [
     "watch_polling_service",
     "StockAnalyzeService",
     "stock_analyze_service",
+    "RealtimeQuotePollingService",
+    "realtime_quote_polling_service",
 ]

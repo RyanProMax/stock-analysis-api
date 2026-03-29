@@ -4,70 +4,52 @@
 
 ## 当前目标
 
-- 将 `POST /stock/analyze` 升级为对齐 FSP 研报分析框架的 objective 输出，并提升技术面与摘要层的可信度和可追溯性
+- 将 skill / agent 标准化 CLI 能力彻底收口到 `stock-analysis-api`
+- 新增内部 `poll_realtime_quotes` CLI，承接原 `stock-analysis-skill` 中的 A 股 / ETF 日内行情轮询逻辑
+- 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
 
 ## 最近完成项
 
-- 已将公共分析入口彻底收敛到 `POST /stock/analyze`
-- 已删除公共：
-  - `POST /analysis/research/snapshot`
-  - `GET /stock/list`
-  - `POST /stock/search`
-- 已将 `/stock/analyze` 的 `data` 切换为统一 stock-analyze snapshot payload：
-  - `status / computed_at / source / market / strategy / request / items`
-- 已加入固定 `technical` 模块，并纳入 `base/full` 两个 mode
-- 已提供与 HTTP 能力对齐的 CLI：
+- 已保留并稳定运行：
+  - `POST /stock/analyze`
+  - `POST /watch/poll`
   - `scripts/stock_analyze.py`
-- 已确保 CLI stdout 为纯 JSON，便于外部 Agent 直接消费
-- 已将分析相关测试收敛为 CLI 主入口，删除旧 analyze/snapshot 双轨测试
-- 已同步更新：
-  - `AGENTS.md`
-  - `docs/architecture.md`
-  - `docs/api.md`
-  - `docs/strategy.md`
-  - `README.md`
-- 已完成全量回归：`81 passed`
-- 已将本轮 FSP 对齐要求并入：
-  - `docs/architecture.md`
-  - `docs/api.md`
-  - `docs/strategy.md`
+- 已确认公共 HTTP API 不需要为本次 skill 对接新增路由
+- 已新增内部：
+  - `src/services/realtime_quote_polling_service.py`
+  - `src/services/realtime_quote_polling_cli.py`
+  - `scripts/poll_realtime_quotes.py`
+- 已为新 CLI 补充首批 contract 测试，覆盖普通股票、ETF、invalid symbol、legacy realtime 降级与纯 JSON stdout
 
 ## 当前状态
 
-- 公共接口仍然只有 HTTP REST API；内部 `scripts/` 允许承载 Agent / skill 调用脚本
-- 当前公共分析只保留：
-  - `POST /stock/analyze`
-  - `POST /watch/poll`
-  - `GET /health`
-- 当前 `/stock/analyze` 请求固定为：
-  - `market / symbols / start_date / end_date / mode`
-- 当前 `/stock/analyze` item 固定为：
-  - `requested_symbol / status / error / info / summary / 模块业务数据 / meta`
-- 当前 `mode` 集合：
-  - `cn.base`: `technical / research_report / report_rc / earnings / catalysts / screen`
-  - `cn.full`: `technical / research_report / report_rc / anns_d / news / major_news / earnings / catalysts / screen / model_update`
-  - `us.base`: `technical / earnings / dcf / comps / three_statement / screen`
-  - `us.full`: `technical / earnings / earnings_preview / dcf / comps / three_statement / lbo / three_statement_scenarios / competitive / catalysts / screen / model_update / sector_overview`
-- 当前 CLI：
-  - `uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode full --pretty`
-  - 输出与 HTTP `StandardResponse` 尽量同构
-- 当前待收口的问题：
-  - `summary` 仍偏模块汇总，尚未完全体现 FSP 研报分析顺序
-  - `technical` 仍包含零售化措辞和启发式动作标签
-  - 缺少 `item.meta.provenance` 级别的字段出处
-  - 比例/百分比语义仍有历史遗留不一致
+- 公共对外协议仍然只有 HTTP REST API
+- skill / agent 可消费的内部 CLI 当前为：
+  - `scripts/stock_analyze.py`
+  - `scripts/poll_realtime_quotes.py`
+- `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
+  - `status / computed_at / source / request / summary / items`
+- `scripts/poll_realtime_quotes.py` 当前实现固定为 Tushare-only：
+  - 身份信息：`stock_basic / etf_basic`
+  - 实时行情：`quotation`
+  - 降级：旧版 `get_realtime_quotes`
+- 当前仍待完成：
+  - `docs/architecture.md` / `docs/specs/` 的内部 CLI 规格补齐
+  - cross-repo `stock-analysis-skill` 文档与命名收口
+  - 端到端验证与双仓提交
 
 ## 下一步计划
 
-- 增加 `summary.research_strategy`，按 FSP 研报逻辑组织预期、基本面、估值、催化剂与价格行为确认
-- 为 `summary.research_strategy.*` 增加 `item.meta.provenance`
-- 将 `technical` 收敛为专业研究确认层，去掉 emoji 和零售化动作口号
-- 将公共策略名升级为 `fsp_objective_stock_analyze_v2`
-- 更新 CLI 测试、`docs/api.md` 与 `docs/strategy.md`，对齐新的输出结构
+- 更新 `docs/architecture.md`，明确 `poll_realtime_quotes.py` 是内部 CLI，不属于公共 API
+- 新增 `docs/specs/skill-cli-contract.md`，统一记录 `poll_realtime_quotes.py` 与 `stock_analyze.py` 的输入、输出与状态语义
+- 完成 `stock-analysis-skill` 仓库重构：
+  - 删除本地 wrapper
+  - 文档改名为 `stock-analysis-skill`
+  - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
+- 运行 API / skill 两仓验证并分别提交 commit
 
 ## 已知风险与阻塞
 
-- `research_report`、`anns_d`、`news`、`major_news` 依旧可能受 Tushare 权限限制，因此 `meta.modules` 状态与说明必须保持真实可追溯
-- `technical` 模块当前仍复用旧 analyze 的底层分析器；本轮主要在公共包装层做语义收口，底层分析方法本身仍可能继续演进
-- A 股 `earnings` 的 provider 覆盖仍弱于美股，因此 `research_strategy` 中的 `evidence_strength` 不能高估 CN 场景
-- `report_rc` 可能回退到窗口外最近一份 stock-specific estimate；该 fallback 若未在 strategy provenance 中显式暴露，会继续损伤可信度
+- Tushare `quotation` 可能受源端权限或可用性影响，因此 legacy realtime 降级语义必须保持真实，不得伪装成完整 realtime
+- `TushareDataSource.get_pro()` 当前仍可能打印初始化信息；CLI 层必须继续保证 stdout 纯 JSON
+- `stock-analysis-skill` 将不再保留本地 wrapper，文档必须明确调用入口在 API 仓库，避免使用方继续假设 skill 根目录存在同名脚本

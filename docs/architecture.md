@@ -6,6 +6,9 @@
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
 - 仓库允许保留内部 `scripts/` 作为 Agent / skill 调用入口，但这类脚本不属于公共接口，不改变“HTTP 是对外协议”的边界
+- 当前对 skill / agent 暴露的内部 CLI 固定为：
+  - `scripts/stock_analyze.py`
+  - `scripts/poll_realtime_quotes.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
@@ -31,6 +34,7 @@ src/
 
 - `api/` 只负责 HTTP 输入输出，不承载业务规则
 - `scripts/` 只负责内部脚本参数解析、结果输出和轻量编排，不承载核心业务规则
+- `scripts/poll_realtime_quotes.py` 的核心业务逻辑必须落在 `src/services/`，脚本本身只负责参数解析与纯 JSON 输出
 - `services/` 负责工作流、读写编排和聚合逻辑
 - `repositories/` 负责单机 SQLite 行情仓访问，不承载分析规则
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
@@ -142,6 +146,9 @@ src/
 - `/stock/analyze` 不再向公共调用方暴露自定义模块选择能力，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
 - `/stock/analyze` 的来源链、限制说明、filter rule、fallback 说明等调试信息统一进入 `item.meta.modules.<module>.notes`，不在模块 body 内重复铺开
 - 面向 Agent / skill 的 CLI 入口与 `/stock/analyze` 保持能力对齐，但 CLI 仍属于仓库内部脚本能力，不属于公共 HTTP API
+- `scripts/poll_realtime_quotes.py` 是独立于 `/watch/poll` 的内部轻量行情 CLI：
+  - 保持 `status / computed_at / source / request / summary / items` contract
+  - 不复用 `/watch/poll` 的 `entity / facts / analysis / meta` contract
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日
@@ -164,6 +171,7 @@ src/
   - 限制说明
 - 输出中的关键结论应可追溯到事实、证据或模型方法
 - stock analyze CLI 与公共 HTTP 入口必须保持能力同构，不输出自由文本总结、主观 thesis、评级建议或目标价结论
+- realtime quote CLI 与 skill 侧历史 `poll_realtime_quotes.py` 保持轻量 contract 同构，且当前仅服务 CN 股票 / ETF 的 Tushare 日内行情查询
 
 ## 演进方向
 
