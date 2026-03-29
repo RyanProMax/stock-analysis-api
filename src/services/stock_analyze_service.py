@@ -20,6 +20,7 @@ from ..analyzer.normalizers import (
     three_statement_contract,
 )
 from ..analyzer.three_statement_model import ThreeStatementModel
+from ..core.pipeline import stock_service
 from ..data_provider.fundamental_context import build_fundamental_context
 from ..data_provider.manager import data_manager
 from ..data_provider.sources.yfinance import YfinanceDataSource
@@ -27,9 +28,9 @@ from ..data_provider.sources.tushare import TushareDataSource
 from ..model.contracts import InterfaceMeta, InterfacePayload
 
 
-class ResearchSnapshotService:
-    STRATEGY = "fsp_objective_research_snapshot_v1"
-    TOP_LEVEL_SOURCE = "research_snapshot_dispatcher"
+class StockAnalyzeService:
+    STRATEGY = "fsp_objective_stock_analyze_v1"
+    TOP_LEVEL_SOURCE = "stock_analyze_dispatcher"
     PROVIDER_ORDER = ("tushare",)
     MODES = ("base", "full")
     CN_NATIVE_CORE_BLOCKS = ("research_report", "report_rc")
@@ -38,8 +39,16 @@ class ResearchSnapshotService:
     MAJOR_NEWS_SOURCES = ("新浪财经", "财联社", "中证网", "第一财经")
     MODE_MODULES = {
         "cn": {
-            "base": ("research_report", "report_rc", "earnings", "catalysts", "screen"),
+            "base": (
+                "technical",
+                "research_report",
+                "report_rc",
+                "earnings",
+                "catalysts",
+                "screen",
+            ),
             "full": (
+                "technical",
                 "research_report",
                 "report_rc",
                 "anns_d",
@@ -52,8 +61,9 @@ class ResearchSnapshotService:
             ),
         },
         "us": {
-            "base": ("earnings", "dcf", "comps", "three_statement", "screen"),
+            "base": ("technical", "earnings", "dcf", "comps", "three_statement", "screen"),
             "full": (
+                "technical",
                 "earnings",
                 "earnings_preview",
                 "dcf",
@@ -70,8 +80,8 @@ class ResearchSnapshotService:
         },
     }
     CRITICAL_MODULES = {
-        "cn": ("research_report", "report_rc"),
-        "us": ("earnings", "dcf", "comps", "three_statement"),
+        "cn": ("technical", "research_report", "report_rc"),
+        "us": ("technical", "earnings", "dcf", "comps", "three_statement"),
     }
     OPTIONAL_MODULES = (
         "lbo",
@@ -84,6 +94,7 @@ class ResearchSnapshotService:
     )
     RAW_MODULES = ("research_report", "report_rc", "anns_d", "news", "major_news")
     STRUCTURED_MODULES = (
+        "technical",
         "earnings",
         "earnings_preview",
         "dcf",
@@ -98,6 +109,7 @@ class ResearchSnapshotService:
         "screen",
     )
     MODULES = (
+        "technical",
         "research_report",
         "report_rc",
         "anns_d",
@@ -138,7 +150,7 @@ class ResearchSnapshotService:
     def __init__(self, providers: Optional[Mapping[str, Any]] = None):
         self.providers = dict(providers or {"tushare": TushareDataSource})
 
-    def poll_snapshot(
+    def analyze(
         self,
         *,
         market: str,
@@ -187,6 +199,23 @@ class ResearchSnapshotService:
             "items": items,
         }
 
+    def poll_snapshot(
+        self,
+        *,
+        market: str,
+        symbols: Sequence[str],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        mode: str = "base",
+    ) -> Dict[str, Any]:
+        return self.analyze(
+            market=market,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            mode=mode,
+        )
+
     def _build_cn_native_item(
         self,
         *,
@@ -202,7 +231,7 @@ class ResearchSnapshotService:
             return self._build_failed_item(
                 requested_symbol=requested_symbol,
                 code="invalid_symbol",
-                message="CN research snapshot expects a 6-digit stock code.",
+                message="CN stock analyze expects a 6-digit stock code.",
                 attempted_sources=attempted_sources,
             )
 
@@ -451,7 +480,7 @@ class ResearchSnapshotService:
                 mode=mode,
                 status="failed",
                 code="invalid_symbol",
-                message="CN research snapshot expects a 6-digit stock code.",
+                message="CN stock analyze expects a 6-digit stock code.",
                 modules=modules,
                 attempted_sources=attempted_sources,
             )
@@ -488,7 +517,7 @@ class ResearchSnapshotService:
                 mode=mode,
                 status="not_supported",
                 code="security_not_supported",
-                message="CN research snapshot only supports listed common stock.",
+                message="CN stock analyze only supports listed common stock.",
                 modules=modules,
                 attempted_sources=attempted_sources,
                 info=info,
@@ -590,7 +619,7 @@ class ResearchSnapshotService:
                 mode=mode,
                 status="not_supported",
                 code="security_not_supported",
-                message=security["error"] or "US research snapshot only supports common stock.",
+                message=security["error"] or "US stock analyze only supports common stock.",
                 modules=modules,
                 attempted_sources=attempted_sources,
                 info=info,
@@ -651,7 +680,12 @@ class ResearchSnapshotService:
             return copy.deepcopy(module_cache[module])
 
         native_item = module_cache.get("cn_native_item")
-        if module in self.RAW_MODULES:
+        if module == "technical":
+            result = self._build_technical_module(
+                symbol=requested_symbol,
+                info=module_cache["info"],
+            )
+        elif module in self.RAW_MODULES:
             if market != "cn":
                 result = self._empty_module_result(
                     module=module,
@@ -871,7 +905,7 @@ class ResearchSnapshotService:
             return {
                 "record": record,
                 "status": "not_supported",
-                "error": f"US research snapshot only supports common stock, got {quote_type}.",
+                "error": f"US stock analyze only supports common stock, got {quote_type}.",
                 "attempted_sources": attempted_sources,
                 "info": self._build_identity(record),
             }
@@ -1123,6 +1157,16 @@ class ResearchSnapshotService:
         estimate = analysis.get("estimate", {}) if isinstance(analysis, Mapping) else {}
         model_output = analysis.get("model_output", {}) if isinstance(analysis, Mapping) else {}
 
+        if module == "technical":
+            flattened = {}
+            if self._has_public_value(reported.get("fear_greed")):
+                flattened["fear_greed"] = reported.get("fear_greed")
+            if self._has_public_value(reported.get("technical_signals")):
+                flattened["technical_signals"] = reported.get("technical_signals")
+            if self._has_public_value(derived.get("trend")):
+                flattened["trend"] = derived.get("trend")
+            return flattened
+
         if module == "earnings":
             flattened: Dict[str, Any] = {}
             if self._has_public_value(reported):
@@ -1215,6 +1259,31 @@ class ResearchSnapshotService:
         change_anchor: pd.Timestamp,
     ) -> Dict[str, Any]:
         summary: Dict[str, Any] = {}
+        technical_public = (
+            self._public_module_body(
+                module="technical", module_payload=module_results.get("technical", {})
+            )
+            if "technical" in modules
+            else None
+        )
+        if technical_public:
+            technical_summary: Dict[str, Any] = {
+                "signal_count": len(technical_public.get("technical_signals", [])),
+            }
+            if self._has_public_value(technical_public.get("fear_greed")):
+                technical_summary["fear_greed"] = technical_public.get("fear_greed")
+            trend = technical_public.get("trend", {})
+            if isinstance(trend, Mapping):
+                condensed_trend = {
+                    key: trend.get(key)
+                    for key in ("trend_status", "trend_strength", "buy_signal", "signal_score")
+                    if self._has_public_value(trend.get(key))
+                }
+                if condensed_trend:
+                    technical_summary["trend"] = condensed_trend
+            if self._has_public_value(technical_summary):
+                summary["technical"] = technical_summary
+
         if market == "cn" and ("research_report" in modules or "report_rc" in modules):
             research_report_rows = (
                 (module_results.get("research_report") or {}).get("records")
@@ -1402,9 +1471,9 @@ class ResearchSnapshotService:
         if isinstance(value, str):
             return value != ""
         if isinstance(value, Mapping):
-            return any(ResearchSnapshotService._has_public_value(item) for item in value.values())
+            return any(StockAnalyzeService._has_public_value(item) for item in value.values())
         if isinstance(value, list):
-            return any(ResearchSnapshotService._has_public_value(item) for item in value)
+            return any(StockAnalyzeService._has_public_value(item) for item in value)
         return True
 
     @staticmethod
@@ -1421,6 +1490,56 @@ class ResearchSnapshotService:
                 if value:
                     return str(value)
         return None
+
+    def _build_technical_module(
+        self,
+        *,
+        symbol: str,
+        info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        report = stock_service.analyze_symbol(symbol, include_qlib_factors=False)
+        if report is None:
+            error = "Technical analysis unavailable from current daily data sources."
+            return self._wrap_structured_module(
+                payload=self._empty_structured_payload(
+                    interface_type="mixed",
+                    limitations=[error],
+                ),
+                status="error",
+                error=error,
+                attempted_sources=["stock_service"],
+            )
+
+        report_dict = report.to_dict()
+        technical_payload = (
+            report_dict.get("technical", {}) if isinstance(report_dict, dict) else {}
+        )
+        data_source = str(technical_payload.get("data_source") or "").strip() or "stock_service"
+        payload = self._make_structured_payload(
+            entity={
+                "symbol": symbol,
+                "name": info.get("common", {}).get("name") or report_dict.get("stock_name"),
+            },
+            facts={
+                "reported": {
+                    "fear_greed": report_dict.get("fear_greed", {}),
+                    "technical_signals": technical_payload.get("factors", []),
+                },
+                "consensus": {},
+            },
+            analysis={"derived": {"trend": report_dict.get("trend_analysis", {})}},
+            as_of=report_dict.get("as_of"),
+            sources=[data_source],
+            data_completeness="ok",
+            limitations=[],
+            interface_type="mixed",
+        )
+        return self._wrap_structured_module(
+            payload=payload,
+            status="ok",
+            error=None,
+            attempted_sources=[data_source],
+        )
 
     def _build_cn_earnings_module(
         self,
@@ -2395,7 +2514,7 @@ class ResearchSnapshotService:
         attempted_sources: Sequence[str],
         info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        message = "CN research snapshot only supports listed common stock."
+        message = "CN stock analyze only supports listed common stock."
         return {
             "requested_symbol": requested_symbol,
             "status": "not_supported",
@@ -2437,7 +2556,7 @@ class ResearchSnapshotService:
         requested_symbol: str,
         attempted_sources: Sequence[str],
     ) -> Dict[str, Any]:
-        message = "US research snapshot is reserved for a future implementation."
+        message = "US stock analyze is reserved for a future implementation."
         return {
             "requested_symbol": requested_symbol,
             "status": "not_implemented",
@@ -3149,4 +3268,4 @@ class ResearchSnapshotService:
         return max_text
 
 
-research_snapshot_service = ResearchSnapshotService()
+stock_analyze_service = StockAnalyzeService()

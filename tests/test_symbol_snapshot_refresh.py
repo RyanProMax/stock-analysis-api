@@ -17,7 +17,11 @@ class FakeSymbolCatalog:
         self.calls.append(market)
         return {
             "success": True,
-            "rows": [{"symbol": "300827"}, {"symbol": "510300"}] if market == "cn" else [{"symbol": "NVDA"}],
+            "rows": (
+                [{"symbol": "300827"}, {"symbol": "510300"}]
+                if market == "cn"
+                else [{"symbol": "NVDA"}]
+            ),
             "source": "fake",
             "partial": False,
         }
@@ -26,14 +30,18 @@ class FakeSymbolCatalog:
 class TestSymbolSnapshotRefreshService:
     def test_notify_request_schedules_health_but_skips_docs(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
-        service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=FakeSymbolCatalog())
+        service = SymbolSnapshotRefreshService(
+            repository=storage, symbol_catalog=FakeSymbolCatalog()
+        )
         scheduled = []
 
         monkeypatch.setattr(service, "_market_today", lambda market: "2026-03-24")
         monkeypatch.setattr(
             service,
             "_spawn_refresh_thread",
-            lambda *, market, trigger_path, market_date: scheduled.append((market, trigger_path, market_date)),
+            lambda *, market, trigger_path, market_date: scheduled.append(
+                (market, trigger_path, market_date)
+            ),
         )
 
         service.notify_request("/docs")
@@ -73,7 +81,9 @@ class TestSymbolSnapshotRefreshService:
         assert service._state["cn"]["last_checked_date"] == market_date
         assert service._state["cn"]["last_error"] is None
 
-    def test_market_refresh_does_not_treat_single_row_update_as_full_snapshot_current(self, tmp_path):
+    def test_market_refresh_does_not_treat_single_row_update_as_full_snapshot_current(
+        self, tmp_path
+    ):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         yesterday = "2026-03-23T10:00:00Z"
         today = "2026-03-24T09:00:00Z"
@@ -120,7 +130,9 @@ class TestSymbolSnapshotRefreshService:
         assert service._state["cn"]["last_checked_date"] == "2026-03-24"
         assert service._state["cn"]["last_error"] is None
 
-    def test_market_refresh_marks_closed_day_as_checked_without_refresh(self, tmp_path, monkeypatch):
+    def test_market_refresh_marks_closed_day_as_checked_without_refresh(
+        self, tmp_path, monkeypatch
+    ):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         catalog = FakeSymbolCatalog()
         service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=catalog)
@@ -132,7 +144,7 @@ class TestSymbolSnapshotRefreshService:
 
         service._run_market_refresh(
             market="cn",
-            trigger_path="/stock/list",
+            trigger_path="/stock/analyze",
             market_date="2026-10-01",
         )
 
@@ -142,7 +154,9 @@ class TestSymbolSnapshotRefreshService:
 
     def test_market_refresh_open_check_failure_does_not_seal_day(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
-        service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=FakeSymbolCatalog())
+        service = SymbolSnapshotRefreshService(
+            repository=storage, symbol_catalog=FakeSymbolCatalog()
+        )
         scheduled = []
 
         monkeypatch.setattr(
@@ -153,7 +167,7 @@ class TestSymbolSnapshotRefreshService:
 
         service._run_market_refresh(
             market="cn",
-            trigger_path="/stock/list",
+            trigger_path="/stock/analyze",
             market_date="2026-03-24",
         )
 
@@ -164,16 +178,20 @@ class TestSymbolSnapshotRefreshService:
         monkeypatch.setattr(
             service,
             "_spawn_refresh_thread",
-            lambda *, market, trigger_path, market_date: scheduled.append((market, trigger_path, market_date)),
+            lambda *, market, trigger_path, market_date: scheduled.append(
+                (market, trigger_path, market_date)
+            ),
         )
 
-        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/list")
+        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/analyze")
 
-        assert scheduled == [("cn", "/stock/list", "2026-03-24")]
+        assert scheduled == [("cn", "/stock/analyze", "2026-03-24")]
 
     def test_market_refresh_does_not_repeat_after_success_on_same_day(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
-        service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=FakeSymbolCatalog())
+        service = SymbolSnapshotRefreshService(
+            repository=storage, symbol_catalog=FakeSymbolCatalog()
+        )
         service._state["cn"]["last_checked_date"] = "2026-03-24"
         scheduled = []
 
@@ -181,16 +199,20 @@ class TestSymbolSnapshotRefreshService:
         monkeypatch.setattr(
             service,
             "_spawn_refresh_thread",
-            lambda *, market, trigger_path, market_date: scheduled.append((market, trigger_path, market_date)),
+            lambda *, market, trigger_path, market_date: scheduled.append(
+                (market, trigger_path, market_date)
+            ),
         )
 
-        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/list")
+        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/analyze")
 
         assert scheduled == []
 
     def test_market_refresh_does_not_schedule_when_in_flight(self, tmp_path, monkeypatch):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
-        service = SymbolSnapshotRefreshService(repository=storage, symbol_catalog=FakeSymbolCatalog())
+        service = SymbolSnapshotRefreshService(
+            repository=storage, symbol_catalog=FakeSymbolCatalog()
+        )
         service._state["cn"]["in_flight"] = True
         scheduled = []
 
@@ -198,10 +220,12 @@ class TestSymbolSnapshotRefreshService:
         monkeypatch.setattr(
             service,
             "_spawn_refresh_thread",
-            lambda *, market, trigger_path, market_date: scheduled.append((market, trigger_path, market_date)),
+            lambda *, market, trigger_path, market_date: scheduled.append(
+                (market, trigger_path, market_date)
+            ),
         )
 
-        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/list")
+        service._maybe_schedule_market_refresh(market="cn", trigger_path="/stock/analyze")
 
         assert scheduled == []
 

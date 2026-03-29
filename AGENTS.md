@@ -56,15 +56,13 @@ src/
 | 端点 | 方法 | 描述 |
 |------|------|------|
 | `/stock/analyze` | POST | 批量分析股票 |
-| `/stock/list` | GET | 获取股票列表 |
-| `/stock/search` | POST | 搜索股票 |
 | `/watch/poll` | POST | 多股票盯盘轮询 |
-| `/analysis/research/snapshot` | POST | 统一的客观研究快照入口 |
 
 ## 数据标准
 
 - 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
-- 内部 research snapshot 脚本统一返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
+- `POST /stock/analyze` 的 `data` 统一返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
+- 内部 `scripts/stock_analyze.py` 输出与 `POST /stock/analyze` 的 `StandardResponse` 尽量同构
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
 - 比例型机器值统一存 `ratio`

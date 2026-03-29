@@ -6,7 +6,7 @@
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
 - 仓库允许保留内部 `scripts/` 作为 Agent / skill 调用入口，但这类脚本不属于公共接口，不改变“HTTP 是对外协议”的边界
-- 公共研究分析能力统一收敛到单一 `POST /analysis/research/snapshot` 入口，不再暴露分散的 `/valuation/*`、`/model/*`、`/analysis/*` 专项分析路由
+- 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
 - 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
@@ -39,13 +39,16 @@ src/
 
 ## 输出 contract 约束
 
-- 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
-- `POST /analysis/research/snapshot` 作为统一快照入口，顶层固定返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
-- research snapshot 是公共 HTTP contract 的特例：
-  - 请求体只允许 `market`、`symbols`、`start_date`、`end_date`、`mode`
-  - `mode` 固定为 `base` / `full`
-  - 不再公开 `modules` / `module_options`
-- research snapshot 的 item 固定返回：
+- 复杂接口默认返回 `entity`、`facts`、`analysis`、`meta`
+- `POST /stock/analyze` 是当前唯一公共重型分析入口，外层仍包在 `StandardResponse.data` 中；其内部 payload 顶层固定返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
+- `POST /stock/analyze` 的请求体只允许：
+  - `market`
+  - `symbols`
+  - `start_date`
+  - `end_date`
+  - `mode`
+- `mode` 固定为 `base` / `full`
+- `/stock/analyze` 的 item 固定返回：
   - `requested_symbol`
   - `status`
   - `error`
@@ -53,11 +56,15 @@ src/
   - `summary`
   - 成功产出业务数据的模块 body
   - `meta`
-- research snapshot 的模块 body 统一瘦身：
+- `/stock/analyze` 的模块 body 统一瘦身：
   - 原始块只保留 `records`
   - 结构化模块不再公开 `entity`、`meta`、`module_status`、`module_error`、`attempted_sources`
   - 重复状态、来源、限制说明统一上收至 `item.meta.modules`
-- research snapshot 的 `summary` 是跨市场统一汇总层，用于承载 Agent 决策所需的关键确定性摘要，替代旧的 CN-only `derived`
+- `/stock/analyze` 的 `summary` 是跨市场统一汇总层，用于承载 Agent 决策所需的关键确定性摘要，替代旧的 CN-only `derived`
+- `/stock/analyze` 的 `technical` 是公共分析 contract 的固定模块，用于承载：
+  - `trend`
+  - `technical_signals`
+  - `fear_greed`
 - 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
@@ -116,12 +123,13 @@ src/
 - A 股 `/watch/poll` 基本面固定为轻量模式：优先消费 realtime quote 与本地 canonical daily 事实，不再触发重型多源财务 fallback
 - provider 不支持某项能力时，应视为 `not_supported`，不能计入失败、不能污染熔断状态
 - `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
-- `POST /analysis/research/snapshot` 只允许输出客观、结构化、可追溯的研究能力，不输出主观 thesis、评级建议、目标价结论、morning note 或 investment idea 文案
-- unified research snapshot 仅通过请求体 `mode` 控制模块集合：
+- `POST /stock/analyze` 只允许输出客观、结构化、可追溯的研究能力，不输出主观 thesis、评级建议、目标价结论、morning note 或 investment idea 文案
+- `/stock/analyze` 仅通过请求体 `mode` 控制模块集合：
   - `base` 面向决策信息全的默认消费场景
   - `full` 在 `base` 之上补充长尾原始块和扩展模块
-- unified research snapshot 不再向公共调用方暴露自定义模块选择能力，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
-- research snapshot 的来源链、限制说明、filter rule、fallback 说明等调试信息统一进入 `item.meta.modules.<module>.notes`，不在模块 body 内重复铺开
+- `/stock/analyze` 不再向公共调用方暴露自定义模块选择能力，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
+- `/stock/analyze` 的来源链、限制说明、filter rule、fallback 说明等调试信息统一进入 `item.meta.modules.<module>.notes`，不在模块 body 内重复铺开
+- 面向 Agent / skill 的 CLI 入口与 `/stock/analyze` 保持能力对齐，但 CLI 仍属于仓库内部脚本能力，不属于公共 HTTP API
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日

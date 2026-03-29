@@ -1,12 +1,12 @@
 # Stock Analysis API
 
-股票分析后端服务，当前仅保留 HTTP REST API。
+股票分析后端服务，当前对外只保留 HTTP REST API。
 
 ## 环境准备
 
 - Python 3.12+
 - `uv`
-- A 股同步需要 `TUSHARE_TOKEN`
+- A 股同步与研究能力需要 `TUSHARE_TOKEN`
 
 ## 安装与启动
 
@@ -38,6 +38,13 @@ uv run sync-market-data --market cn --scope symbol --symbol 300827 --days 30
 uv run sync-market-data --market us --scope symbol --symbol NVDA --days 30
 ```
 
+Agent / skill CLI 入口：
+
+```bash
+uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode base --pretty
+uv run python scripts/stock_analyze.py --market us --symbols NVDA,MSFT --mode full --pretty
+```
+
 后台常驻 HTTP 服务：
 
 ```bash
@@ -55,11 +62,9 @@ black --line-length 100 .
 
 主要端点与用途：
 
-- `POST /stock/analyze`: 单股或多股综合分析，返回标准化的 `entity / facts / analysis / meta`
-- `GET /stock/list`: 按市场分页获取股票列表
-- `POST /stock/search`: 按代码、名称或拼音搜索股票
-- `POST /watch/poll`: 多股票轮询盯盘，支持 A 股和美股，返回 snapshot、delta 和 alerts
-- `POST /analysis/research/snapshot`: FSP 客观能力统一快照入口，通过 `mode=base/full` 返回收敛后的研究摘要与模块结果
+- `POST /stock/analyze`: 唯一公共分析入口，返回统一 stock-analyze snapshot payload
+- `POST /watch/poll`: 多股票轮询盯盘，返回 compact snapshot、delta 和 alerts
+- `GET /health`: 健康检查，同时触发后台 symbols preflight
 
 ## 环境变量
 
@@ -74,9 +79,10 @@ black --line-length 100 .
 
 ## 使用级注意事项
 
+- `scripts/stock_analyze.py` 的 stdout 设计为纯 JSON，方便外部 Agent 直接消费
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步
 - `cn_daily.is_suspended` 只是停复牌事件标记，不表示完整停牌区间
 
-更细的仓表语义、同步状态模型和停牌设计见 `AGENTS.md` 与 `docs/`。
+更细的架构、接口与数据约束见 `AGENTS.md` 与 `docs/`。

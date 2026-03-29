@@ -15,56 +15,6 @@ class StandardResponse(BaseModel, Generic[T]):
 
 
 class StockAnalysisRequest(BaseModel):
-    symbols: List[str]
-    include_qlib_factors: bool = False
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {"symbols": ["NVDA", "AAPL", "600519"], "include_qlib_factors": False}
-        }
-    )
-
-
-class StructuredInterfaceResponse(BaseModel):
-    entity: Dict[str, Any]
-    facts: Dict[str, Any]
-    analysis: Dict[str, Any]
-    meta: Dict[str, Any]
-
-
-class StockRecordResponse(BaseModel):
-    ts_code: str
-    symbol: str
-    name: str
-    area: Optional[str] = None
-    industry: Optional[str] = None
-    market: Optional[str] = None
-    list_date: Optional[str] = None
-    meta: Dict[str, Any]
-
-
-class StockListResponse(BaseModel):
-    stocks: List[StockRecordResponse]
-    total: int
-    meta: Dict[str, Any]
-
-
-class StockSearchRequest(BaseModel):
-    keyword: str
-    market: Optional[str] = None
-
-    model_config = ConfigDict(json_schema_extra={"example": {"keyword": "NVDA", "market": None}})
-
-
-class WatchPollRequest(BaseModel):
-    symbols: List[str]
-
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"symbols": ["NVDA", "AAPL", "600519"]}}
-    )
-
-
-class ResearchSnapshotRequest(BaseModel):
     market: str
     symbols: List[str]
     start_date: Optional[str] = None
@@ -77,9 +27,24 @@ class ResearchSnapshotRequest(BaseModel):
             "example": {
                 "market": "cn",
                 "symbols": ["300827"],
-                "start_date": "20260226",
-                "end_date": "20260328",
-                "mode": "full",
+                "start_date": "20260227",
+                "end_date": "20260329",
+                "mode": "base",
             }
         },
+    )
+
+
+class StructuredInterfaceResponse(BaseModel):
+    entity: Dict[str, Any]
+    facts: Dict[str, Any]
+    analysis: Dict[str, Any]
+    meta: Dict[str, Any]
+
+
+class WatchPollRequest(BaseModel):
+    symbols: List[str]
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"symbols": ["NVDA", "AAPL", "600519"]}}
     )

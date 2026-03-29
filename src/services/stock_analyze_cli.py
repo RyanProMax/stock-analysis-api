@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
 from typing import Optional, Sequence, TextIO
 
-from .research_snapshot_service import ResearchSnapshotService, research_snapshot_service
+from ..api.schemas import StandardResponse
+from .stock_analyze_service import StockAnalyzeService, stock_analyze_service
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Poll unified FSP-objective research snapshot data."
-    )
+    parser = argparse.ArgumentParser(description="Run the unified stock analyze workflow.")
     parser.add_argument("--market", choices=["cn", "us"], default="cn")
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--start-date")
@@ -25,7 +26,7 @@ def main(
     argv: Optional[Sequence[str]] = None,
     *,
     writer: Optional[TextIO] = None,
-    service: Optional[ResearchSnapshotService] = None,
+    service: Optional[StockAnalyzeService] = None,
 ) -> dict:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -38,20 +39,23 @@ def main(
     if not deduped_symbols:
         raise SystemExit("`--symbols` must contain at least one valid symbol")
 
-    snapshot_service = service or research_snapshot_service
+    analyze_service = service or stock_analyze_service
     try:
-        payload = snapshot_service.poll_snapshot(
-            market=args.market,
-            symbols=deduped_symbols,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            mode=args.mode,
-        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            payload = analyze_service.analyze(
+                market=args.market,
+                symbols=deduped_symbols,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                mode=args.mode,
+            )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
+    response_payload = StandardResponse(status_code=200, data=payload, err_msg=None).model_dump()
+
     output = json.dumps(
-        payload,
+        response_payload,
         ensure_ascii=False,
         indent=2 if args.pretty else None,
         separators=(",", ": ") if args.pretty else (",", ":"),
@@ -59,4 +63,4 @@ def main(
     target = writer or sys.stdout
     target.write(output)
     target.write("\n")
-    return payload
+    return response_payload

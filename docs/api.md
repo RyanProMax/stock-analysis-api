@@ -1,20 +1,8 @@
 # HTTP API 设计说明
 
-更新时间：2026-03-28
+更新时间：2026-03-29
 
-本文档是当前对外 HTTP REST API 的唯一接口设计说明，统一描述：
-
-- 接口用途
-- 调用方式
-- 入参
-- 出参
-- 关键字段含义
-
-`README.md` 只保留运行和使用入口，不承载完整 API contract。
-
-说明：
-
-- 仓库中的内部 `scripts/` 仅供 Agent / skill 调用，不属于本文档维护范围
+本文档是当前对外 HTTP REST API 的唯一接口设计说明。
 
 ## 通用约定
 
@@ -24,7 +12,7 @@
 
 ### 通用响应封装
 
-除 Excel 导出接口外，所有接口统一返回：
+所有公共接口统一返回：
 
 ```json
 {
@@ -40,57 +28,6 @@
 - `data`: 业务数据
 - `err_msg`: 错误信息；成功时为 `null`
 
-### 复杂分析接口统一结构
-
-`/stock/analyze`、`/watch/poll`、`/analysis/research/snapshot` 的复杂 `data` 通常使用统一分层：
-
-```json
-{
-  "entity": {},
-  "facts": {},
-  "analysis": {},
-  "meta": {}
-}
-```
-
-字段含义：
-
-- `entity`: 标的身份信息，如代码、名称、市场、行业
-- `facts`: 原始事实或标准化后的事实数据，只放 `reported` / `consensus`
-- `analysis`: 派生分析、模型输出或估算结果
-- `meta`: 时间、来源、完整性、限制、source chain 等元信息
-
-### 标准字段对象
-
-复杂接口里的很多数值字段不是裸值，而是标准字段对象：
-
-```json
-{
-  "field": "price",
-  "value": 1418.68,
-  "display_value": 1418.68,
-  "unit": "currency",
-  "period_type": "spot",
-  "data_type": "reported",
-  "source": "Tushare",
-  "as_of": "2026-03-23T02:31:23.869916+00:00",
-  "status": "available",
-  "confidence": "medium",
-  "notes": []
-}
-```
-
-关键含义：
-
-- `value`: 机器值
-- `display_value`: 展示值
-- `unit`: 单位，如 `currency`、`ratio`、`multiple`
-- `period_type`: 时间语义，如 `spot`、`ttm`
-- `data_type`: 数据类型，如 `reported`、`derived`、`estimate`
-- `source`: 数据来源
-- `as_of`: 该字段的观测时间
-- `status`: `available` / `unavailable`
-
 ## 根路径与健康检查
 
 ### `GET /`
@@ -99,10 +36,6 @@
 
 - 返回简单欢迎信息
 
-响应：
-
-- `data.message`: 欢迎文案
-
 ### `GET /health`
 
 用途：
@@ -110,7 +43,7 @@
 - 唯一健康检查接口
 - 同时属于“任意 HTTP 请求”范围，会触发后台 symbols preflight 检查
 
-响应：
+响应重点：
 
 - `data.message`: 固定为 `ok`
 - `data.status`: 固定为 `healthy`
@@ -121,360 +54,75 @@
 - `cn/us` 会各自按当日是否开市独立判断是否触发后台刷新
 - `/docs`、`/redoc`、`/openapi.json` 不触发该后台检查
 
-## 股票基础接口
+## 股票分析接口
 
 ### `POST /stock/analyze`
 
 用途：
 
-- 批量分析股票，返回统一结构化分析结果
+- 当前唯一公共分析入口
+- 批量分析单市场股票列表
+- 返回统一的 stock-analyze snapshot payload
 
 请求体：
 
 ```json
 {
-  "symbols": ["NVDA", "AAPL", "600519"],
-  "include_qlib_factors": false
+  "market": "cn",
+  "symbols": ["300827"],
+  "start_date": "20260227",
+  "end_date": "20260329",
+  "mode": "base"
 }
 ```
 
 字段含义：
 
-- `symbols`: 股票代码数组，必填
-- `include_qlib_factors`: 是否包含额外 Qlib 因子，默认 `false`
-
-成功响应：
-
-- `data` 为数组，每个元素是一个 `StructuredInterfaceResponse`
-
-返回重点：
-
-- `entity`: 标的基本信息
-- `facts`: 标准化后的价格、财务、共识等事实数据
-- `analysis`: 技术面、基本面、模型结论
-- `meta`: 数据来源、时间、限制说明
-
-错误语义：
-
-- `400`: `symbols` 为空或无有效代码
-- `404`: 无法获取任何股票数据
-
-### `GET /stock/list`
-
-用途：
-
-- 返回股票列表，默认来自本地 SQLite symbol 仓
-- 当 `market=A股` 时，返回的是 `cn_symbols` 结果，可能同时包含 A 股股票与 `market=ETF` 的记录
-
-Query 参数：
-
-- `market`: 可选，市场筛选；常见值为 `A股`、`美股`
-- `limit`: 可选，返回数量上限；`>= 0`
-
-附加行为：
-
-- 当前请求会触发后台 symbols preflight 检查，但不会阻塞接口返回
-
-成功响应结构：
-
-```json
-{
-  "stocks": [
-    {
-      "ts_code": "600519.SH",
-      "symbol": "600519",
-      "name": "贵州茅台",
-      "area": null,
-      "industry": null,
-      "market": "A股",
-      "list_date": null,
-      "meta": {}
-    }
-  ],
-  "total": 1,
-  "meta": {
-    "source": "stock_list_sqlite",
-    "status": "available",
-    "as_of": null
-  }
-}
-```
-
-字段含义：
-
-- `stocks`: 股票记录数组
-- `total`: 当前返回条数
-- `meta.source`: 当前列表来源
-
-单条股票记录字段含义：
-
-- `ts_code`: 带交易所后缀的代码
-- `symbol`: 纯代码
-- `name`: 股票名称
-- `area`: 地域
-- `industry`: 行业
-- `market`: 市场标签
-- `list_date`: 上市日期
-- `meta`: 扩展元信息
-
-补充说明：
-
-- 不新增 ETF-only 过滤参数
-- 若请求 `market=A股`，`market` 字段可能为 `主板 / 创业板 / 科创板 / 北交所 / CDR / ETF`
-
-### `POST /stock/search`
-
-用途：
-
-- 在本地 SQLite symbol 仓中按关键词搜索股票
-- 当 `market=A股` 时，搜索范围是 `cn_symbols`，结果可能包含 `market=ETF`
-
-请求体：
-
-```json
-{
-  "keyword": "NVDA",
-  "market": null
-}
-```
-
-字段含义：
-
-- `keyword`: 搜索关键词，必填
-- `market`: 可选市场筛选
-
-附加行为：
-
-- 当前请求会触发后台 symbols preflight 检查，但不会阻塞接口返回
-
-响应结构：
-
-- 与 `/stock/list` 相同，返回 `stocks`、`total`、`meta`
-
-错误语义：
-
-- `400`: `keyword` 为空
-
-## 盯盘轮询接口
-
-### `POST /watch/poll`
-
-用途：
-
-- 面向外部 Agent 的多股票轮询接口
-- 返回盘中快照、相对上次轮询的变化和预警
-
-请求体：
-
-```json
-{
-  "symbols": ["600519", "000001", "NVDA"]
-}
-```
-
-字段含义：
-
-- `symbols`: 股票代码数组，必填；服务端会去重、保序
-
-响应：
-
-- `data` 为数组，每个元素对应一只股票的轮询结果
-
-返回重点字段：
-
-- `entity.symbol`
-- `entity.name`
-- `entity.market`
-- `facts.quote`
-- `facts.fundamentals`
-- `analysis.delta`
-- `analysis.alerts`
-- `analysis.technical`
-- `analysis.earnings_watch`
-- `meta.degradation`
-- `meta.source_chain`
-
-A 股轮询补充约束：
-
-- A 股 `facts.fundamentals` 走轻量基本面模式，不再触发重型多源财务 fallback
-- A 股普通股票优先使用 realtime quote 已带出的 `pe / pb / total_mv / circ_mv` 等轻量字段
-- A 股 ETF / 基金 / 非普通股票若缺少适用基本面字段，可返回 `partial` 或 `null`，但不会再触发整条股票财务抓取链路
-
-美股轮询补充约束：
-
-- 美股股票正式支持 realtime quote
-- 美股 realtime 主源为 `yfinance`
-- 当 `yfinance` 无法提供实时 quote 时，仍允许降级为 `daily_fallback` 或 `unavailable`
-
-`facts.quote` 常见字段：
-
-- `price`: 当前价格
-- `change_pct`: 涨跌幅
-- `change_amount`: 涨跌额
-- `open`: 开盘价
-- `high`: 最高价
-- `low`: 最低价
-- `pre_close`: 昨收
-- `volume`: 成交量
-- `amount`: 成交额
-- `turnover_rate`: 换手率
-- `amplitude`: 振幅
-
-`analysis.delta` 字段：
-
-- `status`: `initial` 或 `updated`
-- `changed_fields`: 本次相对 baseline 变化的字段列表
-- `price_move_pct_since_last_poll`: 距上次轮询的价格变化幅度
-- `trend_changed`: 趋势是否变化
-
-`analysis.alerts` 字段：
-
-- `code`: 预警代码
-- `severity`: 严重级别
-- `summary`: 简短说明
-- `evidence`: 触发证据
-- `symbol`: 股票代码
-- `as_of`: 触发时间
-
-常见 `alert.code`：
-
-- `price_jump_up`
-- `price_jump_down`
-- `volume_spike`
-- `turnover_spike`
-- `near_day_high`
-- `near_day_low`
-- `breakout_up`
-- `breakout_down`
-- `earnings_soon`
-
-`meta.degradation` 字段：
-
-- `quote_mode`: `realtime` / `daily_fallback` / `unavailable`
-- `quote_is_realtime`: 是否为盘中实时 quote
-- `quote_fallback_used`: 是否用了日线降级
-- `fundamentals_partial`: 基本面是否部分缺失
-- `earnings_partial`: 财报观察是否部分缺失
-
-实时性判断规则：
-
-- `quote_mode = realtime` 且 `quote_is_realtime = true`：盘中实时数据
-- `quote_mode = daily_fallback`：仅拿到最新日线快照，不是盘中实时
-
-`facts.fundamentals` 补充说明：
-
-- A 股轮询场景下，`source` 可能直接来自 realtime quote 源，例如 `CN_Tushare`
-- 当 A 股标的不适用股票财务口径，或轻量字段不足时，`fundamentals_partial = true`
-- 美股轮询场景下，`quote.source` 与 realtime 命中源应明确为 `yfinance`
-
-## 统一研究接口
-
-### `POST /analysis/research/snapshot`
-
-用途：
-
-- 提供统一的客观研究快照入口
-- 替代原有分散的 `/valuation/*`、`/model/*`、`/analysis/*` 专项分析接口
-- 单次请求按市场、symbol 和 `mode` 返回结构化研究结果
-
-请求体：
-
-- `market`: 必填，`cn` / `us`
-- `symbols`: 必填，字符串数组，去重保序
+- `market`: 必填，`cn` 或 `us`
+- `symbols`: 必填，股票代码数组
 - `start_date`: 可选，`YYYYMMDD`
 - `end_date`: 可选，`YYYYMMDD`
 - `mode`: 可选，`base` / `full`，默认 `base`
 
-`mode` 模块集：
+请求约束：
 
-- `base`
-  - `cn`
-    - `research_report`
-    - `report_rc`
-    - `earnings`
-    - `catalysts`
-    - `screen`
-  - `us`
-    - `earnings`
-    - `dcf`
-    - `comps`
-    - `three_statement`
-    - `screen`
-- `full`
-  - `cn`
-    - `research_report`
-    - `report_rc`
-    - `anns_d`
-    - `news`
-    - `major_news`
-    - `earnings`
-    - `catalysts`
-    - `screen`
-    - `model_update`
-  - `us`
-    - `earnings`
-    - `earnings_preview`
-    - `dcf`
-    - `comps`
-    - `three_statement`
-    - `lbo`
-    - `three_statement_scenarios`
-    - `competitive`
-    - `catalysts`
-    - `screen`
-    - `model_update`
-    - `sector_overview`
-
-约束：
-
+- 仅支持单市场批次请求
 - 请求体启用 `extra=forbid`
-- 继续传 `modules` / `module_options` 会直接返回 `400`
+- 不再公开 `include_qlib_factors`
+- 不再公开 `modules` / `module_options`
 
-顶层响应：
+响应结构：
 
-- `status`
-- `computed_at`
-- `source`
-- `market`
-- `strategy`
-- `request`
-- `items`
+- `data.status`: 顶层聚合状态
+- `data.computed_at`: 本次生成时间
+- `data.source`: 当前固定为 `stock_analyze_dispatcher`
+- `data.market`: 生效市场
+- `data.strategy`: 当前固定为 `fsp_objective_stock_analyze_v1`
+- `data.request`: 生效后的请求参数回显
+- `data.items`: 每个 symbol 的分析结果
 
-`request` 只回显：
-
-- `market`
-- `symbols`
-- `start_date`
-- `end_date`
-- `mode`
-
-`items[]` 固定字段：
+单个 `item` 固定包含：
 
 - `requested_symbol`
 - `status`
 - `error`
 - `info`
 - `summary`
-- 成功产出数据的模块结果
+- 成功产出业务数据的模块 body
 - `meta`
 
-模块返回规则：
+`info` 说明：
 
-- 原始 / 事件型模块：
-  - `records`
-- 结构化分析型模块：
-  - 只保留业务字段
-  - 不再公开 `entity`
-  - 不再公开 `meta`
-  - 不再公开 `module_status`
-  - 不再公开 `module_error`
-  - 不再公开 `attempted_sources`
+- `common`: 跨市场统一身份字段
+- `cn_specific`: A 股专属身份字段
+- `us_specific`: 美股专属身份字段
 
 `summary` 说明：
 
-- `summary` 是跨市场统一汇总层，替代旧的 CN-only `derived`
-- 仅保留当前市场、当前 `mode` 下真正有意义的摘要子块
-- 常见子块包括：
+- 跨市场统一汇总层
+- 只承载 Agent 决策所需的关键确定性摘要
+- 按模块情况输出：
+  - `technical`
   - `research`
   - `earnings`
   - `catalysts`
@@ -482,65 +130,134 @@ A 股轮询补充约束：
   - `models`
   - `change_flags`
 
-`meta` 说明：
+`meta.modules` 说明：
 
-- `item.meta` 集中承载状态和调试信息，避免在每个模块里重复展开
-- 固定字段：
-  - `mode`
-  - `sources`
-  - `partial_reasons`
-  - `modules`
-- `item.meta.modules.<module>` 固定字段：
+- 统一承载每个模块的：
   - `status`
   - `source`
   - `error`
   - `notes`
-- `notes` 统一承载：
-  - `filter_rule`
-  - `skip_reason`
-  - `fallback_mode`
-  - `limitations`
-  - 其它模块级补充说明
+- `permission_denied`、`not_supported`、`empty` 等状态只在这里表达，不再为对应模块输出空壳 body
 
-客观边界：
+模块 body 约束：
 
-- 接口只返回客观、结构化、可追溯输出
-- 不返回 thesis、moat、positioning、recommendation、confidence、price target、morning note、idea pitch 等主观字段
+- 原始块：
+  - `research_report`
+  - `report_rc`
+  - `anns_d`
+  - `news`
+  - `major_news`
+  - 只保留 `records`
+- 结构化块：
+  - `technical`
+  - `earnings`
+  - `earnings_preview`
+  - `dcf`
+  - `comps`
+  - `three_statement`
+  - `lbo`
+  - `three_statement_scenarios`
+  - `competitive`
+  - `catalysts`
+  - `model_update`
+  - `sector_overview`
+  - `screen`
+- 结构化块不再公开：
+  - `entity`
+  - `meta`
+  - `module_status`
+  - `module_error`
+  - `attempted_sources`
 
-状态语义：
+`mode` 对应模块集合：
 
-- item `status`
-  - `ok`
-  - `partial`
-  - `failed`
-  - `not_supported`
-  - `not_implemented`
-- 顶层 `status`
-  - `ok`
-  - `partial`
-  - `not_implemented`
+- `cn.base`
+  - `technical`
+  - `research_report`
+  - `report_rc`
+  - `earnings`
+  - `catalysts`
+  - `screen`
+- `cn.full`
+  - `technical`
+  - `research_report`
+  - `report_rc`
+  - `anns_d`
+  - `news`
+  - `major_news`
+  - `earnings`
+  - `catalysts`
+  - `screen`
+  - `model_update`
+- `us.base`
+  - `technical`
+  - `earnings`
+  - `dcf`
+  - `comps`
+  - `three_statement`
+  - `screen`
+- `us.full`
+  - `technical`
+  - `earnings`
+  - `earnings_preview`
+  - `dcf`
+  - `comps`
+  - `three_statement`
+  - `lbo`
+  - `three_statement_scenarios`
+  - `competitive`
+  - `catalysts`
+  - `screen`
+  - `model_update`
+  - `sector_overview`
 
-说明：
+返回约束：
 
-- `cn` 与 `us` 都通过同一入口调度，不再单独暴露专项分析 HTTP 路由
-- `base` 目标是“决策信息全”，不是“原始字段全”
-- `full` 在 `base` 之上补充长尾原始块和扩展模块
-- CLI `scripts/poll_research_snapshot.py` 与该 HTTP 接口保持同构请求 / 响应语义
+- 只输出客观、结构化、可追溯结果
+- 不输出：
+  - `recommendation`
+  - `confidence`
+  - `price_target`
+  - `moat_assessment`
+  - thesis / conviction / positioning / idea pitch / morning note
 
-## 错误语义
+错误语义：
 
-常见返回：
+- `400`: 请求参数非法，如缺少 symbol、非法 mode、额外字段
+- `200 + item.status=failed`: 单个 symbol 无法分析或核心模块不可用
+- `200 + item.status=not_supported`: 非普通股、ETF 或当前市场不支持的标的
 
-- `400`: 参数非法、缺关键参数或分析器返回业务错误
-- `404`: 仅个别接口使用，如 `/stock/analyze` 在没有任何有效结果时返回
-- `500`: 服务端内部异常
+## 盯盘轮询接口
 
-错误体统一仍使用：
+### `POST /watch/poll`
+
+用途：
+
+- 多股票盯盘轮询
+- 返回 compact snapshot、delta 和 alerts
+
+请求体：
 
 ```json
 {
-  "status_code": 500,
-  "data": null,
-  "err_msg": "错误说明"
+  "symbols": ["NVDA", "AAPL", "600519"]
 }
 ```
+
+字段含义：
+
+- `symbols`: 股票代码数组，必填
+
+返回重点：
+
+- `data` 是数组
+- 每个元素保持 `entity / facts / analysis / meta` 结构
+- `facts.quote`: 实时或降级行情快照
+- `facts.fundamentals`: 轻量基本面事实
+- `analysis.delta`: 与进程内 baseline 的变化
+- `analysis.alerts`: 当前触发的盯盘告警
+- `meta.degradation`: realtime / fallback / partial 说明
+
+错误语义：
+
+- `400`: `symbols` 为空或无有效代码

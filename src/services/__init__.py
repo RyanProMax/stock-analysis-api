@@ -10,7 +10,7 @@ from .symbol_snapshot_refresh_service import (
     symbol_snapshot_refresh_service,
 )
 from .watch_polling_service import WatchPollingService, watch_polling_service
-from .research_snapshot_service import ResearchSnapshotService, research_snapshot_service
+from .stock_analyze_service import StockAnalyzeService, stock_analyze_service
 
 __all__ = [
     "DailyDataReadService",
@@ -23,6 +23,6 @@ __all__ = [
     "symbol_snapshot_refresh_service",
     "WatchPollingService",
     "watch_polling_service",
-    "ResearchSnapshotService",
-    "research_snapshot_service",
+    "StockAnalyzeService",
+    "stock_analyze_service",
 ]

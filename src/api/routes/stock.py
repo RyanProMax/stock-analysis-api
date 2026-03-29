@@ -1,151 +1,47 @@
-"""股票分析控制器 - 处理 HTTP 股票分析接口"""
+"""股票分析控制器 - 处理公共 stock analyze HTTP 接口"""
+
+from typing import Any, Dict
 
 from fastapi import APIRouter
-from typing import List, Optional
 
-from ...analyzer.normalizers import stock_analysis_contract, stock_record
-from ...core.pipeline import stock_service
-from ..schemas import (
-    StructuredInterfaceResponse,
-    StockAnalysisRequest,
-    StandardResponse,
-    StockListResponse,
-    StockRecordResponse,
-    StockSearchRequest,
-)
+from ...services.stock_analyze_service import stock_analyze_service
+from ..schemas import StandardResponse, StockAnalysisRequest
 
 router = APIRouter()
 
 
 @router.post(
     "/analyze",
-    response_model=StandardResponse[List[StructuredInterfaceResponse]],
+    response_model=StandardResponse[Dict[str, Any]],
     summary="批量分析股票列表",
 )
 def analyze_stocks(payload: StockAnalysisRequest):
-    """
-    根据传入的股票代码列表执行批量分析，返回成功分析的结果列表。
-
-    Args:
-        payload: 包含股票代码列表和是否包含 Qlib 158 因子的标志
-    """
-    try:
-        normalized = [symbol.strip().upper() for symbol in payload.symbols if symbol.strip()]
-        if not normalized:
-            return StandardResponse(
-                status_code=400,
-                data=None,
-                err_msg="请至少提供一个有效的股票代码。",
-            )
-
-        reports = stock_service.batch_analyze(
-            normalized, include_qlib_factors=payload.include_qlib_factors
-        )
-        if not reports:
-            return StandardResponse(
-                status_code=404,
-                data=None,
-                err_msg="无法获取任何股票的数据，请确认代码是否有效。",
-            )
-
-        # 转换报告为响应格式（处理特殊序列化需求）
-        response_reports = [stock_analysis_contract(r.to_dict()) for r in reports]
-
+    normalized_symbols = [symbol.strip().upper() for symbol in payload.symbols if symbol.strip()]
+    if not normalized_symbols:
         return StandardResponse(
-            status_code=200,
-            data=response_reports,
-            err_msg=None,
+            status_code=400,
+            data=None,
+            err_msg="请至少提供一个有效的股票代码。",
         )
-    except Exception as e:
+
+    try:
+        response_payload = stock_analyze_service.analyze(
+            market=payload.market,
+            symbols=normalized_symbols,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            mode=payload.mode,
+        )
+        return StandardResponse(status_code=200, data=response_payload, err_msg=None)
+    except ValueError as exc:
+        return StandardResponse(
+            status_code=400,
+            data=None,
+            err_msg=str(exc),
+        )
+    except Exception as exc:
         return StandardResponse(
             status_code=500,
             data=None,
-            err_msg=f"服务器内部错误: {str(e)}",
-        )
-
-
-@router.get(
-    "/list",
-    response_model=StandardResponse[StockListResponse],
-    summary="获取股票列表",
-)
-def get_stock_list(
-    market: Optional[str] = None,
-    limit: Optional[int] = None,
-):
-    """
-    获取股票列表（按 tushare 风格字段返回）
-
-    Args:
-        market: 市场类型，可选值：'A股'、'美股'，如果为 None 则返回所有市场
-    Returns:
-        StandardResponse[StockListResponse]: 股票列表（tushare格式）
-    """
-    try:
-        stocks = stock_service.get_stock_list(market)
-        if limit is not None and limit >= 0:
-            stocks = stocks[:limit]
-
-        # 直接转换为响应格式（保持tushare格式）
-        stock_responses = [StockRecordResponse(**stock_record(s)) for s in stocks]
-
-        return StandardResponse(
-            status_code=200,
-            data=StockListResponse(
-                stocks=stock_responses,
-                total=len(stock_responses),
-                meta={"source": "stock_list_sqlite", "status": "available", "as_of": None},
-            ),
-            err_msg=None,
-        )
-    except Exception as e:
-        return StandardResponse(
-            status_code=500,
-            data=None,
-            err_msg=f"获取股票列表失败: {str(e)}",
-        )
-
-
-@router.post(
-    "/search",
-    response_model=StandardResponse[StockListResponse],
-    summary="搜索股票",
-)
-def search_stocks(payload: StockSearchRequest):
-    """
-    搜索股票（从 SQLite symbol 仓中搜索，按 tushare 风格字段返回）
-
-    Args:
-        payload: 搜索请求，包含关键词和市场类型
-
-    Returns:
-        StandardResponse[StockListResponse]: 匹配的股票列表（tushare格式）
-    """
-    try:
-        if not payload.keyword or not payload.keyword.strip():
-            return StandardResponse(
-                status_code=400,
-                data=None,
-                err_msg="搜索关键词不能为空",
-            )
-
-        stocks = stock_service.search_stocks(payload.keyword, payload.market)
-
-        # 直接转换为响应格式（保持tushare格式）
-        stock_responses = [StockRecordResponse(**stock_record(s)) for s in stocks]
-
-        return StandardResponse(
-            status_code=200,
-            data=StockListResponse(
-                stocks=stock_responses,
-                total=len(stock_responses),
-                meta={"source": "stock_list_sqlite", "status": "available", "as_of": None},
-            ),
-            err_msg=None,
-        )
-    except Exception as e:
-        return StandardResponse(
-            status_code=500,
-            data=None,
-            err_msg=f"搜索股票失败: {str(e)}",
+            err_msg=f"Stock analyze 生成失败: {str(exc)}",
         )
