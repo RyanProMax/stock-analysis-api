@@ -31,13 +31,43 @@ class ResearchSnapshotService:
     STRATEGY = "fsp_objective_research_snapshot_v1"
     TOP_LEVEL_SOURCE = "research_snapshot_dispatcher"
     PROVIDER_ORDER = ("tushare",)
+    MODES = ("base", "full")
     CN_NATIVE_CORE_BLOCKS = ("research_report", "report_rc")
     CN_NATIVE_OPTIONAL_BLOCKS = ("anns_d", "news", "major_news")
     NEWS_SOURCES = ("cls", "sina", "wallstreetcn", "10jqka")
     MAJOR_NEWS_SOURCES = ("新浪财经", "财联社", "中证网", "第一财经")
-    DEFAULT_MODULES = {
-        "cn": ("research_report", "report_rc", "anns_d", "news", "major_news", "earnings"),
-        "us": ("earnings", "earnings_preview", "dcf", "comps", "three_statement"),
+    MODE_MODULES = {
+        "cn": {
+            "base": ("research_report", "report_rc", "earnings", "catalysts", "screen"),
+            "full": (
+                "research_report",
+                "report_rc",
+                "anns_d",
+                "news",
+                "major_news",
+                "earnings",
+                "catalysts",
+                "screen",
+                "model_update",
+            ),
+        },
+        "us": {
+            "base": ("earnings", "dcf", "comps", "three_statement", "screen"),
+            "full": (
+                "earnings",
+                "earnings_preview",
+                "dcf",
+                "comps",
+                "three_statement",
+                "lbo",
+                "three_statement_scenarios",
+                "competitive",
+                "catalysts",
+                "screen",
+                "model_update",
+                "sector_overview",
+            ),
+        },
     }
     CRITICAL_MODULES = {
         "cn": ("research_report", "report_rc"),
@@ -115,19 +145,20 @@ class ResearchSnapshotService:
         symbols: Sequence[str],
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        modules: Optional[Sequence[str]] = None,
-        module_options: Optional[Mapping[str, Any]] = None,
+        mode: str = "base",
     ) -> Dict[str, Any]:
         normalized_market = self._normalize_market(market)
         normalized_symbols = self._normalize_symbols(symbols)
+        normalized_mode = self._normalize_mode(mode)
         computed_at = datetime.now(timezone.utc).isoformat()
         window = self._resolve_window(start_date=start_date, end_date=end_date)
-        resolved_modules = self._resolve_modules(normalized_market, modules)
-        normalized_module_options = self._normalize_module_options(module_options)
+        resolved_modules = self._modules_for_mode(normalized_market, normalized_mode)
+        normalized_module_options: Dict[str, Any] = {}
         items = [
             self._build_item(
                 market=normalized_market,
                 requested_symbol=symbol,
+                mode=normalized_mode,
                 modules=resolved_modules,
                 module_options=normalized_module_options,
                 start_date=window["start_date"],
@@ -151,8 +182,7 @@ class ResearchSnapshotService:
                 "symbols": normalized_symbols,
                 "start_date": window["start_date"],
                 "end_date": window["end_date"],
-                "modules": list(resolved_modules),
-                "module_options": normalized_module_options,
+                "mode": normalized_mode,
             },
             "items": items,
         }
@@ -368,6 +398,7 @@ class ResearchSnapshotService:
         *,
         market: str,
         requested_symbol: str,
+        mode: str,
         modules: Sequence[str],
         module_options: Mapping[str, Any],
         start_date: str,
@@ -379,6 +410,7 @@ class ResearchSnapshotService:
         if market == "cn":
             return self._build_cn_item(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 modules=modules,
                 module_options=module_options,
                 start_date=start_date,
@@ -389,6 +421,7 @@ class ResearchSnapshotService:
             )
         return self._build_us_item(
             requested_symbol=requested_symbol,
+            mode=mode,
             modules=modules,
             module_options=module_options,
             start_date=start_date,
@@ -402,6 +435,7 @@ class ResearchSnapshotService:
         self,
         *,
         requested_symbol: str,
+        mode: str,
         modules: Sequence[str],
         module_options: Mapping[str, Any],
         start_date: str,
@@ -414,6 +448,7 @@ class ResearchSnapshotService:
         if len(requested_symbol) != 6 or not requested_symbol.isdigit():
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="failed",
                 code="invalid_symbol",
                 message="CN research snapshot expects a 6-digit stock code.",
@@ -428,6 +463,7 @@ class ResearchSnapshotService:
         if security.get("status") in {"permission_denied", "error"}:
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="failed",
                 code="security_lookup_failed",
                 message=security.get("error") or "Security lookup failed.",
@@ -437,6 +473,7 @@ class ResearchSnapshotService:
         if not security_record:
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="failed",
                 code="invalid_symbol",
                 message="Unable to resolve the requested CN symbol from Tushare.",
@@ -448,6 +485,7 @@ class ResearchSnapshotService:
         if security_record.get("security_type") != "stock":
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="not_supported",
                 code="security_not_supported",
                 message="CN research snapshot only supports listed common stock.",
@@ -494,18 +532,25 @@ class ResearchSnapshotService:
             modules=modules,
             module_results=module_results,
         )
-        return {
-            "requested_symbol": requested_symbol,
-            "status": item_status,
-            "error": error,
-            "info": info,
-            **module_results,
-        }
+        native_item = module_cache.get("cn_native_item") if isinstance(module_cache, dict) else None
+        return self._assemble_public_item(
+            market="cn",
+            mode=mode,
+            requested_symbol=requested_symbol,
+            item_status=item_status,
+            error=error,
+            info=info,
+            modules=modules,
+            module_results=module_results,
+            native_item=native_item if isinstance(native_item, dict) else None,
+            change_anchor=change_anchor,
+        )
 
     def _build_us_item(
         self,
         *,
         requested_symbol: str,
+        mode: str,
         modules: Sequence[str],
         module_options: Mapping[str, Any],
         start_date: str,
@@ -520,6 +565,7 @@ class ResearchSnapshotService:
         if security["status"] == "error":
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="failed",
                 code="security_lookup_failed",
                 message=security["error"] or "US security lookup failed.",
@@ -530,6 +576,7 @@ class ResearchSnapshotService:
         if security["status"] == "empty":
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="failed",
                 code="invalid_symbol",
                 message="Unable to resolve the requested US symbol from yfinance.",
@@ -540,6 +587,7 @@ class ResearchSnapshotService:
         if security["status"] == "not_supported":
             return self._build_dynamic_item_failure(
                 requested_symbol=requested_symbol,
+                mode=mode,
                 status="not_supported",
                 code="security_not_supported",
                 message=security["error"] or "US research snapshot only supports common stock.",
@@ -572,13 +620,18 @@ class ResearchSnapshotService:
             modules=modules,
             module_results=module_results,
         )
-        return {
-            "requested_symbol": requested_symbol,
-            "status": item_status,
-            "error": error,
-            "info": info,
-            **module_results,
-        }
+        return self._assemble_public_item(
+            market="us",
+            mode=mode,
+            requested_symbol=requested_symbol,
+            item_status=item_status,
+            error=error,
+            info=info,
+            modules=modules,
+            module_results=module_results,
+            native_item=None,
+            change_anchor=change_anchor,
+        )
 
     def _execute_module(
         self,
@@ -776,33 +829,8 @@ class ResearchSnapshotService:
         module_cache[module] = copy.deepcopy(result)
         return result
 
-    def _resolve_modules(
-        self,
-        market: str,
-        modules: Optional[Sequence[str]],
-    ) -> list[str]:
-        selected = list(self.DEFAULT_MODULES[market] if not modules else modules)
-        normalized: list[str] = []
-        for module in selected:
-            text = str(module or "").strip()
-            if not text:
-                continue
-            if text not in self.MODULES:
-                raise ValueError(f"Unknown module: {text}")
-            if text not in normalized:
-                normalized.append(text)
-        return normalized
-
-    @staticmethod
-    def _normalize_module_options(
-        module_options: Optional[Mapping[str, Any]],
-    ) -> Dict[str, Any]:
-        if not isinstance(module_options, Mapping):
-            return {}
-        normalized: Dict[str, Any] = {}
-        for key, value in module_options.items():
-            normalized[str(key)] = value if isinstance(value, Mapping) else value
-        return normalized
+    def _modules_for_mode(self, market: str, mode: str) -> list[str]:
+        return list(self.MODE_MODULES[market][mode])
 
     @staticmethod
     def _merge_item_statuses(items: Sequence[Dict[str, Any]]) -> str:
@@ -870,6 +898,7 @@ class ResearchSnapshotService:
         self,
         *,
         requested_symbol: str,
+        mode: str,
         status: str,
         code: str,
         message: str,
@@ -877,20 +906,38 @@ class ResearchSnapshotService:
         attempted_sources: Sequence[str],
         info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        item = {
+        primary_source = attempted_sources[0] if attempted_sources else None
+        meta_modules = {
+            module: {
+                "status": "error" if status == "failed" else status,
+                "source": primary_source,
+                "error": message,
+                "notes": {},
+            }
+            for module in modules
+        }
+        partial_reasons = [
+            {
+                "module": module,
+                "status": module_meta["status"],
+                "error": message,
+            }
+            for module, module_meta in meta_modules.items()
+            if module_meta["status"] in {"error", "permission_denied", "not_supported", "partial"}
+        ]
+        return {
             "requested_symbol": requested_symbol,
             "status": status,
             "error": {"code": code, "message": message},
             "info": info or self._empty_identity(),
+            "summary": {},
+            "meta": {
+                "mode": mode,
+                "sources": [primary_source] if primary_source else [],
+                "partial_reasons": partial_reasons,
+                "modules": meta_modules,
+            },
         }
-        for module in modules:
-            item[module] = self._empty_module_result(
-                module=module,
-                status="error" if status == "failed" else status,
-                error=message,
-                attempted_sources=attempted_sources,
-            )
-        return item
 
     def _empty_module_result(
         self,
@@ -954,6 +1001,426 @@ class ResearchSnapshotService:
         ):
             return "partial", None
         return "ok", None
+
+    def _assemble_public_item(
+        self,
+        *,
+        market: str,
+        mode: str,
+        requested_symbol: str,
+        item_status: str,
+        error: Optional[Dict[str, str]],
+        info: Dict[str, Any],
+        modules: Sequence[str],
+        module_results: Mapping[str, Dict[str, Any]],
+        native_item: Optional[Dict[str, Any]],
+        change_anchor: pd.Timestamp,
+    ) -> Dict[str, Any]:
+        public_item: Dict[str, Any] = {
+            "requested_symbol": requested_symbol,
+            "status": item_status,
+            "error": error,
+            "info": info,
+        }
+        meta_modules: Dict[str, Any] = {}
+        for module in modules:
+            module_payload = module_results.get(module, {})
+            meta_modules[module] = self._build_public_module_meta(
+                module=module,
+                module_payload=module_payload,
+            )
+            public_module = self._public_module_body(
+                module=module,
+                module_payload=module_payload,
+            )
+            if public_module is not None:
+                public_item[module] = public_module
+
+        public_item["summary"] = self._build_summary(
+            market=market,
+            modules=modules,
+            module_results=module_results,
+            native_item=native_item,
+            change_anchor=change_anchor,
+        )
+        public_item["meta"] = {
+            "mode": mode,
+            "sources": self._collect_item_sources(meta_modules),
+            "partial_reasons": self._collect_partial_reasons(meta_modules),
+            "modules": meta_modules,
+        }
+        return public_item
+
+    def _build_public_module_meta(
+        self,
+        *,
+        module: str,
+        module_payload: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        if module in self.RAW_MODULES:
+            notes = {
+                key: value
+                for key, value in module_payload.items()
+                if key
+                not in {"records", "source", "source_status", "source_error", "attempted_sources"}
+                and self._has_public_value(value)
+            }
+            return {
+                "status": str(module_payload.get("source_status") or "ok"),
+                "source": module_payload.get("source"),
+                "error": module_payload.get("source_error"),
+                "notes": notes,
+            }
+
+        meta_payload = module_payload.get("meta", {}) if isinstance(module_payload, Mapping) else {}
+        notes: Dict[str, Any] = {}
+        if isinstance(meta_payload, Mapping):
+            if self._has_public_value(meta_payload.get("as_of")):
+                notes["as_of"] = meta_payload.get("as_of")
+            if self._has_public_value(meta_payload.get("data_completeness")):
+                notes["data_completeness"] = meta_payload.get("data_completeness")
+            if self._has_public_value(meta_payload.get("limitations")):
+                notes["limitations"] = meta_payload.get("limitations")
+            if self._has_public_value(meta_payload.get("interface_type")):
+                notes["interface_type"] = meta_payload.get("interface_type")
+        sources = meta_payload.get("sources") if isinstance(meta_payload, Mapping) else []
+        source = sources[0] if isinstance(sources, Sequence) and sources else None
+        return {
+            "status": str(module_payload.get("module_status") or "ok"),
+            "source": source,
+            "error": module_payload.get("module_error"),
+            "notes": notes,
+        }
+
+    def _public_module_body(
+        self,
+        *,
+        module: str,
+        module_payload: Mapping[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if module in self.RAW_MODULES:
+            records = list(module_payload.get("records") or [])
+            return {"records": records} if records else None
+
+        module_status = str(module_payload.get("module_status") or "ok")
+        if module_status in {"error", "permission_denied", "not_supported", "not_implemented"}:
+            return None
+
+        flattened = self._flatten_structured_module(module=module, module_payload=module_payload)
+        return flattened if self._has_public_value(flattened) else None
+
+    def _flatten_structured_module(
+        self,
+        *,
+        module: str,
+        module_payload: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        facts = module_payload.get("facts", {}) if isinstance(module_payload, Mapping) else {}
+        analysis = module_payload.get("analysis", {}) if isinstance(module_payload, Mapping) else {}
+        reported = facts.get("reported", {}) if isinstance(facts, Mapping) else {}
+        consensus = facts.get("consensus", {}) if isinstance(facts, Mapping) else {}
+        derived = analysis.get("derived", {}) if isinstance(analysis, Mapping) else {}
+        estimate = analysis.get("estimate", {}) if isinstance(analysis, Mapping) else {}
+        model_output = analysis.get("model_output", {}) if isinstance(analysis, Mapping) else {}
+
+        if module == "earnings":
+            flattened: Dict[str, Any] = {}
+            if self._has_public_value(reported):
+                flattened["reported"] = reported
+            if self._has_public_value(consensus):
+                flattened["consensus"] = consensus
+            for key in ("fundamentals", "growth", "valuation", "coverage"):
+                if self._has_public_value(derived.get(key)):
+                    flattened[key] = derived.get(key)
+            remaining_derived = {
+                key: value
+                for key, value in derived.items()
+                if key not in {"fundamentals", "growth", "valuation", "coverage"}
+                and self._has_public_value(value)
+            }
+            if remaining_derived:
+                flattened["derived"] = remaining_derived
+            return flattened
+
+        if module == "catalysts":
+            flattened = {}
+            if self._has_public_value(reported.get("events")):
+                flattened["events"] = reported.get("events")
+            for key in ("event_type_distribution", "event_count", "horizon_days"):
+                if key in derived and self._has_public_value(derived.get(key)):
+                    flattened[key] = derived.get(key)
+            return flattened
+
+        if module == "screen":
+            flattened = {}
+            metrics = reported.get("metrics", {}) if isinstance(reported, Mapping) else {}
+            metrics = {key: value for key, value in metrics.items() if key != "_source"}
+            if self._has_public_value(metrics):
+                flattened["metrics"] = metrics
+            for key in ("filters", "passed", "filter_count"):
+                if key in derived and self._has_public_value(derived.get(key)):
+                    flattened[key] = derived.get(key)
+            return flattened
+
+        if module == "earnings_preview":
+            flattened = {}
+            if self._has_public_value(reported.get("next_earnings_date")):
+                flattened["next_earnings_date"] = reported.get("next_earnings_date")
+            if self._has_public_value(reported.get("market_snapshot")):
+                flattened["market_snapshot"] = reported.get("market_snapshot")
+            if self._has_public_value(model_output.get("scenarios")):
+                flattened["scenarios"] = model_output.get("scenarios")
+            if self._has_public_value(derived.get("key_metrics_to_watch")):
+                flattened["key_metrics_to_watch"] = derived.get("key_metrics_to_watch")
+            return flattened
+
+        if module in {"competitive", "sector_overview", "model_update"}:
+            flattened = {}
+            if isinstance(reported, Mapping):
+                for key, value in reported.items():
+                    if self._has_public_value(value):
+                        flattened[key] = value
+            if isinstance(consensus, Mapping) and self._has_public_value(consensus):
+                flattened["consensus"] = consensus
+            if isinstance(derived, Mapping):
+                for key, value in derived.items():
+                    if self._has_public_value(value):
+                        flattened[key] = value
+            if self._has_public_value(estimate):
+                flattened["estimate"] = estimate
+            if self._has_public_value(model_output):
+                flattened["model_output"] = model_output
+            return flattened
+
+        flattened = {}
+        if self._has_public_value(reported):
+            flattened["reported"] = reported
+        if self._has_public_value(consensus):
+            flattened["consensus"] = consensus
+        if self._has_public_value(derived):
+            flattened["derived"] = derived
+        if self._has_public_value(estimate):
+            flattened["estimate"] = estimate
+        if self._has_public_value(model_output):
+            flattened["model_output"] = model_output
+        return flattened
+
+    def _build_summary(
+        self,
+        *,
+        market: str,
+        modules: Sequence[str],
+        module_results: Mapping[str, Dict[str, Any]],
+        native_item: Optional[Dict[str, Any]],
+        change_anchor: pd.Timestamp,
+    ) -> Dict[str, Any]:
+        summary: Dict[str, Any] = {}
+        if market == "cn" and ("research_report" in modules or "report_rc" in modules):
+            research_report_rows = (
+                (module_results.get("research_report") or {}).get("records")
+            ) or []
+            report_rc_rows = ((module_results.get("report_rc") or {}).get("records")) or []
+            research_summary = {
+                "report_count": len(research_report_rows),
+                "latest_report_date": self._max_datetime_text(
+                    research_report_rows, ("trade_date",)
+                ),
+                "institution_count": len(
+                    {
+                        str(row.get("inst_csname") or "").strip()
+                        for row in research_report_rows
+                        if str(row.get("inst_csname") or "").strip()
+                    }
+                ),
+                "latest_estimate_date": self._max_datetime_text(report_rc_rows, ("report_date",)),
+                "rating_distribution": dict(
+                    Counter(
+                        str(row.get("rating") or "").strip()
+                        for row in report_rc_rows
+                        if str(row.get("rating") or "").strip()
+                    )
+                ),
+                "quarter_distribution": dict(
+                    Counter(
+                        str(row.get("quarter") or "").strip()
+                        for row in report_rc_rows
+                        if str(row.get("quarter") or "").strip()
+                    )
+                ),
+            }
+            if self._has_public_value(research_summary):
+                summary["research"] = research_summary
+
+        earnings_public = (
+            self._public_module_body(
+                module="earnings", module_payload=module_results.get("earnings", {})
+            )
+            if "earnings" in modules
+            else None
+        )
+        if earnings_public:
+            earnings_summary: Dict[str, Any] = {
+                "reported_available": bool(earnings_public.get("reported")),
+                "consensus_available": bool(earnings_public.get("consensus")),
+            }
+            for key in ("growth", "valuation", "coverage"):
+                if self._has_public_value(earnings_public.get(key)):
+                    earnings_summary[key] = earnings_public.get(key)
+            report_date = self._extract_report_date_from_earnings(earnings_public)
+            if report_date:
+                earnings_summary["latest_report_date"] = report_date
+            summary["earnings"] = earnings_summary
+
+        catalysts_public = (
+            self._public_module_body(
+                module="catalysts", module_payload=module_results.get("catalysts", {})
+            )
+            if "catalysts" in modules
+            else None
+        )
+        if catalysts_public:
+            events = catalysts_public.get("events", [])
+            summary["catalysts"] = {
+                "event_count": catalysts_public.get("event_count", len(events)),
+                "latest_event_time": self._max_datetime_text(events, ("event_time",)),
+                "event_type_distribution": catalysts_public.get("event_type_distribution", {}),
+            }
+
+        screen_public = (
+            self._public_module_body(
+                module="screen", module_payload=module_results.get("screen", {})
+            )
+            if "screen" in modules
+            else None
+        )
+        if screen_public:
+            filters = screen_public.get("filters", {})
+            failed_filters = [
+                field
+                for field, result in filters.items()
+                if isinstance(result, Mapping) and result.get("passed") is False
+            ]
+            summary["screen"] = {
+                "passed": screen_public.get("passed"),
+                "filter_count": screen_public.get("filter_count", 0),
+                "failed_filters": failed_filters,
+            }
+
+        model_modules = [
+            module
+            for module in modules
+            if module
+            in {
+                "earnings_preview",
+                "dcf",
+                "comps",
+                "three_statement",
+                "lbo",
+                "three_statement_scenarios",
+                "competitive",
+                "model_update",
+                "sector_overview",
+            }
+        ]
+        if model_modules:
+            summary["models"] = {
+                "executed_modules": {
+                    module: self._module_status(module_results.get(module, {}))
+                    for module in model_modules
+                }
+            }
+
+        if market == "cn":
+            research_rows = ((module_results.get("research_report") or {}).get("records")) or []
+            estimate_rows = ((module_results.get("report_rc") or {}).get("records")) or []
+            catalyst_events = []
+            if isinstance(native_item, Mapping):
+                catalyst_events = (
+                    (((native_item.get("derived") or {}).get("catalyst_timeline")) or [])
+                    if isinstance(native_item.get("derived"), Mapping)
+                    else []
+                )
+            elif catalysts_public:
+                catalyst_events = catalysts_public.get("events", [])
+            summary["change_flags"] = {
+                "has_new_report_7d": self._has_recent_rows(
+                    research_rows,
+                    date_fields=("trade_date",),
+                    anchor=change_anchor,
+                ),
+                "has_new_estimate_7d": self._has_recent_rows(
+                    estimate_rows,
+                    date_fields=("report_date",),
+                    anchor=change_anchor,
+                ),
+                "has_new_catalyst_7d": self._has_recent_rows(
+                    catalyst_events,
+                    date_fields=("event_time",),
+                    anchor=change_anchor,
+                ),
+            }
+
+        return {key: value for key, value in summary.items() if self._has_public_value(value)}
+
+    @staticmethod
+    def _collect_item_sources(meta_modules: Mapping[str, Mapping[str, Any]]) -> list[str]:
+        sources: list[str] = []
+        for module_meta in meta_modules.values():
+            source = str(module_meta.get("source") or "").strip()
+            if source and source not in sources:
+                sources.append(source)
+        return sources
+
+    @staticmethod
+    def _collect_partial_reasons(
+        meta_modules: Mapping[str, Mapping[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        reasons: list[Dict[str, Any]] = []
+        for module_name, module_meta in meta_modules.items():
+            status = str(module_meta.get("status") or "")
+            if status not in {
+                "partial",
+                "permission_denied",
+                "error",
+                "not_supported",
+                "not_implemented",
+            }:
+                continue
+            reasons.append(
+                {
+                    "module": module_name,
+                    "status": status,
+                    "error": module_meta.get("error"),
+                }
+            )
+        return reasons
+
+    @staticmethod
+    def _has_public_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value != ""
+        if isinstance(value, Mapping):
+            return any(ResearchSnapshotService._has_public_value(item) for item in value.values())
+        if isinstance(value, list):
+            return any(ResearchSnapshotService._has_public_value(item) for item in value)
+        return True
+
+    @staticmethod
+    def _extract_report_date_from_earnings(earnings_payload: Mapping[str, Any]) -> Optional[str]:
+        reported = earnings_payload.get("reported", {})
+        if isinstance(reported, Mapping):
+            financial_report = reported.get("financial_report", {})
+            if isinstance(financial_report, Mapping):
+                report_date = financial_report.get("report_date")
+                if report_date:
+                    return str(report_date)
+            for key in ("report_date", "as_of", "quarter_end"):
+                value = reported.get(key)
+                if value:
+                    return str(value)
+        return None
 
     def _build_cn_earnings_module(
         self,
@@ -1406,13 +1873,26 @@ class ResearchSnapshotService:
     ) -> Dict[str, Any]:
         events: list[Dict[str, Any]] = []
         limitations: list[str] = []
+        status = "ok"
         if market == "cn":
             if native_item is not None:
                 events.extend((native_item.get("derived") or {}).get("catalyst_timeline", []))
+                degraded_blocks = []
+                for module_name in ("anns_d", "news", "major_news"):
+                    block = native_item.get(module_name, {})
+                    block_status = str(block.get("source_status") or "ok")
+                    if block_status in {"permission_denied", "error", "not_supported"}:
+                        degraded_blocks.append(module_name)
+                if degraded_blocks:
+                    limitations.append(
+                        "Underlying CN native blocks unavailable: " + ", ".join(degraded_blocks)
+                    )
+                    status = "partial"
             else:
                 limitations.append(
                     "CN catalyst module requires native research blocks for announcement/news events."
                 )
+                status = "partial"
         else:
             raw_data = info_record.get("raw_data", {}) if isinstance(info_record, dict) else {}
             next_earnings_date = self._resolve_next_earnings_date(raw_data)
@@ -1427,6 +1907,7 @@ class ResearchSnapshotService:
                 )
             else:
                 limitations.append("No future earnings date available from yfinance.")
+                status = "partial"
         counts = Counter(
             str(event.get("event_type") or "").strip()
             for event in events
@@ -1450,7 +1931,7 @@ class ResearchSnapshotService:
         )
         return self._wrap_structured_module(
             payload=payload,
-            status="partial" if limitations else "ok",
+            status=status if limitations else "ok",
             error=None,
             attempted_sources=[self.PROVIDER_ORDER[0] if market == "cn" else "yfinance"],
         )
@@ -2478,6 +2959,12 @@ class ResearchSnapshotService:
         normalized = str(value or "").strip().lower()
         if normalized not in {"cn", "us"}:
             raise ValueError("market must be either `cn` or `us`")
+        return normalized
+
+    def _normalize_mode(self, value: Optional[str]) -> str:
+        normalized = str(value or "base").strip().lower()
+        if normalized not in self.MODES:
+            raise ValueError("mode must be either `base` or `full`")
         return normalized
 
     @staticmethod

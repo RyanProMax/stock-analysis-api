@@ -28,8 +28,7 @@ def poll_research_snapshot(payload: ResearchSnapshotRequest):
             symbols=normalized_symbols,
             start_date=payload.start_date,
             end_date=payload.end_date,
-            modules=payload.modules,
-            module_options=payload.module_options,
+            mode=payload.mode,
         )
         return StandardResponse(status_code=200, data=response_payload, err_msg=None)
     except ValueError as exc:

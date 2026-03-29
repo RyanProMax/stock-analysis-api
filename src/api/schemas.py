@@ -69,21 +69,17 @@ class ResearchSnapshotRequest(BaseModel):
     symbols: List[str]
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    modules: Optional[List[str]] = None
-    module_options: Optional[Dict[str, Any]] = None
+    mode: str = "base"
 
     model_config = ConfigDict(
+        extra="forbid",
         json_schema_extra={
             "example": {
                 "market": "cn",
                 "symbols": ["300827"],
                 "start_date": "20260226",
                 "end_date": "20260328",
-                "modules": ["research_report", "report_rc", "earnings"],
-                "module_options": {
-                    "earnings": {"quarter": "Q4", "fiscal_year": 2026},
-                    "screen": {"filters": {"pe_ratio": {"lte": 20}}},
-                },
+                "mode": "full",
             }
-        }
+        },
     )

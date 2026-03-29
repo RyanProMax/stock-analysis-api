@@ -59,7 +59,7 @@ black --line-length 100 .
 - `GET /stock/list`: 按市场分页获取股票列表
 - `POST /stock/search`: 按代码、名称或拼音搜索股票
 - `POST /watch/poll`: 多股票轮询盯盘，支持 A 股和美股，返回 snapshot、delta 和 alerts
-- `POST /analysis/research/snapshot`: FSP 客观能力统一快照入口，通过 `modules` / `module_options` 调度 `earnings`、`dcf`、`comps`、`three_statement`、`competitive`、`screen` 等模块
+- `POST /analysis/research/snapshot`: FSP 客观能力统一快照入口，通过 `mode=base/full` 返回收敛后的研究摘要与模块结果
 
 ## 环境变量
 

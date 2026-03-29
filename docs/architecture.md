@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-03-28
+更新时间：2026-03-29
 
 ## 系统边界
 
@@ -40,8 +40,24 @@ src/
 ## 输出 contract 约束
 
 - 复杂接口统一返回 `entity`、`facts`、`analysis`、`meta`
-- `POST /analysis/research/snapshot` 作为统一快照入口，顶层返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
-- research snapshot 的结构化分析模块可在 item 内直接展开 `entity`、`facts`、`analysis`、`meta`，并补齐 `module_status`、`module_error`、`attempted_sources`
+- `POST /analysis/research/snapshot` 作为统一快照入口，顶层固定返回 `status`、`computed_at`、`source`、`market`、`strategy`、`request`、`items`
+- research snapshot 是公共 HTTP contract 的特例：
+  - 请求体只允许 `market`、`symbols`、`start_date`、`end_date`、`mode`
+  - `mode` 固定为 `base` / `full`
+  - 不再公开 `modules` / `module_options`
+- research snapshot 的 item 固定返回：
+  - `requested_symbol`
+  - `status`
+  - `error`
+  - `info`
+  - `summary`
+  - 成功产出业务数据的模块 body
+  - `meta`
+- research snapshot 的模块 body 统一瘦身：
+  - 原始块只保留 `records`
+  - 结构化模块不再公开 `entity`、`meta`、`module_status`、`module_error`、`attempted_sources`
+  - 重复状态、来源、限制说明统一上收至 `item.meta.modules`
+- research snapshot 的 `summary` 是跨市场统一汇总层，用于承载 Agent 决策所需的关键确定性摘要，替代旧的 CN-only `derived`
 - 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
@@ -101,7 +117,11 @@ src/
 - provider 不支持某项能力时，应视为 `not_supported`，不能计入失败、不能污染熔断状态
 - `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
 - `POST /analysis/research/snapshot` 只允许输出客观、结构化、可追溯的研究能力，不输出主观 thesis、评级建议、目标价结论、morning note 或 investment idea 文案
-- unified research snapshot 的模块选择固定通过请求体 `modules` / `module_options` 表达，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
+- unified research snapshot 仅通过请求体 `mode` 控制模块集合：
+  - `base` 面向决策信息全的默认消费场景
+  - `full` 在 `base` 之上补充长尾原始块和扩展模块
+- unified research snapshot 不再向公共调用方暴露自定义模块选择能力，不再为 DCF、Comps、LBO、Three-statement、Competitive、Earnings 等能力单独设计公共 HTTP 路由
+- research snapshot 的来源链、限制说明、filter rule、fallback 说明等调试信息统一进入 `item.meta.modules.<module>.notes`，不在模块 body 内重复铺开
 - `sync-market-data` 的目标执行链固定为：
   - 读取最新 `sync_runs`
   - 读取 live universe 与目标最新交易日

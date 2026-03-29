@@ -77,8 +77,7 @@ def stub_snapshot_payload() -> dict:
             "symbols": [TEST_SYMBOL],
             "start_date": "20260301",
             "end_date": "20260328",
-            "modules": ["earnings", "dcf"],
-            "module_options": {"dcf": {"risk_free_rate": 0.04}},
+            "mode": "base",
         },
         "items": [
             {
@@ -109,17 +108,45 @@ def stub_snapshot_payload() -> dict:
                         "delist_date": None,
                     },
                 },
+                "summary": {
+                    "earnings": {
+                        "reported_available": True,
+                        "consensus_available": True,
+                    },
+                    "models": {
+                        "executed_modules": {
+                            "earnings": "ok",
+                            "dcf": "ok",
+                        }
+                    },
+                },
                 "earnings": {
-                    **stub_structured_payload("mixed"),
-                    "module_status": "ok",
-                    "module_error": None,
-                    "attempted_sources": ["yfinance"],
+                    "reported": {"quarter": "Q4"},
+                    "consensus": {"eps": {"estimate": 1.0}},
+                    "growth": {"revenue_yoy": 0.25},
                 },
                 "dcf": {
-                    **stub_structured_payload("model"),
-                    "module_status": "ok",
-                    "module_error": None,
-                    "attempted_sources": ["yfinance"],
+                    "reported": {"assumptions": {"wacc": 0.09}},
+                    "model_output": {"equity_value_per_share": 120.5},
+                },
+                "meta": {
+                    "mode": "base",
+                    "sources": ["yfinance"],
+                    "partial_reasons": [],
+                    "modules": {
+                        "earnings": {
+                            "status": "ok",
+                            "source": "yfinance",
+                            "error": None,
+                            "notes": {"interface_type": "mixed"},
+                        },
+                        "dcf": {
+                            "status": "ok",
+                            "source": "yfinance",
+                            "error": None,
+                            "notes": {"interface_type": "model"},
+                        },
+                    },
                 },
             }
         ],
@@ -333,8 +360,7 @@ class TestResearchSnapshotEndpoints:
                 "symbols": [TEST_SYMBOL],
                 "start_date": "20260301",
                 "end_date": "20260328",
-                "modules": ["earnings", "dcf"],
-                "module_options": {"dcf": {"risk_free_rate": 0.04}},
+                "mode": "base",
             },
         )
 
@@ -344,16 +370,20 @@ class TestResearchSnapshotEndpoints:
         payload = data["data"]
         assert payload["source"] == "research_snapshot_dispatcher"
         assert payload["strategy"] == "fsp_objective_research_snapshot_v1"
-        assert payload["request"]["modules"] == ["earnings", "dcf"]
+        assert payload["request"]["mode"] == "base"
         item = payload["items"][0]
         assert item["requested_symbol"] == TEST_SYMBOL
-        assert item["earnings"]["module_status"] == "ok"
-        assert item["dcf"]["module_status"] == "ok"
-        assert_structured_payload(item["earnings"])
-        assert_structured_payload(item["dcf"])
+        assert item["meta"]["modules"]["earnings"]["status"] == "ok"
+        assert item["meta"]["modules"]["dcf"]["status"] == "ok"
+        assert "entity" not in item["earnings"]
+        assert "meta" not in item["earnings"]
+        assert "module_status" not in item["earnings"]
+        assert "entity" not in item["dcf"]
+        assert "meta" not in item["dcf"]
+        assert "module_status" not in item["dcf"]
         assert_no_subjective_keys(payload)
 
-    def test_research_snapshot_passes_modules_and_options(self, client: TestClient, monkeypatch):
+    def test_research_snapshot_passes_mode(self, client: TestClient, monkeypatch):
         captured = {}
 
         def fake_poll_snapshot(**kwargs):
@@ -371,16 +401,25 @@ class TestResearchSnapshotEndpoints:
             json={
                 "market": "cn",
                 "symbols": ["600519", "600519"],
-                "modules": ["screen"],
-                "module_options": {"screen": {"filters": {"pe_ratio": {"lte": 20}}}},
+                "mode": "full",
             },
         )
 
         assert response.status_code == 200
         assert captured["market"] == "cn"
         assert captured["symbols"] == ["600519", "600519"]
-        assert captured["modules"] == ["screen"]
-        assert captured["module_options"] == {"screen": {"filters": {"pe_ratio": {"lte": 20}}}}
+        assert captured["mode"] == "full"
+
+    def test_research_snapshot_rejects_legacy_modules_fields(self, client: TestClient):
+        response = client.post(
+            "/analysis/research/snapshot",
+            json={
+                "market": "cn",
+                "symbols": ["600519"],
+                "modules": ["screen"],
+            },
+        )
+        assert response.status_code == 400
 
     def test_old_routes_removed_from_router_and_openapi(self, client: TestClient):
         for path in (

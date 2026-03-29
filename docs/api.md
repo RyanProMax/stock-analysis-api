@@ -375,7 +375,7 @@ A 股轮询补充约束：
 
 - 提供统一的客观研究快照入口
 - 替代原有分散的 `/valuation/*`、`/model/*`、`/analysis/*` 专项分析接口
-- 单次请求可按市场、symbol 和模块集合返回结构化研究结果
+- 单次请求按市场、symbol 和 `mode` 返回结构化研究结果
 
 请求体：
 
@@ -383,58 +383,52 @@ A 股轮询补充约束：
 - `symbols`: 必填，字符串数组，去重保序
 - `start_date`: 可选，`YYYYMMDD`
 - `end_date`: 可选，`YYYYMMDD`
-- `modules`: 可选，字符串数组；不传则按市场走默认核心模块
-- `module_options`: 可选，对象；承载模块级参数
+- `mode`: 可选，`base` / `full`，默认 `base`
 
-默认核心模块：
+`mode` 模块集：
 
-- `cn`
-  - `research_report`
-  - `report_rc`
-  - `anns_d`
-  - `news`
-  - `major_news`
-  - `earnings`
-- `us`
-  - `earnings`
-  - `earnings_preview`
-  - `dcf`
-  - `comps`
-  - `three_statement`
+- `base`
+  - `cn`
+    - `research_report`
+    - `report_rc`
+    - `earnings`
+    - `catalysts`
+    - `screen`
+  - `us`
+    - `earnings`
+    - `dcf`
+    - `comps`
+    - `three_statement`
+    - `screen`
+- `full`
+  - `cn`
+    - `research_report`
+    - `report_rc`
+    - `anns_d`
+    - `news`
+    - `major_news`
+    - `earnings`
+    - `catalysts`
+    - `screen`
+    - `model_update`
+  - `us`
+    - `earnings`
+    - `earnings_preview`
+    - `dcf`
+    - `comps`
+    - `three_statement`
+    - `lbo`
+    - `three_statement_scenarios`
+    - `competitive`
+    - `catalysts`
+    - `screen`
+    - `model_update`
+    - `sector_overview`
 
-可扩展模块：
+约束：
 
-- `lbo`
-- `three_statement_scenarios`
-- `competitive`
-- `catalysts`
-- `model_update`
-- `sector_overview`
-- `screen`
-
-`module_options` 约定：
-
-- `dcf`
-  - `risk_free_rate`
-  - `equity_risk_premium`
-  - `terminal_growth_rate`
-- `comps`
-  - `sector`
-- `lbo`
-  - `holding_period`
-  - `entry_multiple`
-  - `exit_multiple`
-  - `leverage`
-- `three_statement`
-  - `scenario`
-  - `projection_years`
-- `earnings`
-  - `quarter`
-  - `fiscal_year`
-- `catalysts`
-  - `horizon_days`
-- `screen`
-  - `filters`
+- 请求体启用 `extra=forbid`
+- 继续传 `modules` / `module_options` 会直接返回 `400`
 
 顶层响应：
 
@@ -446,30 +440,67 @@ A 股轮询补充约束：
 - `request`
 - `items`
 
+`request` 只回显：
+
+- `market`
+- `symbols`
+- `start_date`
+- `end_date`
+- `mode`
+
 `items[]` 固定字段：
 
 - `requested_symbol`
 - `status`
 - `error`
 - `info`
-- 各模块结果
+- `summary`
+- 成功产出数据的模块结果
+- `meta`
 
 模块返回规则：
 
 - 原始 / 事件型模块：
   - `records`
-  - `source`
-  - `source_status`
-  - `source_error`
-  - `attempted_sources`
 - 结构化分析型模块：
-  - 直接展开 `entity`
-  - `facts`
-  - `analysis`
-  - `meta`
-  - `module_status`
-  - `module_error`
-  - `attempted_sources`
+  - 只保留业务字段
+  - 不再公开 `entity`
+  - 不再公开 `meta`
+  - 不再公开 `module_status`
+  - 不再公开 `module_error`
+  - 不再公开 `attempted_sources`
+
+`summary` 说明：
+
+- `summary` 是跨市场统一汇总层，替代旧的 CN-only `derived`
+- 仅保留当前市场、当前 `mode` 下真正有意义的摘要子块
+- 常见子块包括：
+  - `research`
+  - `earnings`
+  - `catalysts`
+  - `screen`
+  - `models`
+  - `change_flags`
+
+`meta` 说明：
+
+- `item.meta` 集中承载状态和调试信息，避免在每个模块里重复展开
+- 固定字段：
+  - `mode`
+  - `sources`
+  - `partial_reasons`
+  - `modules`
+- `item.meta.modules.<module>` 固定字段：
+  - `status`
+  - `source`
+  - `error`
+  - `notes`
+- `notes` 统一承载：
+  - `filter_rule`
+  - `skip_reason`
+  - `fallback_mode`
+  - `limitations`
+  - 其它模块级补充说明
 
 客观边界：
 
@@ -491,8 +522,9 @@ A 股轮询补充约束：
 
 说明：
 
-- `cn` 仍复用当前 research snapshot 的 block contract 与确定性 `derived`
-- `us` 与结构化分析模块统一通过同一入口调度，不再单独暴露 HTTP 路由
+- `cn` 与 `us` 都通过同一入口调度，不再单独暴露专项分析 HTTP 路由
+- `base` 目标是“决策信息全”，不是“原始字段全”
+- `full` 在 `base` 之上补充长尾原始块和扩展模块
 - CLI `scripts/poll_research_snapshot.py` 与该 HTTP 接口保持同构请求 / 响应语义
 
 ## 错误语义

@@ -16,33 +16,41 @@ def _rows_payload(rows=None, status="ok", error=None):
     return {"rows": rows or [], "status": status, "error": error}
 
 
-def _structured_module(status: str = "ok", error: str | None = None):
+def _structured_module(
+    *,
+    status: str = "ok",
+    error: str | None = None,
+    reported: dict | None = None,
+    consensus: dict | None = None,
+    derived: dict | None = None,
+    estimate: dict | None = None,
+    model_output: dict | None = None,
+    source: str = "test",
+    limitations: list[str] | None = None,
+):
+    analysis = {}
+    if derived is not None:
+        analysis["derived"] = derived
+    if estimate is not None:
+        analysis["estimate"] = estimate
+    if model_output is not None:
+        analysis["model_output"] = model_output
     return {
         "entity": {"symbol": "TEST", "name": "Test"},
-        "facts": {"reported": {}, "consensus": {}},
-        "analysis": {"derived": {}},
+        "facts": {"reported": reported or {}, "consensus": consensus or {}},
+        "analysis": analysis,
         "meta": {
             "schema_version": "2.0.0",
             "as_of": None,
-            "sources": ["test"],
-            "data_completeness": "ok",
-            "limitations": [],
+            "sources": [source],
+            "data_completeness": "partial" if limitations else "ok",
+            "limitations": limitations or [],
             "interface_type": "mixed",
         },
         "module_status": status,
         "module_error": error,
-        "attempted_sources": ["test"],
+        "attempted_sources": [source],
     }
-
-
-def _assert_flat_block(block):
-    assert "records" in block
-    assert "source" in block
-    assert "source_status" in block
-    assert "source_error" in block
-    assert "attempted_sources" in block
-    assert "items" not in block
-    assert "source_meta" not in block
 
 
 def _assert_no_subjective_keys(value):
@@ -109,7 +117,7 @@ class FakeSnapshotService:
         self.calls.append(kwargs)
         return {
             "status": "ok",
-            "computed_at": "2026-03-28T00:00:00+00:00",
+            "computed_at": "2026-03-29T00:00:00+00:00",
             "source": "research_snapshot_dispatcher",
             "market": kwargs["market"],
             "strategy": "fsp_objective_research_snapshot_v1",
@@ -119,7 +127,7 @@ class FakeSnapshotService:
 
 
 class TestResearchSnapshotService:
-    def test_cn_snapshot_default_modules_and_derived_fields(self, monkeypatch):
+    def test_cn_base_snapshot_uses_mode_summary_and_meta(self, monkeypatch):
         provider = FakeResearchProvider(
             security={
                 "record": {
@@ -155,6 +163,7 @@ class TestResearchSnapshotService:
                         "org_name": "中信证券",
                         "report_title": "盈利预测",
                         "rating": "买入",
+                        "report_type": "点评",
                     }
                 ]
             ),
@@ -196,7 +205,25 @@ class TestResearchSnapshotService:
         monkeypatch.setattr(
             service,
             "_build_cn_earnings_module",
-            lambda **kwargs: _structured_module(),
+            lambda **kwargs: _structured_module(
+                reported={"financial_report": {"report_date": "20260327"}},
+                derived={
+                    "fundamentals": {"status": "covered"},
+                    "growth": {"revenue_yoy": 0.12},
+                    "valuation": {"pe_ratio": 25.4},
+                    "coverage": {"analyst_count": 3},
+                },
+                source="financial_provider",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_screen_module",
+            lambda **kwargs: _structured_module(
+                reported={"metrics": {"pe_ratio": 25.4, "_source": "financial_provider"}},
+                derived={"filters": {}, "passed": True, "filter_count": 0},
+                source="financial_provider",
+            ),
         )
 
         payload = service.poll_snapshot(
@@ -207,24 +234,30 @@ class TestResearchSnapshotService:
         )
 
         assert payload["status"] == "ok"
-        assert payload["source"] == "research_snapshot_dispatcher"
-        assert payload["strategy"] == "fsp_objective_research_snapshot_v1"
-        assert payload["request"]["modules"] == list(service.DEFAULT_MODULES["cn"])
+        assert payload["request"]["mode"] == "base"
         item = payload["items"][0]
         assert item["status"] == "ok"
-        _assert_flat_block(item["research_report"])
-        _assert_flat_block(item["report_rc"])
-        _assert_flat_block(item["anns_d"])
-        _assert_flat_block(item["news"])
-        _assert_flat_block(item["major_news"])
-        assert item["earnings"]["module_status"] == "ok"
+        assert "derived" not in item
+        assert item["meta"]["mode"] == "base"
+        assert set(item["meta"]["modules"].keys()) == {
+            "research_report",
+            "report_rc",
+            "earnings",
+            "catalysts",
+            "screen",
+        }
+        assert item["research_report"]["records"][0]["title"] == "更新覆盖"
+        assert item["report_rc"]["records"][0]["report_title"] == "盈利预测"
+        assert item["earnings"]["growth"]["revenue_yoy"] == 0.12
+        assert item["screen"]["passed"] is True
+        assert item["summary"]["research"]["report_count"] == 1
+        assert item["summary"]["research"]["latest_estimate_date"] == "20260327"
+        assert item["summary"]["change_flags"]["has_new_report_7d"] is True
+        assert item["summary"]["catalysts"]["event_count"] == 3
         assert item["info"]["common"]["ts_code"] == "600519.SH"
-        assert item["derived"]["coverage_snapshot"]["report_count"] == 1
-        assert item["derived"]["estimate_snapshot"]["report_count"] == 1
-        assert item["derived"]["change_flags"]["has_new_report_7d"] is True
-        assert len(item["derived"]["catalyst_timeline"]) == 3
+        _assert_no_subjective_keys(payload)
 
-    def test_optional_permission_denied_marks_partial(self):
+    def test_cn_full_permission_denied_block_moves_to_meta_only(self, monkeypatch):
         provider = FakeResearchProvider(
             security={
                 "record": {
@@ -241,20 +274,29 @@ class TestResearchSnapshotService:
             news={"cls": _rows_payload([], status="permission_denied", error="权限不足")},
         )
         service = ResearchSnapshotService(providers={"tushare": provider})
-
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["600519"],
-            modules=["research_report", "report_rc", "news"],
+        monkeypatch.setattr(
+            service, "_build_cn_earnings_module", lambda **kwargs: _structured_module()
         )
+        monkeypatch.setattr(
+            service,
+            "_build_screen_module",
+            lambda **kwargs: _structured_module(
+                reported={"metrics": {"pe_ratio": 20}},
+                derived={"filters": {}, "passed": True, "filter_count": 0},
+            ),
+        )
+
+        payload = service.poll_snapshot(market="cn", symbols=["600519"], mode="full")
 
         item = payload["items"][0]
         assert payload["status"] == "partial"
         assert item["status"] == "partial"
-        _assert_flat_block(item["news"])
-        assert item["news"]["source_status"] == "permission_denied"
+        assert "news" not in item
+        assert item["meta"]["modules"]["news"]["status"] == "permission_denied"
+        assert item["meta"]["modules"]["catalysts"]["status"] == "partial"
+        assert item["meta"]["modules"]["catalysts"]["notes"]["limitations"]
 
-    def test_core_permission_denied_marks_failed(self):
+    def test_core_permission_denied_marks_failed(self, monkeypatch):
         provider = FakeResearchProvider(
             security={
                 "record": {
@@ -280,29 +322,38 @@ class TestResearchSnapshotService:
             ),
         )
         service = ResearchSnapshotService(providers={"tushare": provider})
-
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["600519"],
-            modules=["research_report", "report_rc"],
+        monkeypatch.setattr(
+            service, "_build_cn_earnings_module", lambda **kwargs: _structured_module()
         )
+        monkeypatch.setattr(
+            service,
+            "_build_screen_module",
+            lambda **kwargs: _structured_module(
+                reported={"metrics": {"pe_ratio": 20}},
+                derived={"filters": {}, "passed": True, "filter_count": 0},
+            ),
+        )
+
+        payload = service.poll_snapshot(market="cn", symbols=["600519"])
 
         item = payload["items"][0]
         assert item["status"] == "failed"
         assert item["error"]["code"] == "core_module_unavailable"
-        _assert_flat_block(item["research_report"])
+        assert "research_report" not in item
+        assert item["meta"]["modules"]["research_report"]["status"] == "permission_denied"
 
-    def test_invalid_symbol_failed(self):
+    def test_invalid_symbol_failed_shape(self):
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
 
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["BAD"],
-            modules=["research_report"],
-        )
+        payload = service.poll_snapshot(market="cn", symbols=["BAD"])
 
-        assert payload["items"][0]["status"] == "failed"
-        assert payload["items"][0]["error"]["code"] == "invalid_symbol"
+        item = payload["items"][0]
+        assert item["status"] == "failed"
+        assert item["error"]["code"] == "invalid_symbol"
+        assert item["summary"] == {}
+        assert "research_report" not in item
+        assert item["meta"]["mode"] == "base"
+        assert item["meta"]["modules"]["research_report"]["status"] == "error"
 
     def test_etf_symbol_not_supported(self):
         provider = FakeResearchProvider(
@@ -320,71 +371,14 @@ class TestResearchSnapshotService:
         )
         service = ResearchSnapshotService(providers={"tushare": provider})
 
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["510300"],
-            modules=["report_rc", "screen"],
-        )
+        payload = service.poll_snapshot(market="cn", symbols=["510300"])
 
         item = payload["items"][0]
         assert item["status"] == "not_supported"
-        _assert_flat_block(item["report_rc"])
-        assert item["screen"]["module_status"] == "not_supported"
+        assert "report_rc" not in item
+        assert item["meta"]["modules"]["report_rc"]["status"] == "not_supported"
 
-    def test_news_filtering_and_exact_dedup(self):
-        provider = FakeResearchProvider(
-            security={
-                "record": {
-                    "symbol": "600519",
-                    "ts_code": "600519.SH",
-                    "name": "贵州茅台",
-                    "security_type": "stock",
-                },
-                "status": "ok",
-                "error": None,
-            },
-            research_report=_rows_payload([], status="empty"),
-            report_rc=_rows_payload([], status="empty"),
-            news={
-                "cls": _rows_payload(
-                    [
-                        {
-                            "datetime": "2026-03-24 09:30:00",
-                            "title": "贵州茅台盘中走强",
-                            "content": "贵州茅台 600519 今日高开。",
-                            "src": "cls",
-                        },
-                        {
-                            "datetime": "2026-03-24 09:30:00",
-                            "title": "贵州茅台盘中走强",
-                            "content": "贵州茅台 600519 今日高开。",
-                            "src": "cls",
-                        },
-                        {
-                            "datetime": "2026-03-24 11:00:00",
-                            "title": "白酒板块异动",
-                            "content": "板块整体活跃。",
-                            "src": "cls",
-                        },
-                    ]
-                )
-            },
-        )
-        service = ResearchSnapshotService(providers={"tushare": provider})
-
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["600519"],
-            modules=["research_report", "report_rc", "news"],
-        )
-
-        news_items = payload["items"][0]["news"]["records"]
-        assert len(news_items) == 1
-        assert news_items[0]["title"] == "贵州茅台盘中走强"
-
-    def test_report_rc_falls_back_to_latest_stock_specific_history_when_window_is_generic_only(
-        self,
-    ):
+    def test_report_rc_fallback_notes_live_in_meta(self, monkeypatch):
         provider = FakeResearchProvider(
             security={
                 "record": {
@@ -409,8 +403,6 @@ class TestResearchSnapshotService:
             ),
         )
 
-        history_calls = {"count": 0}
-
         def report_rc_with_history(**kwargs):
             if "start_date" in kwargs or "end_date" in kwargs:
                 return {
@@ -426,7 +418,6 @@ class TestResearchSnapshotService:
                     "status": "ok",
                     "error": None,
                 }
-            history_calls["count"] += 1
             return {
                 "rows": [
                     {
@@ -435,14 +426,7 @@ class TestResearchSnapshotService:
                         "report_type": "点评",
                         "quarter": "2026Q4",
                         "org_name": "华安证券",
-                    },
-                    {
-                        "report_date": "20251105",
-                        "report_title": "上能电气：营收稳健增长",
-                        "report_type": "点评",
-                        "quarter": "2025Q4",
-                        "org_name": "华安证券",
-                    },
+                    }
                 ],
                 "status": "ok",
                 "error": None,
@@ -450,60 +434,36 @@ class TestResearchSnapshotService:
 
         provider.fetch_report_rc = report_rc_with_history
         service = ResearchSnapshotService(providers={"tushare": provider})
+        monkeypatch.setattr(
+            service, "_build_cn_earnings_module", lambda **kwargs: _structured_module()
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_screen_module",
+            lambda **kwargs: _structured_module(
+                reported={"metrics": {"pe_ratio": 20}},
+                derived={"filters": {}, "passed": True, "filter_count": 0},
+            ),
+        )
 
         payload = service.poll_snapshot(
             market="cn",
             symbols=["300827"],
-            modules=["research_report", "report_rc"],
             start_date="20260226",
             end_date="20260328",
         )
 
         item = payload["items"][0]
-        assert history_calls["count"] == 1
-        _assert_flat_block(item["report_rc"])
-        _assert_flat_block(item["research_report"])
         assert item["report_rc"]["records"][0]["report_date"] == "20251105"
-        assert item["report_rc"]["fallback_mode"] == "latest_stock_specific_report_date"
-        assert item["report_rc"]["resolved_start_date"] == "20251105"
-        assert (
-            item["research_report"]["skip_reason"]
-            == "no_stock_specific_report_rc_in_requested_window"
+        assert item["meta"]["modules"]["report_rc"]["notes"]["fallback_mode"] == (
+            "latest_stock_specific_report_date"
+        )
+        assert item["meta"]["modules"]["report_rc"]["notes"]["resolved_start_date"] == "20251105"
+        assert item["meta"]["modules"]["research_report"]["notes"]["skip_reason"] == (
+            "no_stock_specific_report_rc_in_requested_window"
         )
 
-    def test_module_options_passed_to_screen(self, monkeypatch):
-        provider = FakeResearchProvider(
-            security={
-                "record": {
-                    "symbol": "600519",
-                    "ts_code": "600519.SH",
-                    "name": "贵州茅台",
-                    "security_type": "stock",
-                },
-                "status": "ok",
-                "error": None,
-            },
-        )
-        service = ResearchSnapshotService(providers={"tushare": provider})
-        captured = {}
-
-        def fake_screen_module(**kwargs):
-            captured["options"] = kwargs["options"]
-            return _structured_module()
-
-        monkeypatch.setattr(service, "_build_screen_module", fake_screen_module)
-
-        payload = service.poll_snapshot(
-            market="cn",
-            symbols=["600519"],
-            modules=["screen"],
-            module_options={"screen": {"filters": {"pe_ratio": {"lte": 20}}}},
-        )
-
-        assert payload["items"][0]["screen"]["module_status"] == "ok"
-        assert captured["options"] == {"filters": {"pe_ratio": {"lte": 20}}}
-
-    def test_us_snapshot_default_modules(self, monkeypatch):
+    def test_us_base_default_modules(self, monkeypatch):
         monkeypatch.setattr(
             YfinanceDataSource,
             "get_us_financial_data",
@@ -522,25 +482,72 @@ class TestResearchSnapshotService:
             ),
         )
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
-        for method_name in (
+        monkeypatch.setattr(
+            service,
             "_build_us_earnings_module",
-            "_build_earnings_preview_module",
+            lambda **kwargs: _structured_module(
+                reported={"quarter": "Q4"},
+                consensus={"eps": {"estimate": 1.0}},
+                derived={"growth": {"revenue_yoy": 0.25}, "coverage": {"analyst_count": 40}},
+                source="yfinance",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
             "_build_dcf_module",
+            lambda **kwargs: _structured_module(
+                reported={"assumptions": {"wacc": 0.09}},
+                model_output={"equity_value_per_share": 120.5},
+                source="yfinance",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
             "_build_comps_module",
+            lambda **kwargs: _structured_module(
+                reported={"peer_set": [{"symbol": "AMD"}]},
+                derived={"valuation_background": {"median_pe_ratio": 32.1}},
+                source="yfinance",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
             "_build_three_statement_module",
-        ):
-            monkeypatch.setattr(service, method_name, lambda **kwargs: _structured_module())
+            lambda **kwargs: _structured_module(
+                reported={"historical": {"revenue": [1, 2, 3]}},
+                model_output={"scenario": "base"},
+                source="yfinance",
+            ),
+        )
+        monkeypatch.setattr(
+            service,
+            "_build_screen_module",
+            lambda **kwargs: _structured_module(
+                reported={"metrics": {"market_cap": 1000, "_source": "yfinance"}},
+                derived={"filters": {}, "passed": True, "filter_count": 0},
+                source="yfinance",
+            ),
+        )
 
         payload = service.poll_snapshot(market="us", symbols=["nvda"])
 
         assert payload["status"] == "ok"
-        assert payload["request"]["modules"] == list(service.DEFAULT_MODULES["us"])
+        assert payload["request"]["mode"] == "base"
         item = payload["items"][0]
         assert item["status"] == "ok"
         assert item["info"]["common"]["name"] == "NVIDIA"
         assert item["info"]["us_specific"]["ts_code"] == "NVDA"
-        for module in service.DEFAULT_MODULES["us"]:
-            assert item[module]["module_status"] == "ok"
+        assert set(item["meta"]["modules"].keys()) == {
+            "earnings",
+            "dcf",
+            "comps",
+            "three_statement",
+            "screen",
+        }
+        assert item["dcf"]["model_output"]["equity_value_per_share"] == 120.5
+        assert item["screen"]["metrics"]["market_cap"] == 1000
+        assert item["summary"]["models"]["executed_modules"]["dcf"] == "ok"
+        assert "derived" not in item
 
     def test_dcf_module_strips_subjective_fields(self, monkeypatch):
         service = ResearchSnapshotService(providers={"tushare": FakeResearchProvider()})
@@ -580,7 +587,7 @@ class TestResearchSnapshotService:
 
 
 class TestResearchSnapshotCli:
-    def test_cli_outputs_json_and_passes_modules_and_options(self):
+    def test_cli_outputs_json_and_passes_mode(self):
         writer = StringIO()
         service = FakeSnapshotService()
 
@@ -590,10 +597,8 @@ class TestResearchSnapshotCli:
                 "cn",
                 "--symbols",
                 "600519,600519",
-                "--modules",
-                "report_rc,earnings",
-                "--module-options",
-                '{"earnings":{"quarter":"Q4","fiscal_year":2026}}',
+                "--mode",
+                "full",
                 "--pretty",
             ],
             writer=writer,
@@ -604,9 +609,6 @@ class TestResearchSnapshotCli:
         parsed = json.loads(rendered)
         assert payload["status"] == "ok"
         assert parsed["request"]["symbols"] == ["600519"]
-        assert parsed["request"]["modules"] == ["report_rc", "earnings"]
+        assert parsed["request"]["mode"] == "full"
         assert service.calls[0]["symbols"] == ["600519"]
-        assert service.calls[0]["modules"] == ["report_rc", "earnings"]
-        assert service.calls[0]["module_options"] == {
-            "earnings": {"quarter": "Q4", "fiscal_year": 2026}
-        }
+        assert service.calls[0]["mode"] == "full"
