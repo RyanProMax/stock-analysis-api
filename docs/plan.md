@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-- 维持 `POST /stock/analyze` 作为唯一公共分析入口，并确保 HTTP / CLI / 文档 / 测试持续一致
+- 将 `POST /stock/analyze` 升级为对齐 FSP 研报分析框架的 objective 输出，并提升技术面与摘要层的可信度和可追溯性
 
 ## 最近完成项
 
@@ -27,6 +27,10 @@
   - `docs/strategy.md`
   - `README.md`
 - 已完成全量回归：`81 passed`
+- 已将本轮 FSP 对齐要求并入：
+  - `docs/architecture.md`
+  - `docs/api.md`
+  - `docs/strategy.md`
 
 ## 当前状态
 
@@ -47,15 +51,23 @@
 - 当前 CLI：
   - `uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode full --pretty`
   - 输出与 HTTP `StandardResponse` 尽量同构
+- 当前待收口的问题：
+  - `summary` 仍偏模块汇总，尚未完全体现 FSP 研报分析顺序
+  - `technical` 仍包含零售化措辞和启发式动作标签
+  - 缺少 `item.meta.provenance` 级别的字段出处
+  - 比例/百分比语义仍有历史遗留不一致
 
 ## 下一步计划
 
-- 若后续继续增强 `summary`、`screen`、`catalysts` 或 `model_update`，优先沿用当前 `summary + meta.modules` 模式，不回退到模块内重复状态壳
-- 若新增 Agent 脚本能力，继续保证 stdout 纯 JSON，避免日志污染
-- 继续保持 `docs/strategy.md` 与真实 `300827 + mode=full` 输出同步
+- 增加 `summary.research_strategy`，按 FSP 研报逻辑组织预期、基本面、估值、催化剂与价格行为确认
+- 为 `summary.research_strategy.*` 增加 `item.meta.provenance`
+- 将 `technical` 收敛为专业研究确认层，去掉 emoji 和零售化动作口号
+- 将公共策略名升级为 `fsp_objective_stock_analyze_v2`
+- 更新 CLI 测试、`docs/api.md` 与 `docs/strategy.md`，对齐新的输出结构
 
 ## 已知风险与阻塞
 
 - `research_report`、`anns_d`、`news`、`major_news` 依旧可能受 Tushare 权限限制，因此 `meta.modules` 状态与说明必须保持真实可追溯
-- `technical` 模块当前仍复用旧 analyze 的底层分析器；若后续该分析器打印新日志或改 stdout 行为，需要继续保证 CLI 纯 JSON 不被污染
-- `cn` 默认 `base` 依赖 `technical / research_report / report_rc / earnings / catalysts / screen` 协同表达，但 A 股财务能力仍弱于美股，需要通过真实降级而不是补写结论来表达
+- `technical` 模块当前仍复用旧 analyze 的底层分析器；本轮主要在公共包装层做语义收口，底层分析方法本身仍可能继续演进
+- A 股 `earnings` 的 provider 覆盖仍弱于美股，因此 `research_strategy` 中的 `evidence_strength` 不能高估 CN 场景
+- `report_rc` 可能回退到窗口外最近一份 stock-specific estimate；该 fallback 若未在 strategy provenance 中显式暴露，会继续损伤可信度

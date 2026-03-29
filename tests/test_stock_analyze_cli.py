@@ -262,7 +262,7 @@ class TestStockAnalyzeCli:
                 reported={"financial_report": {"report_date": "20260327"}},
                 derived={
                     "fundamentals": {"status": "covered"},
-                    "growth": {"revenue_yoy": 0.12},
+                    "growth": {"revenue_yoy": 12.0, "roe": 15.0, "summary": "revenue_yoy=1200.00%"},
                     "valuation": {"pe_ratio": 25.4},
                     "coverage": {"analyst_count": 3},
                 },
@@ -274,7 +274,14 @@ class TestStockAnalyzeCli:
             "_build_screen_module",
             lambda **kwargs: _structured_module(
                 service,
-                reported={"metrics": {"pe_ratio": 25.4, "_source": "financial_provider"}},
+                reported={
+                    "metrics": {
+                        "pe_ratio": 25.4,
+                        "revenue_growth": 12.0,
+                        "roe": 15.0,
+                        "_source": "financial_provider",
+                    }
+                },
                 derived={"filters": {}, "passed": True, "filter_count": 0},
                 source="financial_provider",
             ),
@@ -298,7 +305,7 @@ class TestStockAnalyzeCli:
         assert payload["status_code"] == 200
         data = payload["data"]
         assert data["source"] == "stock_analyze_dispatcher"
-        assert data["strategy"] == "fsp_objective_stock_analyze_v1"
+        assert data["strategy"] == "fsp_objective_stock_analyze_v2"
         item = data["items"][0]
         assert item["status"] == "ok"
         assert set(item.keys()) >= {
@@ -314,18 +321,54 @@ class TestStockAnalyzeCli:
             "meta",
         }
         assert set(item["summary"].keys()) >= {
-            "technical",
+            "research_strategy",
             "research",
             "earnings",
             "catalysts",
             "screen",
             "change_flags",
+            "technical",
         }
+        assert item["technical"]["fear_greed"]["label"] == "greed"
+        assert item["technical"]["trend"]["stance"] == "bullish_confirmation"
+        assert "buy_signal" not in item["technical"]["trend"]
+        assert item["technical"]["trend"]["methodology_version"] == "technical_research_v2"
         assert item["summary"]["technical"]["signal_count"] == 1
+        assert item["summary"]["technical"]["trend"]["stance"] == "bullish_confirmation"
         assert item["summary"]["research"]["latest_estimate_date"] == "20260327"
         assert item["summary"]["earnings"]["latest_report_date"] == "20260327"
         assert item["summary"]["catalysts"]["event_count"] == 1
-        assert item["summary"]["screen"]["passed"] is True
+        assert item["summary"]["screen"]["evaluated"] is False
+        assert item["summary"]["screen"]["passed"] is None
+        assert item["earnings"]["growth"]["revenue_yoy"] == 0.12
+        assert item["earnings"]["growth"]["roe"] == 0.15
+        assert "summary" not in item["earnings"]["growth"]
+        assert item["screen"]["metrics"]["revenue_growth"] == 0.12
+        assert item["screen"]["metrics"]["roe"] == 0.15
+        strategy_summary = item["summary"]["research_strategy"]
+        assert set(strategy_summary.keys()) >= {
+            "expectations_vs_reported",
+            "fundamental_quality",
+            "valuation_context",
+            "catalyst_path",
+            "price_action_confirmation",
+            "cross_signal_alignment",
+            "risk_flags",
+            "evidence_strength",
+        }
+        assert strategy_summary["price_action_confirmation"]["stance"] == "bullish_confirmation"
+        provenance = item["meta"]["provenance"]["summary"]["research_strategy"]
+        assert set(provenance.keys()) >= {
+            "expectations_vs_reported",
+            "fundamental_quality",
+            "valuation_context",
+            "catalyst_path",
+            "price_action_confirmation",
+            "cross_signal_alignment",
+            "risk_flags",
+            "evidence_strength",
+        }
+        assert provenance["price_action_confirmation"]["source_modules"] == ["technical"]
         _assert_no_subjective_keys(data)
 
     def test_cn_full_degraded_raw_blocks_only_live_in_meta(self, monkeypatch):
@@ -410,6 +453,8 @@ class TestStockAnalyzeCli:
         assert item["meta"]["modules"]["news"]["status"] == "empty"
         assert item["meta"]["modules"]["major_news"]["status"] == "permission_denied"
         assert "model_update" in item
+        assert "research_strategy" in item["summary"]
+        assert "provenance" in item["meta"]
         _assert_no_subjective_keys(payload["data"])
 
     def test_us_base_cli_contract(self, monkeypatch):
@@ -494,7 +539,23 @@ class TestStockAnalyzeCli:
             "three_statement",
             "screen",
         }
-        assert set(item["summary"].keys()) >= {"technical", "earnings", "screen", "models"}
+        assert set(item["summary"].keys()) >= {
+            "research_strategy",
+            "technical",
+            "earnings",
+            "screen",
+            "models",
+        }
+        assert item["technical"]["fear_greed"]["label"] == "greed"
+        assert item["technical"]["trend"]["stance"] == "bullish_confirmation"
+        assert item["summary"]["screen"]["evaluated"] is False
+        assert item["summary"]["screen"]["passed"] is None
+        assert (
+            item["summary"]["research_strategy"]["valuation_context"]["model_status"]["dcf"] == "ok"
+        )
+        assert item["meta"]["provenance"]["summary"]["research_strategy"]["valuation_context"][
+            "source_modules"
+        ] == ["earnings", "dcf", "comps", "three_statement"]
         assert item["meta"]["modules"]["dcf"]["status"] == "ok"
         _assert_no_subjective_keys(payload["data"])
 
@@ -591,3 +652,5 @@ class TestStockAnalyzeCli:
         item = payload["data"]["items"][0]
         assert item["status"] == "failed"
         assert item["meta"]["modules"]["technical"]["status"] == "error"
+        assert "research_strategy" in item["summary"]
+        assert "provenance" in item["meta"]

@@ -4,6 +4,7 @@ from collections import Counter
 import copy
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 import pandas as pd
@@ -29,8 +30,9 @@ from ..model.contracts import InterfaceMeta, InterfacePayload
 
 
 class StockAnalyzeService:
-    STRATEGY = "fsp_objective_stock_analyze_v1"
+    STRATEGY = "fsp_objective_stock_analyze_v2"
     TOP_LEVEL_SOURCE = "stock_analyze_dispatcher"
+    TECHNICAL_METHODOLOGY_VERSION = "technical_research_v2"
     PROVIDER_ORDER = ("tushare",)
     MODES = ("base", "full")
     CN_NATIVE_CORE_BLOCKS = ("research_report", "report_rc")
@@ -146,6 +148,34 @@ class StockAnalyzeService:
         "thesis",
         "conviction",
     }
+    RATIO_FIELD_NAMES = {
+        "revenue_yoy",
+        "net_profit_yoy",
+        "earnings_growth",
+        "revenue_growth",
+        "revenue_growth_ratio",
+        "roe",
+        "debt_to_assets",
+        "debt_ratio",
+        "gross_margin",
+        "ebitda_margin",
+        "operating_margin",
+        "profit_margin",
+        "net_margin",
+        "dividend_yield",
+        "return_on_equity",
+        "return_on_assets",
+        "roic",
+        "return_on_capital",
+        "surprise_pct",
+        "beat_pct",
+    }
+    HEURISTIC_MODULES = {
+        "technical",
+        "competitive",
+        "sector_overview",
+    }
+    EMOJI_PATTERN = re.compile(r"[\u2600-\u27BF\U0001F300-\U0001FAFF]")
 
     def __init__(self, providers: Optional[Mapping[str, Any]] = None):
         self.providers = dict(providers or {"tushare": TushareDataSource})
@@ -970,6 +1000,7 @@ class StockAnalyzeService:
                 "sources": [primary_source] if primary_source else [],
                 "partial_reasons": partial_reasons,
                 "modules": meta_modules,
+                "provenance": {},
             },
         }
 
@@ -1076,12 +1107,18 @@ class StockAnalyzeService:
             module_results=module_results,
             native_item=native_item,
             change_anchor=change_anchor,
+            meta_modules=meta_modules,
         )
         public_item["meta"] = {
             "mode": mode,
             "sources": self._collect_item_sources(meta_modules),
             "partial_reasons": self._collect_partial_reasons(meta_modules),
             "modules": meta_modules,
+            "provenance": self._build_public_provenance(
+                market=market,
+                summary=public_item["summary"],
+                meta_modules=meta_modules,
+            ),
         }
         return public_item
 
@@ -1160,24 +1197,48 @@ class StockAnalyzeService:
         if module == "technical":
             flattened = {}
             if self._has_public_value(reported.get("fear_greed")):
-                flattened["fear_greed"] = reported.get("fear_greed")
+                flattened["fear_greed"] = self._public_fear_greed(reported.get("fear_greed"))
             if self._has_public_value(reported.get("technical_signals")):
-                flattened["technical_signals"] = reported.get("technical_signals")
+                meta_payload = (
+                    module_payload.get("meta", {}) if isinstance(module_payload, Mapping) else {}
+                )
+                signal_as_of = (
+                    meta_payload.get("as_of") if isinstance(meta_payload, Mapping) else None
+                )
+                flattened["technical_signals"] = [
+                    self._public_technical_signal(signal, signal_as_of)
+                    for signal in list(reported.get("technical_signals") or [])
+                    if self._has_public_value(signal)
+                ]
             if self._has_public_value(derived.get("trend")):
-                flattened["trend"] = derived.get("trend")
+                meta_payload = (
+                    module_payload.get("meta", {}) if isinstance(module_payload, Mapping) else {}
+                )
+                signal_as_of = (
+                    meta_payload.get("as_of") if isinstance(meta_payload, Mapping) else None
+                )
+                flattened["trend"] = self._public_technical_trend(
+                    derived.get("trend"),
+                    signal_as_of,
+                )
             return flattened
 
         if module == "earnings":
             flattened: Dict[str, Any] = {}
             if self._has_public_value(reported):
-                flattened["reported"] = reported
+                flattened["reported"] = self._normalize_public_payload(reported, drop_summary=True)
             if self._has_public_value(consensus):
-                flattened["consensus"] = consensus
+                flattened["consensus"] = self._normalize_public_payload(
+                    consensus, drop_summary=True
+                )
             for key in ("fundamentals", "growth", "valuation", "coverage"):
                 if self._has_public_value(derived.get(key)):
-                    flattened[key] = derived.get(key)
+                    flattened[key] = self._normalize_public_payload(
+                        derived.get(key),
+                        drop_summary=True,
+                    )
             remaining_derived = {
-                key: value
+                key: self._normalize_public_payload(value, drop_summary=True)
                 for key, value in derived.items()
                 if key not in {"fundamentals", "growth", "valuation", "coverage"}
                 and self._has_public_value(value)
@@ -1200,10 +1261,16 @@ class StockAnalyzeService:
             metrics = reported.get("metrics", {}) if isinstance(reported, Mapping) else {}
             metrics = {key: value for key, value in metrics.items() if key != "_source"}
             if self._has_public_value(metrics):
-                flattened["metrics"] = metrics
-            for key in ("filters", "passed", "filter_count"):
-                if key in derived and self._has_public_value(derived.get(key)):
-                    flattened[key] = derived.get(key)
+                flattened["metrics"] = self._normalize_public_payload(metrics)
+            filters = derived.get("filters", {}) if isinstance(derived, Mapping) else {}
+            evaluated = bool(filters)
+            if self._has_public_value(filters):
+                flattened["filters"] = filters
+            flattened["evaluated"] = evaluated
+            flattened["passed"] = (
+                bool(derived.get("passed")) if evaluated and "passed" in derived else None
+            )
+            flattened["filter_count"] = len(filters) if evaluated else 0
             return flattened
 
         if module == "earnings_preview":
@@ -1211,9 +1278,9 @@ class StockAnalyzeService:
             if self._has_public_value(reported.get("next_earnings_date")):
                 flattened["next_earnings_date"] = reported.get("next_earnings_date")
             if self._has_public_value(reported.get("market_snapshot")):
-                flattened["market_snapshot"] = reported.get("market_snapshot")
-            if self._has_public_value(model_output.get("scenarios")):
-                flattened["scenarios"] = model_output.get("scenarios")
+                flattened["market_snapshot"] = self._normalize_public_payload(
+                    reported.get("market_snapshot")
+                )
             if self._has_public_value(derived.get("key_metrics_to_watch")):
                 flattened["key_metrics_to_watch"] = derived.get("key_metrics_to_watch")
             return flattened
@@ -1238,15 +1305,17 @@ class StockAnalyzeService:
 
         flattened = {}
         if self._has_public_value(reported):
-            flattened["reported"] = reported
+            flattened["reported"] = self._normalize_public_payload(reported, drop_summary=True)
         if self._has_public_value(consensus):
-            flattened["consensus"] = consensus
+            flattened["consensus"] = self._normalize_public_payload(consensus, drop_summary=True)
         if self._has_public_value(derived):
-            flattened["derived"] = derived
+            flattened["derived"] = self._normalize_public_payload(derived, drop_summary=True)
         if self._has_public_value(estimate):
-            flattened["estimate"] = estimate
+            flattened["estimate"] = self._normalize_public_payload(estimate, drop_summary=True)
         if self._has_public_value(model_output):
-            flattened["model_output"] = model_output
+            flattened["model_output"] = self._normalize_public_payload(
+                model_output, drop_summary=True
+            )
         return flattened
 
     def _build_summary(
@@ -1257,6 +1326,7 @@ class StockAnalyzeService:
         module_results: Mapping[str, Dict[str, Any]],
         native_item: Optional[Dict[str, Any]],
         change_anchor: pd.Timestamp,
+        meta_modules: Mapping[str, Mapping[str, Any]],
     ) -> Dict[str, Any]:
         summary: Dict[str, Any] = {}
         technical_public = (
@@ -1266,24 +1336,8 @@ class StockAnalyzeService:
             if "technical" in modules
             else None
         )
-        if technical_public:
-            technical_summary: Dict[str, Any] = {
-                "signal_count": len(technical_public.get("technical_signals", [])),
-            }
-            if self._has_public_value(technical_public.get("fear_greed")):
-                technical_summary["fear_greed"] = technical_public.get("fear_greed")
-            trend = technical_public.get("trend", {})
-            if isinstance(trend, Mapping):
-                condensed_trend = {
-                    key: trend.get(key)
-                    for key in ("trend_status", "trend_strength", "buy_signal", "signal_score")
-                    if self._has_public_value(trend.get(key))
-                }
-                if condensed_trend:
-                    technical_summary["trend"] = condensed_trend
-            if self._has_public_value(technical_summary):
-                summary["technical"] = technical_summary
 
+        research_summary: Optional[Dict[str, Any]] = None
         if market == "cn" and ("research_report" in modules or "report_rc" in modules):
             research_report_rows = (
                 (module_results.get("research_report") or {}).get("records")
@@ -1317,8 +1371,8 @@ class StockAnalyzeService:
                     )
                 ),
             }
-            if self._has_public_value(research_summary):
-                summary["research"] = research_summary
+            if not self._has_public_value(research_summary):
+                research_summary = None
 
         earnings_public = (
             self._public_module_body(
@@ -1327,8 +1381,9 @@ class StockAnalyzeService:
             if "earnings" in modules
             else None
         )
+        earnings_summary: Optional[Dict[str, Any]] = None
         if earnings_public:
-            earnings_summary: Dict[str, Any] = {
+            earnings_summary = {
                 "reported_available": bool(earnings_public.get("reported")),
                 "consensus_available": bool(earnings_public.get("consensus")),
             }
@@ -1338,7 +1393,6 @@ class StockAnalyzeService:
             report_date = self._extract_report_date_from_earnings(earnings_public)
             if report_date:
                 earnings_summary["latest_report_date"] = report_date
-            summary["earnings"] = earnings_summary
 
         catalysts_public = (
             self._public_module_body(
@@ -1347,9 +1401,10 @@ class StockAnalyzeService:
             if "catalysts" in modules
             else None
         )
+        catalysts_summary: Optional[Dict[str, Any]] = None
         if catalysts_public:
             events = catalysts_public.get("events", [])
-            summary["catalysts"] = {
+            catalysts_summary = {
                 "event_count": catalysts_public.get("event_count", len(events)),
                 "latest_event_time": self._max_datetime_text(events, ("event_time",)),
                 "event_type_distribution": catalysts_public.get("event_type_distribution", {}),
@@ -1362,6 +1417,7 @@ class StockAnalyzeService:
             if "screen" in modules
             else None
         )
+        screen_summary: Optional[Dict[str, Any]] = None
         if screen_public:
             filters = screen_public.get("filters", {})
             failed_filters = [
@@ -1369,7 +1425,8 @@ class StockAnalyzeService:
                 for field, result in filters.items()
                 if isinstance(result, Mapping) and result.get("passed") is False
             ]
-            summary["screen"] = {
+            screen_summary = {
+                "evaluated": screen_public.get("evaluated", False),
                 "passed": screen_public.get("passed"),
                 "filter_count": screen_public.get("filter_count", 0),
                 "failed_filters": failed_filters,
@@ -1391,14 +1448,16 @@ class StockAnalyzeService:
                 "sector_overview",
             }
         ]
+        models_summary: Optional[Dict[str, Any]] = None
         if model_modules:
-            summary["models"] = {
+            models_summary = {
                 "executed_modules": {
                     module: self._module_status(module_results.get(module, {}))
                     for module in model_modules
                 }
             }
 
+        change_flags_summary: Optional[Dict[str, Any]] = None
         if market == "cn":
             research_rows = ((module_results.get("research_report") or {}).get("records")) or []
             estimate_rows = ((module_results.get("report_rc") or {}).get("records")) or []
@@ -1411,7 +1470,7 @@ class StockAnalyzeService:
                 )
             elif catalysts_public:
                 catalyst_events = catalysts_public.get("events", [])
-            summary["change_flags"] = {
+            change_flags_summary = {
                 "has_new_report_7d": self._has_recent_rows(
                     research_rows,
                     date_fields=("trade_date",),
@@ -1429,7 +1488,557 @@ class StockAnalyzeService:
                 ),
             }
 
+        research_strategy = self._build_research_strategy(
+            market=market,
+            meta_modules=meta_modules,
+            research_summary=research_summary,
+            earnings_public=earnings_public,
+            earnings_summary=earnings_summary,
+            catalysts_summary=catalysts_summary,
+            technical_public=technical_public,
+            screen_public=screen_public,
+        )
+        if self._has_public_value(research_strategy):
+            summary["research_strategy"] = research_strategy
+        if research_summary and self._has_public_value(research_summary):
+            summary["research"] = research_summary
+        if earnings_summary and self._has_public_value(earnings_summary):
+            summary["earnings"] = earnings_summary
+        if catalysts_summary and self._has_public_value(catalysts_summary):
+            summary["catalysts"] = catalysts_summary
+        if screen_summary and self._has_public_value(screen_summary):
+            summary["screen"] = screen_summary
+        if models_summary and self._has_public_value(models_summary):
+            summary["models"] = models_summary
+        if change_flags_summary and self._has_public_value(change_flags_summary):
+            summary["change_flags"] = change_flags_summary
+        if technical_public:
+            technical_summary: Dict[str, Any] = {
+                "signal_count": len(technical_public.get("technical_signals", [])),
+            }
+            if self._has_public_value(technical_public.get("fear_greed")):
+                technical_summary["fear_greed"] = technical_public.get("fear_greed")
+            trend = technical_public.get("trend", {})
+            if isinstance(trend, Mapping):
+                condensed_trend = {
+                    key: trend.get(key)
+                    for key in ("trend_status", "stance", "score")
+                    if self._has_public_value(trend.get(key))
+                }
+                if condensed_trend:
+                    technical_summary["trend"] = condensed_trend
+            if self._has_public_value(technical_summary):
+                summary["technical"] = technical_summary
+
         return {key: value for key, value in summary.items() if self._has_public_value(value)}
+
+    def _build_research_strategy(
+        self,
+        *,
+        market: str,
+        meta_modules: Mapping[str, Mapping[str, Any]],
+        research_summary: Optional[Mapping[str, Any]],
+        earnings_public: Optional[Mapping[str, Any]],
+        earnings_summary: Optional[Mapping[str, Any]],
+        catalysts_summary: Optional[Mapping[str, Any]],
+        technical_public: Optional[Mapping[str, Any]],
+        screen_public: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        expectations_vs_reported = self._build_expectations_vs_reported(
+            market=market,
+            research_summary=research_summary,
+            earnings_summary=earnings_summary,
+        )
+        fundamental_quality = self._build_fundamental_quality(
+            earnings_public=earnings_public,
+            earnings_summary=earnings_summary,
+        )
+        valuation_context = self._build_valuation_context(
+            market=market,
+            meta_modules=meta_modules,
+            earnings_public=earnings_public,
+        )
+        catalyst_path = self._build_catalyst_path(catalysts_summary=catalysts_summary)
+        price_action_confirmation = self._build_price_action_confirmation(
+            technical_public=technical_public
+        )
+        cross_signal_alignment = self._build_cross_signal_alignment(
+            expectations_vs_reported=expectations_vs_reported,
+            valuation_context=valuation_context,
+            price_action_confirmation=price_action_confirmation,
+            catalyst_path=catalyst_path,
+        )
+        risk_flags = self._build_risk_flags(
+            meta_modules=meta_modules,
+            expectations_vs_reported=expectations_vs_reported,
+            catalyst_path=catalyst_path,
+            screen_public=screen_public,
+        )
+        evidence_strength = self._build_evidence_strength(
+            market=market,
+            meta_modules=meta_modules,
+            expectations_vs_reported=expectations_vs_reported,
+        )
+        strategy = {
+            "expectations_vs_reported": expectations_vs_reported,
+            "fundamental_quality": fundamental_quality,
+            "valuation_context": valuation_context,
+            "catalyst_path": catalyst_path,
+            "price_action_confirmation": price_action_confirmation,
+            "cross_signal_alignment": cross_signal_alignment,
+            "risk_flags": risk_flags,
+            "evidence_strength": evidence_strength,
+        }
+        return {key: value for key, value in strategy.items() if self._has_public_value(value)}
+
+    @staticmethod
+    def _build_expectations_vs_reported(
+        *,
+        market: str,
+        research_summary: Optional[Mapping[str, Any]],
+        earnings_summary: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        estimate_available = bool((research_summary or {}).get("latest_estimate_date")) or bool(
+            (earnings_summary or {}).get("consensus_available")
+        )
+        reported_available = bool((earnings_summary or {}).get("reported_available"))
+        consensus_available = bool((earnings_summary or {}).get("consensus_available"))
+        latest_estimate_date = (research_summary or {}).get("latest_estimate_date")
+        latest_report_date = (earnings_summary or {}).get("latest_report_date")
+
+        if estimate_available and (reported_available or consensus_available):
+            state = "comparable"
+        elif estimate_available:
+            state = "expectations_only"
+        elif reported_available or consensus_available:
+            state = "reported_only"
+        else:
+            state = "insufficient"
+
+        payload = {
+            "state": state,
+            "market": market,
+            "estimate_available": estimate_available,
+            "reported_available": reported_available,
+            "consensus_available": consensus_available,
+            "latest_estimate_date": latest_estimate_date,
+            "latest_report_date": latest_report_date,
+        }
+        return {key: value for key, value in payload.items() if value is not None}
+
+    @staticmethod
+    def _build_fundamental_quality(
+        *,
+        earnings_public: Optional[Mapping[str, Any]],
+        earnings_summary: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        coverage = (
+            (earnings_summary or {}).get("coverage")
+            if isinstance((earnings_summary or {}).get("coverage"), Mapping)
+            else {}
+        )
+        available_components = [
+            key
+            for key in ("reported", "consensus", "fundamentals", "growth", "valuation", "coverage")
+            if isinstance(earnings_public, Mapping)
+            and StockAnalyzeService._has_public_value(earnings_public.get(key))
+        ]
+        if coverage:
+            ok_count = sum(1 for value in coverage.values() if value == "ok")
+            partial_count = sum(1 for value in coverage.values() if value == "partial")
+            state = "covered" if ok_count >= 2 and partial_count == 0 else "partial"
+        elif available_components:
+            state = "partial"
+        else:
+            state = "limited"
+        payload = {
+            "state": state,
+            "available_components": available_components,
+            "coverage": coverage,
+        }
+        return {
+            key: value
+            for key, value in payload.items()
+            if StockAnalyzeService._has_public_value(value)
+        }
+
+    def _build_valuation_context(
+        self,
+        *,
+        market: str,
+        meta_modules: Mapping[str, Mapping[str, Any]],
+        earnings_public: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        valuation_block = (
+            (earnings_public or {}).get("valuation")
+            if isinstance((earnings_public or {}).get("valuation"), Mapping)
+            else {}
+        )
+        metrics = {
+            key: valuation_block.get(key)
+            for key in ("pe_ratio", "pb_ratio", "price")
+            if self._has_public_value(valuation_block.get(key))
+        }
+        model_status = {}
+        for module_name in ("dcf", "comps", "three_statement"):
+            module_meta = meta_modules.get(module_name, {})
+            if self._has_public_value(module_meta):
+                model_status[module_name] = module_meta.get("status")
+        if market == "us" and any(status == "ok" for status in model_status.values()):
+            state = (
+                "multi_model"
+                if sum(status == "ok" for status in model_status.values()) >= 2
+                else "covered"
+            )
+        elif metrics:
+            state = "covered"
+        else:
+            state = "limited"
+        payload = {
+            "state": state,
+            "valuation_metrics": metrics,
+            "model_status": model_status,
+        }
+        return {key: value for key, value in payload.items() if self._has_public_value(value)}
+
+    @staticmethod
+    def _build_catalyst_path(
+        *,
+        catalysts_summary: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        event_count = int((catalysts_summary or {}).get("event_count") or 0)
+        latest_event_time = (catalysts_summary or {}).get("latest_event_time")
+        distribution = (catalysts_summary or {}).get("event_type_distribution") or {}
+        state = "identified" if event_count > 0 else "not_visible"
+        payload = {
+            "state": state,
+            "event_count": event_count,
+            "latest_event_time": latest_event_time,
+            "event_type_distribution": distribution,
+        }
+        return {
+            key: value
+            for key, value in payload.items()
+            if StockAnalyzeService._has_public_value(value)
+        }
+
+    @staticmethod
+    def _build_price_action_confirmation(
+        *,
+        technical_public: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(technical_public, Mapping):
+            return {"state": "unavailable"}
+        trend = technical_public.get("trend", {})
+        fear_greed = technical_public.get("fear_greed", {})
+        risk_context = trend.get("risk_context", {}) if isinstance(trend, Mapping) else {}
+        stance = trend.get("stance") if isinstance(trend, Mapping) else None
+        if stance in {"bullish_confirmation", "constructive"}:
+            state = "supportive"
+        elif stance in {"risk_off", "defensive"}:
+            state = "caution"
+        elif stance:
+            state = "neutral"
+        else:
+            state = "unavailable"
+        payload = {
+            "state": state,
+            "stance": stance,
+            "trend_status": trend.get("trend_status") if isinstance(trend, Mapping) else None,
+            "score": trend.get("score") if isinstance(trend, Mapping) else None,
+            "volume_status": (
+                risk_context.get("volume_status") if isinstance(risk_context, Mapping) else None
+            ),
+            "sentiment_band": fear_greed.get("label") if isinstance(fear_greed, Mapping) else None,
+        }
+        return {key: value for key, value in payload.items() if value is not None}
+
+    @staticmethod
+    def _build_cross_signal_alignment(
+        *,
+        expectations_vs_reported: Mapping[str, Any],
+        valuation_context: Mapping[str, Any],
+        price_action_confirmation: Mapping[str, Any],
+        catalyst_path: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        positive_signals = 0
+        caution_signals = 0
+        if expectations_vs_reported.get("state") == "comparable":
+            positive_signals += 1
+        if valuation_context.get("state") in {"covered", "multi_model"}:
+            positive_signals += 1
+        if catalyst_path.get("event_count", 0) > 0:
+            positive_signals += 1
+        if price_action_confirmation.get("state") == "supportive":
+            positive_signals += 1
+        if price_action_confirmation.get("state") == "caution":
+            caution_signals += 1
+
+        if positive_signals >= 3 and caution_signals == 0:
+            state = "aligned"
+        elif caution_signals > 0 and positive_signals <= 1:
+            state = "caution"
+        elif positive_signals == 0:
+            state = "limited"
+        else:
+            state = "mixed"
+
+        return {
+            "state": state,
+            "positive_signals": positive_signals,
+            "caution_signals": caution_signals,
+        }
+
+    def _build_risk_flags(
+        self,
+        *,
+        meta_modules: Mapping[str, Mapping[str, Any]],
+        expectations_vs_reported: Mapping[str, Any],
+        catalyst_path: Mapping[str, Any],
+        screen_public: Optional[Mapping[str, Any]],
+    ) -> list[str]:
+        flags: list[str] = []
+        if self._module_uses_fallback(meta_modules.get("report_rc", {})):
+            flags.append("estimate_fallback_used")
+        latest_estimate_date = expectations_vs_reported.get("latest_estimate_date")
+        if self._is_stale_date(latest_estimate_date, stale_days=90):
+            flags.append("stale_estimate_window")
+        if str((meta_modules.get("earnings") or {}).get("status") or "") == "partial":
+            flags.append("partial_earnings_coverage")
+        if int(catalyst_path.get("event_count") or 0) == 0:
+            flags.append("no_visible_catalysts")
+        if isinstance(screen_public, Mapping) and not screen_public.get("evaluated", False):
+            flags.append("screen_not_evaluated")
+        if self._module_has_heuristics("technical", meta_modules.get("technical", {})):
+            flags.append("technical_layer_contains_heuristics")
+        return flags
+
+    def _build_evidence_strength(
+        self,
+        *,
+        market: str,
+        meta_modules: Mapping[str, Mapping[str, Any]],
+        expectations_vs_reported: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        source_directness = "high" if market == "cn" else "medium"
+        if any(
+            str((meta_modules.get(module) or {}).get("status") or "")
+            in {"error", "permission_denied"}
+            for module in self.CRITICAL_MODULES.get(market, ())
+        ):
+            source_directness = "low"
+
+        if any(
+            str((meta_modules.get(module) or {}).get("status") or "") == "partial"
+            for module in meta_modules
+        ):
+            data_completeness = "medium"
+        elif all(
+            str(module_meta.get("status") or "") == "ok" for module_meta in meta_modules.values()
+        ):
+            data_completeness = "high"
+        else:
+            data_completeness = "low"
+
+        latest_estimate_date = expectations_vs_reported.get("latest_estimate_date")
+        latest_report_date = expectations_vs_reported.get("latest_report_date")
+        reference_date = latest_report_date or latest_estimate_date
+        if self._is_stale_date(reference_date, stale_days=180):
+            recency = "low"
+        elif self._is_stale_date(reference_date, stale_days=45):
+            recency = "medium"
+        else:
+            recency = "high" if reference_date else "low"
+
+        ok_modules = sum(
+            1
+            for module_meta in meta_modules.values()
+            if str(module_meta.get("status") or "") == "ok"
+        )
+        if ok_modules >= 4:
+            cross_source_consistency = "high"
+        elif ok_modules >= 2:
+            cross_source_consistency = "medium"
+        else:
+            cross_source_consistency = "low"
+
+        heuristic_dependency = (
+            "low"
+            if any(
+                self._module_has_heuristics(module_name, module_meta)
+                for module_name, module_meta in meta_modules.items()
+            )
+            else "high"
+        )
+        fallback_dependency = (
+            "low"
+            if any(self._module_uses_fallback(module_meta) for module_meta in meta_modules.values())
+            else "high"
+        )
+        dimensions = {
+            "source_directness": source_directness,
+            "data_completeness": data_completeness,
+            "recency": recency,
+            "cross_source_consistency": cross_source_consistency,
+            "heuristic_dependency": heuristic_dependency,
+            "fallback_dependency": fallback_dependency,
+        }
+        scores = {"low": 1, "medium": 2, "high": 3}
+        low_count = sum(1 for value in dimensions.values() if value == "low")
+        average_score = sum(scores[value] for value in dimensions.values()) / len(dimensions)
+        if low_count >= 2 or average_score < 1.8:
+            level = "low"
+        elif low_count >= 1 or average_score < 2.6:
+            level = "medium"
+        else:
+            level = "high"
+        return {"level": level, "dimensions": dimensions}
+
+    def _build_public_provenance(
+        self,
+        *,
+        market: str,
+        summary: Mapping[str, Any],
+        meta_modules: Mapping[str, Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(summary.get("research_strategy"), Mapping):
+            return {}
+        research_paths = {
+            "expectations_vs_reported": {
+                "source_modules": ["report_rc", "earnings"] if market == "cn" else ["earnings"],
+                "field_paths": (
+                    ["report_rc.records[*].report_date", "earnings.reported", "earnings.consensus"]
+                    if market == "cn"
+                    else ["earnings.reported", "earnings.consensus"]
+                ),
+                "evidence_class": "consensus",
+            },
+            "fundamental_quality": {
+                "source_modules": ["earnings"],
+                "field_paths": [
+                    "earnings.coverage",
+                    "earnings.reported",
+                    "earnings.growth",
+                    "earnings.valuation",
+                ],
+                "evidence_class": "fact",
+            },
+            "valuation_context": {
+                "source_modules": (
+                    ["earnings"]
+                    if market == "cn"
+                    else ["earnings", "dcf", "comps", "three_statement"]
+                ),
+                "field_paths": (
+                    ["earnings.valuation"]
+                    if market == "cn"
+                    else ["earnings.valuation", "dcf", "comps", "three_statement"]
+                ),
+                "evidence_class": "model",
+            },
+            "catalyst_path": {
+                "source_modules": ["catalysts"],
+                "field_paths": ["catalysts.events", "catalysts.event_count"],
+                "evidence_class": "fact",
+            },
+            "price_action_confirmation": {
+                "source_modules": ["technical"],
+                "field_paths": [
+                    "technical.trend",
+                    "technical.technical_signals",
+                    "technical.fear_greed",
+                ],
+                "evidence_class": "heuristic",
+            },
+            "cross_signal_alignment": {
+                "source_modules": (
+                    ["report_rc", "earnings", "catalysts", "technical"]
+                    if market == "cn"
+                    else ["earnings", "catalysts", "technical", "dcf", "comps"]
+                ),
+                "field_paths": [
+                    "summary.research_strategy.expectations_vs_reported",
+                    "summary.research_strategy.valuation_context",
+                    "summary.research_strategy.price_action_confirmation",
+                ],
+                "evidence_class": "derived",
+            },
+            "risk_flags": {
+                "source_modules": list(meta_modules.keys()),
+                "field_paths": ["meta.modules", "summary.screen", "summary.catalysts"],
+                "evidence_class": "derived",
+            },
+            "evidence_strength": {
+                "source_modules": list(meta_modules.keys()),
+                "field_paths": [
+                    "meta.modules",
+                    "summary.research_strategy.expectations_vs_reported",
+                ],
+                "evidence_class": "derived",
+            },
+        }
+        research_strategy_provenance = {}
+        for field_name, config in research_paths.items():
+            source_modules = [
+                module for module in config["source_modules"] if module in meta_modules
+            ]
+            heuristic = any(
+                self._module_has_heuristics(module, meta_modules.get(module, {}))
+                for module in source_modules
+            )
+            research_strategy_provenance[field_name] = {
+                "source_modules": source_modules,
+                "field_paths": config["field_paths"],
+                "fallback_used": any(
+                    self._module_uses_fallback(meta_modules.get(module, {}))
+                    for module in source_modules
+                ),
+                "heuristic": heuristic,
+                "evidence_class": config["evidence_class"],
+            }
+        return {"summary": {"research_strategy": research_strategy_provenance}}
+
+    @classmethod
+    def _module_uses_fallback(cls, module_meta: Mapping[str, Any]) -> bool:
+        notes = module_meta.get("notes", {}) if isinstance(module_meta, Mapping) else {}
+        if not isinstance(notes, Mapping):
+            return False
+        if any(
+            key in notes for key in ("fallback_mode", "resolved_start_date", "resolved_end_date")
+        ):
+            return True
+        limitations = notes.get("limitations")
+        if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
+            return any(
+                "fallback" in str(item).lower() or "placeholder" in str(item).lower()
+                for item in limitations
+            )
+        return False
+
+    @classmethod
+    def _module_has_heuristics(cls, module_name: str, module_meta: Mapping[str, Any]) -> bool:
+        if module_name in cls.HEURISTIC_MODULES:
+            return True
+        notes = module_meta.get("notes", {}) if isinstance(module_meta, Mapping) else {}
+        limitations = notes.get("limitations") if isinstance(notes, Mapping) else None
+        if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
+            return any(
+                word in str(item).lower()
+                for item in limitations
+                for word in ("heuristic", "deterministic", "placeholder")
+            )
+        return False
+
+    @staticmethod
+    def _is_stale_date(value: Any, *, stale_days: int) -> bool:
+        if not value:
+            return True
+        try:
+            ts = pd.Timestamp(value)
+        except Exception:
+            return True
+        anchor = pd.Timestamp.now(tz=ts.tz) if ts.tzinfo else pd.Timestamp.now()
+        return (anchor.normalize() - ts.normalize()).days > stale_days
 
     @staticmethod
     def _collect_item_sources(meta_modules: Mapping[str, Mapping[str, Any]]) -> list[str]:
@@ -1930,14 +2539,6 @@ class StockAnalyzeService:
         current_price = self._safe_numeric(
             info.get("currentPrice") or info.get("regularMarketPrice")
         )
-        base_move = max(min((earnings_growth or revenue_growth or 0.05), 0.15), 0.02)
-        scenarios = {
-            "bull": {
-                "implied_price": current_price * (1 + base_move * 2) if current_price else None
-            },
-            "base": {"implied_price": current_price * (1 + base_move) if current_price else None},
-            "bear": {"implied_price": current_price * (1 - base_move) if current_price else None},
-        }
         payload = self._make_structured_payload(
             entity={"symbol": symbol, "name": info_record.get("name")},
             facts={
@@ -1952,9 +2553,6 @@ class StockAnalyzeService:
                 "consensus": {},
             },
             analysis={
-                "model_output": {
-                    "scenarios": scenarios,
-                },
                 "derived": {
                     "key_metrics_to_watch": [
                         metric_name
@@ -1970,7 +2568,7 @@ class StockAnalyzeService:
             sources=["yfinance"],
             data_completeness="partial",
             limitations=[
-                "Preview scenarios are deterministic placeholders when Street consensus is unavailable."
+                "Preview output is limited to observable dates and market snapshot fields."
             ],
             interface_type="mixed",
         )
@@ -2208,8 +2806,9 @@ class StockAnalyzeService:
                     "passed": (
                         all(item.get("passed") for item in evaluations.values())
                         if evaluations
-                        else True
+                        else None
                     ),
+                    "evaluated": bool(evaluations),
                     "filter_count": len(evaluations),
                 }
             },
@@ -2324,6 +2923,173 @@ class StockAnalyzeService:
                 {"analyst_count": analyst_count} if analyst_count is not None else {}
             )
         return sanitized
+
+    @classmethod
+    def _sanitize_text(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        cleaned = cls.EMOJI_PATTERN.sub("", value)
+        cleaned = cleaned.replace("✅", "").replace("✓", "").replace("⚠", "")
+        return " ".join(cleaned.split())
+
+    @classmethod
+    def _fear_greed_band(cls, index: Any) -> str:
+        numeric = cls._safe_numeric(index) or 50.0
+        if numeric < 20:
+            return "extreme_fear"
+        if numeric < 40:
+            return "fear"
+        if numeric < 60:
+            return "neutral"
+        if numeric < 80:
+            return "greed"
+        return "extreme_greed"
+
+    def _public_fear_greed(self, payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            return {}
+        index = self._safe_numeric(payload.get("index"))
+        return {
+            key: value
+            for key, value in {
+                "index": index,
+                "label": self._fear_greed_band(index),
+            }.items()
+            if value is not None
+        }
+
+    @staticmethod
+    def _technical_family(key: Any) -> str:
+        family_map = {
+            "ma": "trend",
+            "ema": "trend",
+            "macd": "momentum",
+            "rsi": "momentum",
+            "kdj": "momentum",
+            "wr": "momentum",
+            "bollinger": "volatility",
+            "atr": "volatility",
+            "volume_ratio": "volume",
+            "vr": "volume",
+            "sentiment": "sentiment",
+            "trend": "trend",
+        }
+        return family_map.get(str(key or "").strip().lower(), "technical")
+
+    @staticmethod
+    def _technical_direction(signal: Mapping[str, Any]) -> str:
+        bullish = list(signal.get("bullish_signals") or [])
+        bearish = list(signal.get("bearish_signals") or [])
+        if bullish and bearish:
+            return "mixed"
+        if bullish:
+            return "bullish"
+        if bearish:
+            return "bearish"
+        return "neutral"
+
+    def _public_technical_signal(self, payload: Any, as_of: Optional[str]) -> Dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            return {}
+        bullish_signals = [
+            self._sanitize_text(item) for item in list(payload.get("bullish_signals") or [])
+        ]
+        bearish_signals = [
+            self._sanitize_text(item) for item in list(payload.get("bearish_signals") or [])
+        ]
+        cleaned = {
+            "key": payload.get("key"),
+            "name": payload.get("name"),
+            "family": self._technical_family(payload.get("key")),
+            "direction": self._technical_direction(payload),
+            "status": self._sanitize_text(payload.get("status")),
+            "evidence": [item for item in bullish_signals if item],
+            "limitations": [item for item in bearish_signals if item],
+            "as_of": as_of,
+        }
+        return {key: value for key, value in cleaned.items() if self._has_public_value(value)}
+
+    @staticmethod
+    def _technical_stance(signal: Any) -> str:
+        mapping = {
+            "强烈买入": "bullish_confirmation",
+            "买入": "bullish_confirmation",
+            "持有": "constructive",
+            "观望": "neutral",
+            "卖出": "defensive",
+            "强烈卖出": "risk_off",
+        }
+        return mapping.get(str(signal or "").strip(), "neutral")
+
+    def _public_technical_trend(self, payload: Any, as_of: Optional[str]) -> Dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            return {}
+        support_levels = list(payload.get("support_levels") or [])
+        resistance_levels = list(payload.get("resistance_levels") or [])
+        risk_context = {
+            "volume_status": self._sanitize_text(payload.get("volume_status")),
+            "volume_trend": self._sanitize_text(payload.get("volume_trend")),
+            "risk_factors": [
+                self._sanitize_text(item) for item in list(payload.get("risk_factors") or [])
+            ],
+            "support_ma5": payload.get("support_ma5"),
+            "support_ma10": payload.get("support_ma10"),
+        }
+        evidence = {
+            "ma_alignment": self._sanitize_text(payload.get("ma_alignment")),
+            "macd_status": self._sanitize_text(payload.get("macd_status")),
+            "rsi_status": self._sanitize_text(payload.get("rsi_status")),
+            "macd_signal": self._sanitize_text(payload.get("macd_signal")),
+            "rsi_signal": self._sanitize_text(payload.get("rsi_signal")),
+        }
+        cleaned = {
+            "trend_status": self._sanitize_text(payload.get("trend_status")),
+            "trend_strength": self._safe_numeric(payload.get("trend_strength")),
+            "stance": self._technical_stance(payload.get("buy_signal")),
+            "score": payload.get("signal_score"),
+            "horizon": "swing",
+            "methodology_version": self.TECHNICAL_METHODOLOGY_VERSION,
+            "as_of": as_of,
+            "invalidation_levels": {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+            },
+            "risk_context": {
+                key: value for key, value in risk_context.items() if self._has_public_value(value)
+            },
+            "evidence": {
+                key: value for key, value in evidence.items() if self._has_public_value(value)
+            },
+        }
+        return {key: value for key, value in cleaned.items() if self._has_public_value(value)}
+
+    @classmethod
+    def _normalize_ratio_value(cls, key: str, value: Any) -> Any:
+        if key not in cls.RATIO_FIELD_NAMES:
+            return value
+        if isinstance(value, bool):
+            return value
+        numeric = cls._safe_numeric(value)
+        if numeric is None:
+            return value
+        if abs(numeric) > 1.5:
+            return numeric / 100.0
+        return numeric
+
+    def _normalize_public_payload(self, payload: Any, *, drop_summary: bool = False) -> Any:
+        if isinstance(payload, Mapping):
+            normalized: Dict[str, Any] = {}
+            for key, value in payload.items():
+                if drop_summary and key == "summary" and isinstance(value, str):
+                    continue
+                normalized[key] = self._normalize_public_payload(value, drop_summary=drop_summary)
+                normalized[key] = self._normalize_ratio_value(key, normalized[key])
+            return normalized
+        if isinstance(payload, list):
+            return [
+                self._normalize_public_payload(item, drop_summary=drop_summary) for item in payload
+            ]
+        return payload
 
     @staticmethod
     def _safe_numeric(value: Any) -> Optional[float]:

@@ -97,7 +97,7 @@
 - `data.computed_at`: 本次生成时间
 - `data.source`: 当前固定为 `stock_analyze_dispatcher`
 - `data.market`: 生效市场
-- `data.strategy`: 当前固定为 `fsp_objective_stock_analyze_v1`
+- `data.strategy`: 当前固定为 `fsp_objective_stock_analyze_v2`
 - `data.request`: 生效后的请求参数回显
 - `data.items`: 每个 symbol 的分析结果
 
@@ -121,14 +121,34 @@
 
 - 跨市场统一汇总层
 - 只承载 Agent 决策所需的关键确定性摘要
+- 首位固定为 `research_strategy`，按 FSP 风格组织：
+  - `expectations_vs_reported`
+  - `fundamental_quality`
+  - `valuation_context`
+  - `catalyst_path`
+  - `price_action_confirmation`
+  - `cross_signal_alignment`
+  - `risk_flags`
+  - `evidence_strength`
 - 按模块情况输出：
-  - `technical`
   - `research`
   - `earnings`
   - `catalysts`
   - `screen`
   - `models`
   - `change_flags`
+  - `technical`
+
+`meta.provenance` 说明：
+
+- 统一承载字段级出处说明
+- 当前至少覆盖 `summary.research_strategy.*`
+- 每个子块至少包含：
+  - `source_modules`
+  - `field_paths`
+  - `fallback_used`
+  - `heuristic`
+  - `evidence_class`
 
 `meta.modules` 说明：
 
@@ -168,6 +188,14 @@
   - `module_status`
   - `module_error`
   - `attempted_sources`
+- `technical` 是研究辅助确认层：
+  - 不单独承担买卖建议语义
+  - 公共层使用 `stance / score / risk_context / invalidation_levels`
+  - `fear_greed.label` 统一为标准 band
+- `screen` 无 filters 时：
+  - `evaluated=false`
+  - `passed=null`
+- `earnings_preview` 不再公开 placeholder scenarios，只保留可验证字段
 
 `mode` 对应模块集合：
 
@@ -214,6 +242,7 @@
 返回约束：
 
 - 只输出客观、结构化、可追溯结果
+- `evidence_strength` 为规则生成，不是主观 confidence
 - 不输出：
   - `recommendation`
   - `confidence`

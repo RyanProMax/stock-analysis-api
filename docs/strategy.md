@@ -11,25 +11,28 @@
   - `start_date`
   - `end_date`
   - `mode`
-- `mode` 固定为：
-  - `base`
-  - `full`
+- 当前公共策略已升级为 `fsp_objective_stock_analyze_v2`
 - 当前接口仍然只输出客观、结构化、可追溯结果：
   - 没有 thesis
   - 没有 recommendation
   - 没有 confidence
   - 没有 price target 结论
-  - 没有 moat / positioning / idea pitch / morning note
+  - 没有 moat / positioning / conviction
+- 本轮的重点变化：
+  - `summary` 首位新增 `research_strategy`
+  - `item.meta` 新增 `provenance`
+  - `technical` 保留，但改成研究辅助确认层
+  - `screen` 无 filters 时不再伪装成 `passed=true`
 
 ## 使用方式
 
-下面示例使用真实的 `300827`，并按当前公共 contract 走 `mode=full`。
+下面示例使用真实的 `300827`，并按当前公共 contract 走 `mode=base`。
 
 ```bash
 uv run python scripts/stock_analyze.py \
   --market cn \
   --symbols 300827 \
-  --mode full \
+  --mode base \
   --pretty
 ```
 
@@ -39,26 +42,24 @@ uv run python scripts/stock_analyze.py \
 - 下方代码块使用 `jsonc`，只是为了在 JSON 中直接写注释
 - 注释不是实际输出的一部分
 - 示例底稿来自 `2026-03-29` 的真实运行结果
-- `mode=full` 会加载 CN 市场当前全部公开模块
-- 没有数据或没有权限的原始块不会输出空壳 body，而是只在 `item.meta.modules` 里给状态
 
-## `300827 + mode=full` 带注释示例
+## `300827 + mode=base` 带注释示例
 
 ```jsonc
 {
   "status_code": 200, // StandardResponse 业务状态码
   "data": {
     "status": "partial", // 顶层聚合状态
-    "computed_at": "2026-03-29T04:52:47.448292+00:00", // 本次分析生成时间（UTC）
+    "computed_at": "2026-03-29T06:03:50.016540+00:00", // 本次分析生成时间（UTC）
     "source": "stock_analyze_dispatcher", // 顶层统一调度器名
     "market": "cn", // 生效市场
-    "strategy": "fsp_objective_stock_analyze_v1", // 当前公共策略名
+    "strategy": "fsp_objective_stock_analyze_v2", // 当前公共策略名
     "request": {
-      "market": "cn", // 回显用户请求市场
-      "symbols": ["300827"], // 回显生效后的 symbol 列表，去重保序
-      "start_date": "20260227", // 生效后的窗口起始日
-      "end_date": "20260329", // 生效后的窗口结束日
-      "mode": "full" // 当前 mode
+      "market": "cn",
+      "symbols": ["300827"],
+      "start_date": "20260227",
+      "end_date": "20260329",
+      "mode": "base"
     },
     "items": [
       {
@@ -68,21 +69,21 @@ uv run python scripts/stock_analyze.py \
 
         "info": {
           "common": {
-            "ts_code": "300827.SZ", // 标准证券代码
-            "name": "上能电气", // 证券简称
-            "list_date": "20200410", // 上市日期
-            "delist_date": null // 退市日期；仍上市时通常为 null
+            "ts_code": "300827.SZ",
+            "name": "上能电气",
+            "list_date": "20200410",
+            "delist_date": null
           },
           "cn_specific": {
-            "symbol": "300827", // 不带后缀的纯代码
-            "exchange": "SZSE", // 交易所
-            "list_status": "L", // 上市状态
-            "area": "江苏", // 地域
-            "industry": "电气设备", // 行业
-            "market": "创业板" // 板块口径
+            "symbol": "300827",
+            "exchange": "SZSE",
+            "list_status": "L",
+            "area": "江苏",
+            "industry": "电气设备",
+            "market": "创业板"
           },
           "us_specific": {
-            "ts_code": null, // 统一结构预留给 US
+            "ts_code": null,
             "name": null,
             "enname": null,
             "classify": null,
@@ -93,64 +94,67 @@ uv run python scripts/stock_analyze.py \
 
         "technical": {
           "fear_greed": {
-            "index": 65.56441915275643, // 贪恐指数数值
-            "label": "🤤 贪婪" // 贪恐指数标签
+            "index": 65.56441915275643, // 原始指数值
+            "label": "greed" // 已收口为标准 band，不再输出 emoji
           },
           "technical_signals": [
             {
-              "key": "ma", // 因子标识
-              "name": "MA均线", // 因子名称
-              "status": "📈 多头趋势 (中期看涨)", // 因子状态说明
-              "bullish_signals": ["价格站上 MA20/MA60，趋势排列良好"], // 多头信号
-              "bearish_signals": ["价格跌破 MA5"] // 空头信号
+              "key": "ma", // 原始因子标识
+              "name": "MA均线",
+              "family": "trend", // 信号家族：trend / momentum / volume / volatility / sentiment
+              "direction": "mixed", // 当前信号方向：bullish / bearish / mixed / neutral
+              "status": "多头趋势 (中期看涨)", // 去 emoji 后的简洁状态
+              "evidence": ["价格站上 MA20/MA60，趋势排列良好"], // 支撑当前方向的证据
+              "limitations": ["价格跌破 MA5"], // 反向或限制条件
+              "as_of": "2026-03-27" // 信号观测日期
             }
-          ], // 实际返回会包含全部技术因子，不只一个
+          ],
           "trend": {
-            "code": "300827", // 趋势分析对应代码
             "trend_status": "强势多头", // 趋势状态
-            "ma_alignment": "强势多头排列，均线发散上行", // 均线排列说明
-            "trend_strength": 90, // 趋势强度
-            "current_price": 43.08, // 当前价格
-            "buy_signal": "强烈买入", // 当前模型给出的动作标签
-            "signal_score": 78, // 综合分数
-            "signal_reasons": ["✅ 强势多头，顺势做多"], // 触发该判断的理由
-            "risk_factors": [], // 当前识别到的风险项
-            "macd_status": "多头", // MACD 状态
-            "rsi_status": "中性" // RSI 状态
-          } // 实际返回还包含 MA / 偏离率 / 支撑压力 / MACD / RSI 等完整技术细节
+            "trend_strength": 90.0, // 趋势强度
+            "stance": "bullish_confirmation", // 公共层 stance，不再输出 buy_signal
+            "score": 78, // 公共层 score，不再输出 signal_score
+            "horizon": "swing", // 方法默认观察周期
+            "methodology_version": "technical_research_v2", // 当前公共技术确认层版本
+            "as_of": "2026-03-27",
+            "invalidation_levels": {
+              "support_levels": [40.0765], // 失效前应重点观察的支撑位
+              "resistance_levels": [47.1] // 当前阻力位
+            },
+            "risk_context": {
+              "volume_status": "缩量回调", // 量价风险语境
+              "volume_trend": "缩量回调，洗盘特征明显（好）",
+              "support_ma5": false,
+              "support_ma10": false
+            },
+            "evidence": {
+              "ma_alignment": "强势多头排列，均线发散上行", // 趋势确认依据
+              "macd_status": "多头",
+              "rsi_status": "中性",
+              "macd_signal": "多头排列，持续上涨",
+              "rsi_signal": "RSI中性(55.6)，震荡整理中"
+            }
+          }
         },
 
         "report_rc": {
           "records": [
             {
-              "ts_code": "300827.SZ", // 标准代码
-              "name": "上能电气", // 证券简称
-              "report_date": "20251105", // 预测发布日期
-              "report_title": "上能电气：营收稳健增长，费用及汇兑短期扰动Q3利润", // 标题
-              "report_type": "点评", // 报告类型
-              "classify": "一般报告", // 源端分类
-              "org_name": "华安证券", // 机构
-              "author_name": "张志邦", // 作者
-              "quarter": "2027Q4", // 预测对应季度
-              "op_rt": 939300.0, // 源端原始字段，保持 Tushare 命名
-              "op_pr": null,
-              "tp": 115800.0,
-              "np": 104700.0,
+              "report_date": "20251105", // 当前命中的 stock-specific 预测日期
+              "report_title": "上能电气：营收稳健增长，费用及汇兑短期扰动Q3利润",
+              "org_name": "华安证券",
+              "quarter": "2027Q4",
               "eps": 2.08,
               "pe": 16.81,
-              "rd": null,
               "roe": 21.1,
-              "ev_ebitda": 13.18,
-              "rating": "买入", // 机构评级原文保留；接口本身不会再汇总成 recommendation
-              "max_price": null,
-              "min_price": null
+              "rating": "买入" // 源端原文保留；系统不会把它升级成 recommendation
             }
           ]
-        }, // 原始块统一只保留 records；其状态/来源放在 meta.modules.report_rc
+        }, // 原始块统一只保留 records
 
         "earnings": {
           "fundamentals": {
-            "market": "cn", // 财务上下文对应市场
+            "market": "cn",
             "status": "partial", // 财务覆盖状态
             "coverage": {
               "valuation": "ok",
@@ -163,45 +167,29 @@ uv run python scripts/stock_analyze.py \
             },
             "source_chain": [
               {"provider": "financial_provider", "result": "ok", "duration_ms": 0}
-            ], // 财务上下文内部 source chain；这仍属于业务字段
-            "errors": ["not implemented"], // 子流程错误摘要
-            "valuation": {
-              "status": "ok",
-              "coverage": {"status": "ok"},
-              "source_chain": [{"provider": "financial_provider", "result": "ok", "duration_ms": 0}],
-              "errors": [],
-              "data": {
-                "pe_ratio": 56.0584,
-                "pb_ratio": 5.9187,
-                "price": null
-              }
-            },
+            ],
+            "errors": ["not implemented"],
             "growth": {
               "status": "ok",
-              "coverage": {"status": "ok"},
-              "source_chain": [{"provider": "tushare.income", "result": "ok", "duration_ms": 0}],
-              "errors": [],
               "data": {
-                "revenue_yoy": 16.149949615964154,
-                "roe": 13.5931,
-                "debt_to_assets": 73.009,
-                "summary": "revenue_yoy=1614.99%"
+                "revenue_yoy": 0.16149949615964154, // 统一为 ratio 语义
+                "roe": 0.135931,
+                "debt_to_assets": 0.73009
               }
             }
           },
           "growth": {
-            "revenue_yoy": 16.149949615964154, // 直接给 Agent 用的增长快照
-            "roe": 13.5931,
-            "debt_to_assets": 73.009,
-            "summary": "revenue_yoy=1614.99%"
+            "revenue_yoy": 0.16149949615964154, // 直接给 Agent 用的增长快照
+            "roe": 0.135931,
+            "debt_to_assets": 0.73009
           },
           "valuation": {
-            "pe_ratio": 56.0584, // 直接给 Agent 用的估值快照
+            "pe_ratio": 56.0584,
             "pb_ratio": 5.9187,
             "price": null
           },
           "coverage": {
-            "valuation": "ok", // 当前 earnings 模块各子块覆盖状态
+            "valuation": "ok",
             "growth": "ok",
             "earnings": "partial",
             "institution": "partial",
@@ -212,47 +200,95 @@ uv run python scripts/stock_analyze.py \
         },
 
         "catalysts": {
-          "event_count": 0 // 当前窗口内没有可公开交付的事件
+          "event_count": 0 // 当前窗口内无可交付事件
         },
 
         "screen": {
           "metrics": {
-            "pe_ratio": 56.0584, // 当前筛选使用的指标快照
+            "pe_ratio": 56.0584,
             "price_to_book": 5.9187,
-            "roe": 13.5931,
-            "revenue_growth": 16.149949615964154,
-            "debt_ratio": 73.009
+            "roe": 0.135931,
+            "revenue_growth": 0.16149949615964154,
+            "debt_ratio": 0.73009
           },
-          "passed": true, // 是否通过当前 filters
-          "filter_count": 0 // 实际执行的过滤条件数量
-        },
-
-        "model_update": {
-          "refreshed_modules": {
-            "earnings": "partial" // 刷新摘要，不是完整 revision history
-          }
+          "evaluated": false, // 当前没有 filters，说明并未真正执行 pass/fail 筛选
+          "passed": null, // 不再把“没筛选”伪装成 true
+          "filter_count": 0
         },
 
         "summary": {
-          "technical": {
-            "signal_count": 11, // 技术因子数量
-            "fear_greed": {
-              "index": 65.56441915275643,
-              "label": "🤤 贪婪"
+          "research_strategy": {
+            "expectations_vs_reported": {
+              "state": "expectations_only", // 当前更多是“有预测、缺完整已公布口径”
+              "market": "cn",
+              "estimate_available": true,
+              "reported_available": false,
+              "consensus_available": false,
+              "latest_estimate_date": "20251105"
             },
-            "trend": {
-              "trend_status": "强势多头", // 汇总后的趋势状态
-              "trend_strength": 90,
-              "buy_signal": "强烈买入",
-              "signal_score": 78
+            "fundamental_quality": {
+              "state": "partial", // 基本面覆盖不是空，但也不完整
+              "available_components": ["fundamentals", "growth", "valuation", "coverage"],
+              "coverage": {
+                "valuation": "ok",
+                "growth": "ok",
+                "earnings": "partial",
+                "institution": "partial",
+                "capital_flow": "not_supported",
+                "dragon_tiger": "not_supported",
+                "boards": "not_supported"
+              }
+            },
+            "valuation_context": {
+              "state": "covered", // 已有基础估值快照
+              "valuation_metrics": {
+                "pe_ratio": 56.0584,
+                "pb_ratio": 5.9187
+              }
+            },
+            "catalyst_path": {
+              "state": "not_visible", // 当前窗口里没有可公开交付的 catalyst
+              "event_count": 0
+            },
+            "price_action_confirmation": {
+              "state": "supportive", // 技术确认层给出的价格行为确认
+              "stance": "bullish_confirmation",
+              "trend_status": "强势多头",
+              "score": 78,
+              "volume_status": "缩量回调",
+              "sentiment_band": "greed"
+            },
+            "cross_signal_alignment": {
+              "state": "mixed", // 多模块信号不是完全一致，也不是完全冲突
+              "positive_signals": 2,
+              "caution_signals": 0
+            },
+            "risk_flags": [
+              "estimate_fallback_used", // report_rc 实际走了窗口外 fallback
+              "stale_estimate_window", // 估值/预期日期偏旧
+              "partial_earnings_coverage", // 财务覆盖不完整
+              "no_visible_catalysts", // 当前无明显催化剂
+              "screen_not_evaluated", // screen 未执行真正筛选
+              "technical_layer_contains_heuristics" // 技术层仍属启发式确认层
+            ],
+            "evidence_strength": {
+              "level": "low", // 规则生成的总体证据强度，不是主观 confidence
+              "dimensions": {
+                "source_directness": "high",
+                "data_completeness": "medium",
+                "recency": "medium",
+                "cross_source_consistency": "medium",
+                "heuristic_dependency": "low",
+                "fallback_dependency": "low"
+              }
             }
           },
           "research": {
-            "report_count": 0, // 当前窗口内 stock-specific research_report 数量
+            "report_count": 0,
             "latest_report_date": null,
             "institution_count": 0,
-            "latest_estimate_date": "20251105", // 当前 report_rc 命中的最新日期
-            "rating_distribution": {"买入": 3}, // report_rc 内评级分布
+            "latest_estimate_date": "20251105",
+            "rating_distribution": {"买入": 3},
             "quarter_distribution": {
               "2027Q4": 1,
               "2026Q4": 1,
@@ -260,28 +296,8 @@ uv run python scripts/stock_analyze.py \
             }
           },
           "earnings": {
-            "reported_available": false, // earnings.reported 是否有值
-            "consensus_available": false, // earnings.consensus 是否有值
-            "growth": {
-              "revenue_yoy": 16.149949615964154,
-              "roe": 13.5931,
-              "debt_to_assets": 73.009,
-              "summary": "revenue_yoy=1614.99%"
-            },
-            "valuation": {
-              "pe_ratio": 56.0584,
-              "pb_ratio": 5.9187,
-              "price": null
-            },
-            "coverage": {
-              "valuation": "ok",
-              "growth": "ok",
-              "earnings": "partial",
-              "institution": "partial",
-              "capital_flow": "not_supported",
-              "dragon_tiger": "not_supported",
-              "boards": "not_supported"
-            }
+            "reported_available": false,
+            "consensus_available": false
           },
           "catalysts": {
             "event_count": 0,
@@ -289,46 +305,38 @@ uv run python scripts/stock_analyze.py \
             "event_type_distribution": {}
           },
           "screen": {
-            "passed": true,
+            "evaluated": false,
+            "passed": null,
             "filter_count": 0,
             "failed_filters": []
           },
-          "models": {
-            "executed_modules": {
-              "model_update": "ok" // 当前 mode 内执行过的模型类模块摘要
-            }
-          },
           "change_flags": {
-            "has_new_report_7d": false, // 最近 7 天是否有新 report
-            "has_new_estimate_7d": false, // 最近 7 天是否有新 estimate
-            "has_new_catalyst_7d": false // 最近 7 天是否有新 catalyst
+            "has_new_report_7d": false,
+            "has_new_estimate_7d": false,
+            "has_new_catalyst_7d": false
+          },
+          "technical": {
+            "signal_count": 11,
+            "fear_greed": {
+              "index": 65.56441915275643,
+              "label": "greed"
+            },
+            "trend": {
+              "trend_status": "强势多头",
+              "stance": "bullish_confirmation",
+              "score": 78
+            }
           }
         },
 
         "meta": {
-          "mode": "full", // 当前 item 的生效 mode
+          "mode": "base",
           "sources": [
-            "CN_Tushare",
+            "CN_SQLiteDailyWarehouse",
             "tushare",
-            "Tushare",
-            "stock_analyze_dispatcher"
+            "Tushare"
           ], // item 级去重后的来源摘要
           "partial_reasons": [
-            {
-              "module": "anns_d",
-              "status": "permission_denied",
-              "error": "抱歉，您没有该接口访问权限。"
-            },
-            {
-              "module": "news",
-              "status": "permission_denied",
-              "error": "抱歉，您没有该接口访问权限。"
-            },
-            {
-              "module": "major_news",
-              "status": "permission_denied",
-              "error": "抱歉，您没有该接口访问权限。"
-            },
             {
               "module": "earnings",
               "status": "partial",
@@ -341,26 +349,6 @@ uv run python scripts/stock_analyze.py \
             }
           ], // 所有非纯 ok 模块的聚合摘要
           "modules": {
-            "technical": {
-              "status": "ok", // 模块状态
-              "source": "CN_Tushare", // 最终命中的主来源
-              "error": null, // 模块级错误
-              "notes": {
-                "as_of": "2026-03-27", // 模块自身观测时间
-                "data_completeness": "ok", // 模块数据完整性
-                "interface_type": "mixed" // 模块类型
-              }
-            },
-            "research_report": {
-              "status": "empty", // 当前窗口没命中数据
-              "source": "tushare",
-              "error": null,
-              "notes": {
-                "skip_reason": "no_stock_specific_report_rc_in_requested_window", // 未拉取 research_report 的原因
-                "requested_start_date": "20260227",
-                "requested_end_date": "20260329"
-              }
-            },
             "report_rc": {
               "status": "ok",
               "source": "tushare",
@@ -368,79 +356,54 @@ uv run python scripts/stock_analyze.py \
               "notes": {
                 "requested_start_date": "20260227",
                 "requested_end_date": "20260329",
-                "resolved_start_date": "20251105", // 实际命中的窗口
+                "resolved_start_date": "20251105", // 实际命中的 fallback 窗口
                 "resolved_end_date": "20251105",
-                "fallback_mode": "latest_stock_specific_report_date" // fallback 说明
+                "fallback_mode": "latest_stock_specific_report_date"
               }
-            },
-            "anns_d": {
-              "status": "permission_denied", // 只在 meta 体现，body 不再输出空壳
-              "source": "tushare",
-              "error": "抱歉，您没有该接口访问权限。",
-              "notes": {}
-            },
-            "news": {
-              "status": "permission_denied",
-              "source": "tushare",
-              "error": "抱歉，您没有该接口访问权限。",
-              "notes": {
-                "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)" // 命中过滤规则
-              }
-            },
-            "major_news": {
-              "status": "permission_denied",
-              "source": "tushare",
-              "error": "抱歉，您没有该接口访问权限。",
-              "notes": {
-                "filter_rule": "title_or_content_contains_any(symbol, ts_code, name)"
-              }
-            },
-            "earnings": {
-              "status": "partial",
-              "source": "Tushare",
-              "error": null,
-              "notes": {
-                "data_completeness": "partial",
-                "limitations": [
-                  "CN earnings module is limited by available provider financial coverage."
-                ],
-                "interface_type": "mixed"
-              }
-            },
-            "catalysts": {
-              "status": "partial",
-              "source": "tushare",
-              "error": null,
-              "notes": {
-                "data_completeness": "partial",
-                "limitations": [
-                  "Underlying CN native blocks unavailable: anns_d, news, major_news"
-                ],
-                "interface_type": "fact"
-              }
-            },
-            "screen": {
-              "status": "ok",
-              "source": "Tushare",
-              "error": null,
-              "notes": {
-                "data_completeness": "partial",
-                "limitations": [
-                  "Screen evaluates only the requested symbols, not a full market universe."
-                ],
-                "interface_type": "mixed"
-              }
-            },
-            "model_update": {
-              "status": "ok",
-              "source": "stock_analyze_dispatcher",
-              "error": null,
-              "notes": {
-                "data_completeness": "partial",
-                "limitations": [
-                  "Model update is a deterministic refresh summary, not a stored revision history."
-                ],
-                "interface_type": "mixed"
+            }
+          },
+          "provenance": {
+            "summary": {
+              "research_strategy": {
+                "expectations_vs_reported": {
+                  "source_modules": ["report_rc", "earnings"], // 这个结论来自哪些模块
+                  "field_paths": [
+                    "report_rc.records[*].report_date",
+                    "earnings.reported",
+                    "earnings.consensus"
+                  ], // 关键字段路径
+                  "fallback_used": true, // 是否用过 fallback
+                  "heuristic": false, // 是否含 heuristic
+                  "evidence_class": "consensus" // 证据类型
+                },
+                "price_action_confirmation": {
+                  "source_modules": ["technical"],
+                  "field_paths": [
+                    "technical.trend",
+                    "technical.technical_signals",
+                    "technical.fear_greed"
+                  ],
+                  "fallback_used": false,
+                  "heuristic": true,
+                  "evidence_class": "heuristic"
+                },
+                "evidence_strength": {
+                  "source_modules": [
+                    "technical",
+                    "research_report",
+                    "report_rc",
+                    "earnings",
+                    "catalysts",
+                    "screen"
+                  ],
+                  "field_paths": [
+                    "meta.modules",
+                    "summary.research_strategy.expectations_vs_reported"
+                  ],
+                  "fallback_used": true,
+                  "heuristic": true,
+                  "evidence_class": "derived"
+                }
               }
             }
           }
@@ -448,14 +411,14 @@ uv run python scripts/stock_analyze.py \
       }
     ]
   },
-  "err_msg": null // 成功时固定为 null
+  "err_msg": null
 }
 ```
 
 ## 读法建议
 
-- 大多数 Agent 先看 `summary`
-- 需要追溯来源、降级原因或权限问题时看 `meta.modules`
+- 先看 `summary.research_strategy`，这是当前最接近 FSP 研报组织方式的主视图
+- 再看 `meta.provenance`，确认每个研究结论具体来自哪些模块、是否用了 fallback、是否包含 heuristic
 - 需要完整原始记录时看 `report_rc.records` 或其他原始块
-- 需要技术面细节时看 `technical`
-- 不要再从 payload 里寻找 thesis、recommendation、price target 之类主观字段，它们已经不属于公共 contract
+- 需要技术确认细节时看 `technical`
+- 不要再从 payload 里寻找 thesis、recommendation、price target 或 confidence，它们已经不属于公共 contract

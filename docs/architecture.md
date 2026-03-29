@@ -61,10 +61,20 @@ src/
   - 结构化模块不再公开 `entity`、`meta`、`module_status`、`module_error`、`attempted_sources`
   - 重复状态、来源、限制说明统一上收至 `item.meta.modules`
 - `/stock/analyze` 的 `summary` 是跨市场统一汇总层，用于承载 Agent 决策所需的关键确定性摘要，替代旧的 CN-only `derived`
+- `/stock/analyze` 的 `summary` 采用 FSP 风格研究顺序组织，首位固定为 `research_strategy`，用于表达：
+  - `expectations_vs_reported`
+  - `fundamental_quality`
+  - `valuation_context`
+  - `catalyst_path`
+  - `price_action_confirmation`
+  - `cross_signal_alignment`
+  - `risk_flags`
+  - `evidence_strength`
 - `/stock/analyze` 的 `technical` 是公共分析 contract 的固定模块，用于承载：
   - `trend`
   - `technical_signals`
   - `fear_greed`
+- `/stock/analyze` 的 `technical` 是研究辅助确认层，不单独承担“买卖建议”语义；其公共输出应优先表达趋势确认、动量、量价、波动与失效条件
 - 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
@@ -96,6 +106,7 @@ src/
 - `suspend_d` 当前只作为同步阶段的辅助事实源使用，不单独落业务表
 - `extra` 只保留非标准、低频或暂不标准化的事实字段，不承担长期核心市场事实
 - 所有关键事实字段应逐步补齐 `source_chain`、`as_of`、`period_end_date`、`filing_or_release_date`
+- `/stock/analyze` 的关键研究结论除模块级 trace 外，还应逐步补齐字段级 provenance；`item.meta.provenance` 用于承载 `summary.research_strategy.*` 的来源模块、字段路径、fallback 与 heuristic 标记
 - fallback 需要区分：
   - 降级成功
   - 真实失败
@@ -124,6 +135,7 @@ src/
 - provider 不支持某项能力时，应视为 `not_supported`，不能计入失败、不能污染熔断状态
 - `/watch/poll` 里凡是 `quote.mode = daily_fallback` 都必须视为非 realtime 降级结果，不能再把 A 股 fallback 伪装成完整 `ok`
 - `POST /stock/analyze` 只允许输出客观、结构化、可追溯的研究能力，不输出主观 thesis、评级建议、目标价结论、morning note 或 investment idea 文案
+- `POST /stock/analyze` 的公开“可信度”不再使用自由表述或主观打分；统一使用规则生成的 `evidence_strength`
 - `/stock/analyze` 仅通过请求体 `mode` 控制模块集合：
   - `base` 面向决策信息全的默认消费场景
   - `full` 在 `base` 之上补充长尾原始块和扩展模块
@@ -151,7 +163,7 @@ src/
   - 质量检查
   - 限制说明
 - 输出中的关键结论应可追溯到事实、证据或模型方法
-- research snapshot 脚本与公共 HTTP 入口必须保持同构 contract，不输出自由文本总结、主观 thesis、评级建议或目标价结论
+- stock analyze CLI 与公共 HTTP 入口必须保持能力同构，不输出自由文本总结、主观 thesis、评级建议或目标价结论
 
 ## 演进方向
 
