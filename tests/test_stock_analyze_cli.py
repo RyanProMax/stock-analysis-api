@@ -206,15 +206,113 @@ def _us_security_info(symbol: str = "NVDA"):
     }
 
 
-def _run_cli(service: StockAnalyzeService, *args: str) -> dict[str, Any]:
+class FakeSymbolCatalog:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def search_symbols(self, keyword, market=None):
+        self.calls.append({"keyword": keyword, "market": market})
+        return list(self.results)
+
+
+class FakeAnalyzeService:
+    def __init__(self):
+        self.calls = []
+
+    def analyze(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return {
+            "status": "ok",
+            "computed_at": "2026-05-04T00:00:00+00:00",
+            "source": "stock_analyze_dispatcher",
+            "market": kwargs["market"],
+            "strategy": "fsp_objective_stock_analyze_v2",
+            "request": {
+                "market": kwargs["market"],
+                "symbols": list(kwargs["symbols"]),
+                "start_date": kwargs.get("start_date"),
+                "end_date": kwargs.get("end_date"),
+                "mode": kwargs.get("mode"),
+            },
+            "items": [
+                {"requested_symbol": symbol, "status": "ok"}
+                for symbol in kwargs["symbols"]
+            ],
+        }
+
+
+def _run_cli(service: StockAnalyzeService, *args: str, symbol_catalog=None) -> dict[str, Any]:
     writer = StringIO()
-    payload = stock_analyze_cli_main(list(args), writer=writer, service=service)
+    payload = stock_analyze_cli_main(
+        list(args),
+        writer=writer,
+        service=service,
+        symbol_catalog=symbol_catalog,
+    )
     written = json.loads(writer.getvalue())
     assert written == payload
     return payload
 
 
 class TestStockAnalyzeCli:
+    def test_cli_resolves_cn_stock_name_before_analyze(self):
+        service = FakeAnalyzeService()
+        catalog = FakeSymbolCatalog(
+            [
+                {
+                    "symbol": "300750",
+                    "ts_code": "300750.SZ",
+                    "name": "宁德时代",
+                    "market": "创业板",
+                    "exchange": "SZSE",
+                    "cnspell": "NDSD",
+                }
+            ]
+        )
+
+        payload = _run_cli(
+            service,
+            "--market",
+            "cn",
+            "--symbols",
+            "宁德时代",
+            "--mode",
+            "full",
+            symbol_catalog=catalog,
+        )
+
+        assert catalog.calls == [{"keyword": "宁德时代", "market": "cn"}]
+        assert service.calls[0]["symbols"] == ["300750"]
+        assert payload["data"]["request"]["symbols"] == ["300750"]
+
+    def test_cli_returns_identity_conflict_for_ambiguous_stock_name(self):
+        service = FakeAnalyzeService()
+        catalog = FakeSymbolCatalog(
+            [
+                {"symbol": "300750", "ts_code": "300750.SZ", "name": "宁德时代"},
+                {"symbol": "300751", "ts_code": "300751.SZ", "name": "宁德科技"},
+            ]
+        )
+
+        payload = _run_cli(
+            service,
+            "--market",
+            "cn",
+            "--symbols",
+            "宁德",
+            symbol_catalog=catalog,
+        )
+
+        assert service.calls == []
+        item = payload["data"]["items"][0]
+        assert item["status"] == "failed"
+        assert item["error"]["code"] == "identity_conflict"
+        assert [candidate["symbol"] for candidate in item["error"]["candidates"]] == [
+            "300750",
+            "300751",
+        ]
+
     def test_cn_base_cli_contract(self, monkeypatch):
         provider = FakeResearchProvider(
             security={"record": _cn_security_record(), "status": "ok", "error": None},

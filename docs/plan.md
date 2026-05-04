@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-03-29
+更新时间：2026-05-04
 
 ## 当前目标
 
@@ -20,6 +20,7 @@
   - `src/services/realtime_quote_polling_cli.py`
   - `scripts/poll_realtime_quotes.py`
 - 已为新 CLI 补充首批 contract 测试，覆盖普通股票、ETF、invalid symbol、legacy realtime 降级与纯 JSON stdout
+- `scripts/stock_analyze.py` 已在 CLI 层支持股票名 / 公司名解析；唯一匹配后传标准代码给分析服务，多候选返回 `identity_conflict`。
 
 ## 当前状态
 
@@ -27,6 +28,7 @@
 - skill / agent 可消费的内部 CLI 当前为：
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
+- `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
 - `scripts/poll_realtime_quotes.py` 当前实现固定为 Tushare-only：
@@ -53,3 +55,4 @@
 - Tushare `quotation` 可能受源端权限或可用性影响，因此 legacy realtime 降级语义必须保持真实，不得伪装成完整 realtime
 - `TushareDataSource.get_pro()` 当前仍可能打印初始化信息；CLI 层必须继续保证 stdout 纯 JSON
 - `stock-analysis-skill` 将不再保留本地 wrapper，文档必须明确调用入口在 API 仓库，避免使用方继续假设 skill 根目录存在同名脚本
+- 股票名解析依赖 `cn_symbols/us_symbols` 本地目录和必要时的目录刷新；多候选时必须由调用方提示用户澄清，不得猜测。
