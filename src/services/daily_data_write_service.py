@@ -743,7 +743,7 @@ class DailyDataWriteService:
         coverage_end_date = adjusted_state.get("coverage_end_date")
         coverage_is_current = (
             target_latest_trade_date is None
-            or coverage_end_date == target_latest_trade_date
+            or (coverage_end_date is not None and coverage_end_date >= target_latest_trade_date)
             or adjusted_state["stale_symbol_count"] == 0
         )
         has_required_history = True

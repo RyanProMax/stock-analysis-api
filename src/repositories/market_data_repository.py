@@ -1141,12 +1141,18 @@ class MarketDataRepository:
         if start_trade_date:
             has_required_history = coverage_start_date is not None and coverage_start_date <= start_trade_date
 
+        coverage_is_current = (
+            target_latest_trade_date is None
+            or (coverage_end_date is not None and coverage_end_date >= target_latest_trade_date)
+            or stale_count == 0
+        )
+
         is_data_current = (
             symbol_snapshot_count > 0
             and has_required_history
             and missing_symbol_count == 0
             and stale_count == 0
-            and (target_latest_trade_date is None or coverage_end_date == target_latest_trade_date)
+            and coverage_is_current
         )
 
         return {

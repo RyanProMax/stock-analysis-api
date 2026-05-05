@@ -265,7 +265,9 @@ class YfinanceDataSource(BaseStockDataSource):
             dividends = None
 
         dividend_payload = enrich_dividend_payload_with_yield(
-            build_dividend_payload_from_series(dividends),
+            build_dividend_payload_from_series(
+                dividends, as_of=cls._latest_dividend_as_of(dividends)
+            ),
             price,
         )
         ttm_dividend_yield_pct = dividend_payload.get("ttm_dividend_yield_pct")
@@ -332,6 +334,18 @@ class YfinanceDataSource(BaseStockDataSource):
             )
 
         return normalized
+
+    @staticmethod
+    def _latest_dividend_as_of(dividends: Any) -> Optional[pd.Timestamp]:
+        if dividends is None or getattr(dividends, "empty", True):
+            return None
+        try:
+            clean_index = pd.to_datetime(dividends.dropna().index)
+        except Exception:
+            return None
+        if len(clean_index) == 0:
+            return None
+        return pd.Timestamp(clean_index.max())
 
     @staticmethod
     def _is_us_stock_symbol(symbol: str) -> bool:

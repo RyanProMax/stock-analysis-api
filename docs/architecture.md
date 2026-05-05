@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-03-29
+更新时间：2026-05-05
 
 ## 系统边界
 
@@ -10,6 +10,8 @@
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
+- 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
+- Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
 - `README.md` 只承担使用说明职责；架构、仓表语义、状态模型和演进约束统一写入 `docs/architecture.md` 与 `docs/specs/`
 - 外部 Agent 的盯盘能力统一通过单一轮询接口提供，不提供额外的 cursor、rules、health 等公共盯盘接口
 - 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
@@ -38,6 +40,7 @@ src/
 - `services/` 负责工作流、读写编排和聚合逻辑
 - `repositories/` 负责单机 SQLite 行情仓访问，不承载分析规则
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
+- `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；账户、持仓、模拟盘订单只能通过 service 层定义的 broker contract 暴露
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -172,6 +175,13 @@ src/
 - 输出中的关键结论应可追溯到事实、证据或模型方法
 - stock analyze CLI 与公共 HTTP 入口必须保持能力同构，不输出自由文本总结、主观 thesis、评级建议或目标价结论
 - realtime quote CLI 与 skill 侧历史 `poll_realtime_quotes.py` 保持轻量 contract 同构，且当前仅服务 CN 股票 / ETF 的 Tushare 日内行情查询
+- 模拟盘自动交易 workflow 固定由确定性 worker 执行：
+  - 定时轮询、行情读取、策略执行、风控、模拟盘下单、成交回写和对账均不经过 Agent 即时决策
+  - Agent 只参与盘后复盘、回测解释和策略迭代建议，产物必须是结构化 `strategy_proposal`
+  - `strategy_proposal` 通过 schema 校验、回测门槛和人工批准后，才能生成候选或生效策略版本
+  - 第一阶段交易环境固定为 Futu `SIMULATE`，禁止实现真实交易、交易解锁、订阅推送或 OpenD 配置写入
+  - 所有订单必须携带可复算的 idempotency key，重复轮询不得重复下单
+  - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
 
 ## 演进方向
 
