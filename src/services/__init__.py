@@ -1,20 +1,30 @@
-"""
-业务服务层。
+"""业务服务层。
+
+Package import must stay side-effect free. Internal CLIs such as
+``scripts/futu_market_data.py`` import ``src.services.futu_market_data_cli`` and
+must not initialize unrelated repositories just because the package loaded.
 """
 
-from .daily_data_read_service import DailyDataReadService, daily_data_read_service
-from .daily_data_write_service import DailyDataWriteService, daily_data_write_service
-from .symbol_catalog_service import SymbolCatalogService, symbol_catalog_service
-from .symbol_snapshot_refresh_service import (
-    SymbolSnapshotRefreshService,
-    symbol_snapshot_refresh_service,
-)
-from .watch_polling_service import WatchPollingService, watch_polling_service
-from .stock_analyze_service import StockAnalyzeService, stock_analyze_service
-from .realtime_quote_polling_service import (
-    RealtimeQuotePollingService,
-    realtime_quote_polling_service,
-)
+from importlib import import_module
+from typing import Any
+
+
+_EXPORT_MODULES = {
+    "DailyDataReadService": "daily_data_read_service",
+    "daily_data_read_service": "daily_data_read_service",
+    "DailyDataWriteService": "daily_data_write_service",
+    "daily_data_write_service": "daily_data_write_service",
+    "SymbolCatalogService": "symbol_catalog_service",
+    "symbol_catalog_service": "symbol_catalog_service",
+    "SymbolSnapshotRefreshService": "symbol_snapshot_refresh_service",
+    "symbol_snapshot_refresh_service": "symbol_snapshot_refresh_service",
+    "WatchPollingService": "watch_polling_service",
+    "watch_polling_service": "watch_polling_service",
+    "StockAnalyzeService": "stock_analyze_service",
+    "stock_analyze_service": "stock_analyze_service",
+    "RealtimeQuotePollingService": "realtime_quote_polling_service",
+    "realtime_quote_polling_service": "realtime_quote_polling_service",
+}
 
 __all__ = [
     "DailyDataReadService",
@@ -32,3 +42,13 @@ __all__ = [
     "RealtimeQuotePollingService",
     "realtime_quote_polling_service",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(f"{__name__}.{module_name}")
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

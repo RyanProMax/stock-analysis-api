@@ -30,6 +30,7 @@
 - 已修复全量 pytest 暴露的两个日期漂移问题：日线覆盖晚于目标交易日的 current 判定、yfinance 分红 TTM 使用系统日期导致的不稳定归一化。
 - 已新增内部 `scripts/futu_market_data.py`，覆盖 `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力：`global-state`、`ipo-list`、`kline`、`snapshot`。
 - 已将 `futu-api>=10.4.6408` 纳入 API 仓库依赖，真实 CLI 调用不再依赖外部 skill 的 Python 环境。
+- 已将 `src.services` package import 改为 lazy export，避免 `scripts/futu_market_data.py` 导入 Futu CLI 时初始化无关 SQLite 行情仓。
 
 ## 当前状态
 
@@ -57,6 +58,7 @@
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
   - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` JSON contract
+- Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 
 ## 下一步计划
 

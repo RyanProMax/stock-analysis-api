@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from io import StringIO
 import json
+import os
+import subprocess
+import sys
 
 from src.services.futu_market_data_cli import main as futu_market_data_cli_main
 
@@ -72,6 +75,27 @@ def test_global_state_cli_contract():
     assert payload["status"] == "ok"
     assert payload["source"] == "futu_opend"
     assert payload["data"]["qot_logined"] is True
+
+
+def test_futu_cli_import_does_not_initialize_market_data_repository(tmp_path):
+    env = {
+        **os.environ,
+        "MARKET_DATA_DB_PATH": str(tmp_path / "missing-parent" / "market_data.sqlite"),
+    }
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from src.services.futu_market_data_cli import main; print('ok')",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+
+    assert proc.stdout.strip() == "ok"
 
 
 def test_ipo_list_cli_contract():
