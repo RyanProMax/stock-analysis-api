@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-05
+更新时间：2026-05-06
 
 ## 当前目标
 
@@ -8,6 +8,7 @@
 - 新增内部 `poll_realtime_quotes` CLI，承接原 `stock-analysis-skill` 中的 A 股 / ETF 日内行情轮询逻辑
 - 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
 - 启动模拟盘自动交易一期：把 Futu/OpenD 作为 API 内部正式 data provider / broker adapter 接入，先建立确定性 `run_once` 执行闭环
+- 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
 
 ## 最近完成项
 
@@ -27,6 +28,8 @@
 - 已新增 `FutuMarketDataProvider`，通过 Futu OpenD snapshot 标准化输出 `MarketSnapshot`，且 SDK 延迟导入，不影响无 OpenD 环境下的模块 import。
 - 已新增交易领域 contract 与 `TradingAutomationService.run_once`，覆盖行情读取、策略信号、最大订单金额风控、`SIMULATE` 订单请求和 idempotency key 去重。
 - 已修复全量 pytest 暴露的两个日期漂移问题：日线覆盖晚于目标交易日的 current 判定、yfinance 分红 TTM 使用系统日期导致的不稳定归一化。
+- 已新增内部 `scripts/futu_market_data.py`，覆盖 `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力：`global-state`、`ipo-list`、`kline`、`snapshot`。
+- 已将 `futu-api>=10.4.6408` 纳入 API 仓库依赖，真实 CLI 调用不再依赖外部 skill 的 Python 环境。
 
 ## 当前状态
 
@@ -34,6 +37,7 @@
 - skill / agent 可消费的内部 CLI 当前为：
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
+  - `scripts/futu_market_data.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -49,6 +53,10 @@
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`
   - 已新增 `src/services/trading_automation_service.py`
+- Futu/OpenD hkipo / research 迁移在 API 侧已完成内部 CLI 与 contract 测试：
+  - 已新增 `src/services/futu_market_data_cli.py`
+  - 已新增 `scripts/futu_market_data.py`
+  - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` JSON contract
 
 ## 下一步计划
 

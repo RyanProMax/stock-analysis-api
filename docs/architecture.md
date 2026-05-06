@@ -9,6 +9,7 @@
 - 当前对 skill / agent 暴露的内部 CLI 固定为：
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
+  - `scripts/futu_market_data.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -41,6 +42,7 @@ src/
 - `repositories/` 负责单机 SQLite 行情仓访问，不承载分析规则
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
 - `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；账户、持仓、模拟盘订单只能通过 service 层定义的 broker contract 暴露
+- `scripts/futu_market_data.py` 只暴露 hkipo / research 已迁移所需的 Futu/OpenD 只读能力：OpenD global state、IPO list、history kline 和 snapshot
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
