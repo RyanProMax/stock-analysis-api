@@ -191,6 +191,31 @@
 - 审计与幂等固定写入 SQLite trading ledger
 - 不新增公共 HTTP API，不调用外部 `futuapi` skill 脚本
 
+### 4. `scripts/trading_scheduler_tick.py`
+
+用途：
+
+- cron / launchd / Agent 的模拟盘调度 tick 入口
+- 到点后复用 `trading_run_once.py` 的单轮执行能力
+- 只做时间窗、执行间隔和 state key 判断，不实现策略或 broker 逻辑
+
+关键参数：
+
+- 透传 `trading_run_once.py` 参数：`--codes`、`--strategy-version`、`--buy-above`、`--quantity`、`--max-order-notional`、`--ledger-db`、`--snapshots-json`
+- 调度参数：
+  - `--interval-seconds`: 默认 300
+  - `--timezone`: 默认 `Asia/Shanghai`
+  - `--active-window`: 默认 `09:30-12:00,13:00-16:00`
+  - `--state-key`: 可选，不传时按策略参数生成
+  - `--force`: 忽略时间窗和执行间隔
+
+输出语义：
+
+- 到点执行：顶层 `status=ok`，`run_once` 保存单轮执行结果。
+- 未到时间窗：`status=skipped`、`reason=outside_active_window`。
+- 未到执行间隔：`status=skipped`、`reason=not_due`。
+- 单轮执行锁冲突：`status=skipped`，`run_once.reason=lock_unavailable`。
+
 ## 输出质量要求
 
 - CLI stdout 必须是纯 JSON，不得混入初始化日志或调试 print

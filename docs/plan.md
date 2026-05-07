@@ -40,6 +40,8 @@
 - 已修复 Futu/OpenD CLI 真实链路输出污染：SDK stdout 日志和 DeprecationWarning 不再污染 CLI 输出；Futu `NaN` / `Infinity` 原始值统一归一化为 `null`。
 - 已用真实 OpenD 验证 `scripts/futu_market_data.py global-state --json` 与 `scripts/trading_run_once.py` 无 `--snapshots-json` 路径，stdout 可被严格 JSON parser 解析且 stderr 为空。
 - 已为 `trading_run_once.py` 增加默认 SQLite 调度锁；并发触发时返回 `status=skipped / reason=lock_unavailable`，不会继续读取行情或提交 dry-run broker。
+- 已新增 `scripts/trading_scheduler_tick.py`，作为 cron / launchd / Agent 高频调用入口；支持 active window、执行间隔、state key、`--force`，到点后复用 `trading_run_once.py`。
+- 已同步 `stock-analysis-skill` 对 dry-run 单轮执行和 scheduler tick 的路由说明；skill 只指向 API CLI，不放开真实交易、交易解锁或订阅能力。
 
 ## 当前状态
 
@@ -49,6 +51,7 @@
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
   - `scripts/trading_run_once.py`
+  - `scripts/trading_scheduler_tick.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -79,7 +82,6 @@
   - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
 - 运行 API / skill 两仓验证并分别提交 commit
 - 新增真实 Futu `SIMULATE` broker adapter，封装账户、持仓、下单和撤单查询，但继续禁止真实交易与 `unlock_trade`
-- 增加定时调度脚本，供 Agent / launchd / cron 调用默认带锁的 `trading_run_once.py`
 - 补齐盘后总结、回测分析和结构化 `strategy_proposal` 评审链路
 
 ## 已知风险与阻塞

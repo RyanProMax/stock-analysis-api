@@ -63,6 +63,19 @@
   - 未传 `--snapshots-json` 时允许读取 Futu/OpenD snapshot，但仍只走 dry-run broker。
   - stdout 必须保持纯 JSON。
 
+### 调度 tick
+
+- 新增内部 CLI `scripts/trading_scheduler_tick.py`，用于 cron / launchd / Agent 高频调用。
+- 调度 tick 只负责：
+  - 判断当前时间是否处于 active window。
+  - 判断距离上次执行是否达到 `--interval-seconds`。
+  - 生成或读取 `state_key`，记录本轮调度状态。
+  - 到点后调用 `trading_run_once.py` 同一套单轮执行逻辑。
+- 调度 tick 不实现策略、风控、broker 或交易逻辑。
+- 未到时间窗返回 `status=skipped / reason=outside_active_window`。
+- 未到执行间隔返回 `status=skipped / reason=not_due`。
+- 单轮执行拿不到调度锁时透传 `status=skipped / reason=lock_unavailable`。
+
 ### Agent 参与点
 
 Agent 只在盘后或离线任务中消费：

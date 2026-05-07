@@ -11,6 +11,7 @@
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
   - `scripts/trading_run_once.py`
+  - `scripts/trading_scheduler_tick.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -46,6 +47,7 @@ src/
 - `scripts/futu_market_data.py` 只暴露 hkipo / research 已迁移所需的 Futu/OpenD 只读能力：OpenD global state、IPO list、history kline 和 snapshot
 - `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
 - `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`
+- `scripts/trading_scheduler_tick.py` 只负责 cron / launchd / Agent 调度判断：时间窗、间隔和 state key；到点后复用 `trading_run_once.py` 的单轮执行能力，不复制策略或风控逻辑
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 

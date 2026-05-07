@@ -114,6 +114,15 @@ class SqliteTradingLedger:
                     expires_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS trading_scheduler_ticks (
+                    state_key TEXT PRIMARY KEY,
+                    last_due_at TEXT NOT NULL,
+                    last_started_at TEXT NOT NULL,
+                    last_finished_at TEXT NOT NULL,
+                    last_status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_trading_risk_decisions_run
                     ON trading_risk_decisions(run_id);
                 CREATE INDEX IF NOT EXISTS idx_trading_orders_run
@@ -166,6 +175,58 @@ class SqliteTradingLedger:
                 WHERE lock_name = ? AND owner_id = ?
                 """,
                 (lock.lock_name, lock.owner_id),
+            )
+
+    def get_scheduler_tick(self, state_key: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM trading_scheduler_ticks WHERE state_key = ?",
+                (state_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "state_key": row["state_key"],
+            "last_due_at": row["last_due_at"],
+            "last_started_at": row["last_started_at"],
+            "last_finished_at": row["last_finished_at"],
+            "last_status": row["last_status"],
+            "payload": _json_loads(row["payload_json"]),
+        }
+
+    def record_scheduler_tick(
+        self,
+        state_key: str,
+        *,
+        due_at: str,
+        started_at: str,
+        finished_at: str,
+        status: str,
+        payload: dict[str, Any],
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO trading_scheduler_ticks (
+                    state_key, last_due_at, last_started_at, last_finished_at,
+                    last_status, payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(state_key) DO UPDATE SET
+                    last_due_at = excluded.last_due_at,
+                    last_started_at = excluded.last_started_at,
+                    last_finished_at = excluded.last_finished_at,
+                    last_status = excluded.last_status,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    state_key,
+                    due_at,
+                    started_at,
+                    finished_at,
+                    status,
+                    _json_dumps(payload),
+                ),
             )
 
     def start_run(self, request: dict[str, Any]) -> str:
