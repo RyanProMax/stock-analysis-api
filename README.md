@@ -43,6 +43,7 @@ Agent / skill CLI 入口：
 ```bash
 uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode base --pretty
 uv run python scripts/stock_analyze.py --market us --symbols NVDA,MSFT --mode full --pretty
+uv run python scripts/trading_run_once.py --codes HK.00700 --buy-above HK.00700=100 --quantity 10 --max-order-notional 2000 --pretty
 ```
 
 后台常驻 HTTP 服务：
@@ -76,10 +77,12 @@ black --line-length 100 .
 | `ENV` | `development` / `production` |
 | `CACHE_DIR` | 本地 SQLite 仓默认目录，可选 |
 | `MARKET_DATA_DB_PATH` | 本地 SQLite 仓文件路径，可选 |
+| `TRADING_LEDGER_DB_PATH` | 模拟盘 trading ledger SQLite 文件路径，可选 |
 
 ## 使用级注意事项
 
 - `scripts/stock_analyze.py` 的 stdout 设计为纯 JSON，方便外部 Agent 直接消费
+- `scripts/trading_run_once.py` 默认使用 dry-run broker，只做模拟盘单次执行与 ledger 审计，不连接真实交易环境
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步

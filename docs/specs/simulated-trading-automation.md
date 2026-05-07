@@ -1,6 +1,6 @@
 # 模拟盘自动交易一期规格
 
-更新时间：2026-05-05
+更新时间：2026-05-07
 
 ## 目标
 
@@ -45,6 +45,21 @@
   6. 调用 broker adapter 下单
   7. 返回结构化执行结果
 - 首个策略实现只用于建立 contract，不代表正式交易策略。
+
+### 持久化 ledger 与 dry-run CLI
+
+- 新增 SQLite trading ledger，用于保存：
+  - 每次 `run_once` 的请求、状态和完整结果。
+  - 每条风险决策的结构化 payload。
+  - 每条已提交模拟订单的 `idempotency_key`、请求和 broker 返回结果。
+- ledger 默认路径读取 `TRADING_LEDGER_DB_PATH`，未设置时使用 `.cache/trading_ledger.sqlite`。
+- `idempotency_key` 必须跨进程、跨服务实例生效；同一个策略版本、代码、方向、数量和触发价重复执行时，不得重复提交 broker 订单。
+- 新增内部 CLI `scripts/trading_run_once.py`：
+  - 仅属于内部 Agent / worker 入口，不新增公共 HTTP API。
+  - 默认 broker 为 dry-run broker，只返回模拟提交结果，不连接真实交易环境。
+  - 可通过 `--snapshots-json` 注入行情快照，供测试、回放和离线验证使用。
+  - 未传 `--snapshots-json` 时允许读取 Futu/OpenD snapshot，但仍只走 dry-run broker。
+  - stdout 必须保持纯 JSON。
 
 ### Agent 参与点
 

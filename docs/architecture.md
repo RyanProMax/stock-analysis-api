@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-05-05
+更新时间：2026-05-07
 
 ## 系统边界
 
@@ -10,6 +10,7 @@
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
+  - `scripts/trading_run_once.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -43,6 +44,7 @@ src/
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
 - `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；账户、持仓、模拟盘订单只能通过 service 层定义的 broker contract 暴露
 - `scripts/futu_market_data.py` 只暴露 hkipo / research 已迁移所需的 Futu/OpenD 只读能力：OpenD global state、IPO list、history kline 和 snapshot
+- `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -183,6 +185,8 @@ src/
   - `strategy_proposal` 通过 schema 校验、回测门槛和人工批准后，才能生成候选或生效策略版本
   - 第一阶段交易环境固定为 Futu `SIMULATE`，禁止实现真实交易、交易解锁、订阅推送或 OpenD 配置写入
   - 所有订单必须携带可复算的 idempotency key，重复轮询不得重复下单
+  - 订单幂等和运行审计必须持久化到 SQLite trading ledger，不能依赖单进程内存态
+  - 内部 `trading_run_once.py` 默认使用 dry-run broker；真实 Futu `SIMULATE` broker adapter 必须另行接入并继续禁止 `unlock_trade`
   - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
 
 ## 演进方向

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from src.data_provider.sources.futu import FutuMarketDataProvider, normalize_futu_code
 from src.model.trading import AccountSnapshot, MarketSnapshot, OrderSide, PositionSnapshot
+from src.repositories.trading_ledger_repository import SqliteTradingLedger
 from src.services.trading_automation_service import (
     FixedThresholdStrategy,
     InMemoryTradingLedger,
@@ -42,6 +45,14 @@ class FakeMarketDataProvider:
                 source=self.source,
             )
         ]
+
+
+class FailingMarketDataProvider:
+    source = "failing"
+
+    def get_market_snapshots(self, codes: list[str]) -> list[MarketSnapshot]:
+        del codes
+        raise RuntimeError("market unavailable")
 
 
 class FakeBroker:
@@ -106,6 +117,9 @@ def test_run_once_submits_simulate_order_and_dedupes_repeated_poll():
     second_result = service.run_once(["HK.00700"])
 
     assert first_result["status"] == "ok"
+    assert first_result["strategy_version"] == "threshold-v1"
+    assert first_result["started_at"]
+    assert first_result["finished_at"]
     assert first_result["orders"][0]["request"]["side"] == OrderSide.BUY.value
     assert first_result["orders"][0]["request"]["trd_env"] == "SIMULATE"
     assert len(broker.submitted_orders) == 1
@@ -114,6 +128,100 @@ def test_run_once_submits_simulate_order_and_dedupes_repeated_poll():
     assert second_result["risk_decisions"][0]["status"] == "rejected"
     assert second_result["risk_decisions"][0]["reason"] == "duplicate_idempotency_key"
     assert len(broker.submitted_orders) == 1
+
+
+def test_sqlite_ledger_dedupes_order_across_service_instances(tmp_path):
+    db_path = tmp_path / "trading_ledger.sqlite"
+    first_broker = FakeBroker()
+    first_service = TradingAutomationService(
+        market_data=FakeMarketDataProvider(),
+        broker=first_broker,
+        strategy=FixedThresholdStrategy(
+            strategy_version_id="threshold-v1",
+            buy_above={"HK.00700": 100},
+            quantity=10,
+        ),
+        risk_policy=MaxNotionalRiskPolicy(max_order_notional=2000),
+        ledger=SqliteTradingLedger(db_path),
+    )
+
+    first_result = first_service.run_once(["HK.00700"])
+
+    second_broker = FakeBroker()
+    second_service = TradingAutomationService(
+        market_data=FakeMarketDataProvider(),
+        broker=second_broker,
+        strategy=FixedThresholdStrategy(
+            strategy_version_id="threshold-v1",
+            buy_above={"HK.00700": 100},
+            quantity=10,
+        ),
+        risk_policy=MaxNotionalRiskPolicy(max_order_notional=2000),
+        ledger=SqliteTradingLedger(db_path),
+    )
+
+    second_result = second_service.run_once(["HK.00700"])
+
+    assert first_result["run_id"]
+    assert first_result["orders"][0]["request"]["side"] == OrderSide.BUY.value
+    assert len(first_broker.submitted_orders) == 1
+    assert second_result["orders"] == []
+    assert second_result["risk_decisions"][0]["status"] == "rejected"
+    assert second_result["risk_decisions"][0]["reason"] == "duplicate_idempotency_key"
+    assert second_broker.submitted_orders == []
+
+
+def test_sqlite_ledger_records_run_risk_and_order_audit(tmp_path):
+    ledger = SqliteTradingLedger(tmp_path / "trading_ledger.sqlite")
+    broker = FakeBroker()
+    service = TradingAutomationService(
+        market_data=FakeMarketDataProvider(),
+        broker=broker,
+        strategy=FixedThresholdStrategy(
+            strategy_version_id="threshold-v1",
+            buy_above={"HK.00700": 100},
+            quantity=10,
+        ),
+        risk_policy=MaxNotionalRiskPolicy(max_order_notional=2000),
+        ledger=ledger,
+    )
+
+    result = service.run_once(["HK.00700"])
+    run = ledger.get_run(result["run_id"])
+    risk_decisions = ledger.list_risk_decisions(result["run_id"])
+    orders = ledger.list_orders()
+
+    assert run["status"] == "ok"
+    assert run["request"]["codes"] == ["HK.00700"]
+    assert run["result"]["orders"][0]["result"]["status"] == "submitted"
+    assert risk_decisions[0]["status"] == "accepted"
+    assert risk_decisions[0]["reason"] == "accepted"
+    assert orders[0]["idempotency_key"] == result["orders"][0]["request"]["idempotency_key"]
+    assert orders[0]["broker_result"]["order_id"] == "SIM-1"
+
+
+def test_sqlite_ledger_marks_run_failed_when_run_once_raises(tmp_path):
+    ledger = SqliteTradingLedger(tmp_path / "trading_ledger.sqlite")
+    service = TradingAutomationService(
+        market_data=FailingMarketDataProvider(),
+        broker=FakeBroker(),
+        strategy=FixedThresholdStrategy(
+            strategy_version_id="threshold-v1",
+            buy_above={"HK.00700": 100},
+            quantity=10,
+        ),
+        risk_policy=MaxNotionalRiskPolicy(max_order_notional=2000),
+        ledger=ledger,
+    )
+
+    with pytest.raises(RuntimeError, match="market unavailable"):
+        service.run_once(["HK.00700"])
+
+    runs = ledger.list_runs()
+    assert len(runs) == 1
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["result"]["error"] == "market unavailable"
+    assert runs[0]["result"]["strategy_version"] == "threshold-v1"
 
 
 def test_risk_gate_rejects_order_above_max_notional():

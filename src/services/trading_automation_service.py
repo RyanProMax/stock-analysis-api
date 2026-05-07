@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 from typing import Any, Iterable, Protocol
 
@@ -13,6 +14,10 @@ from ..model.trading import (
     SignalAction,
     StrategySignal,
 )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class MarketDataProvider(Protocol):
@@ -29,15 +34,52 @@ class Broker(Protocol):
     def submit_order(self, order: OrderRequest) -> dict[str, Any]: ...
 
 
+class TradingLedger(Protocol):
+    def has_order(self, idempotency_key: str) -> bool: ...
+
+    def record_order(
+        self,
+        order: OrderRequest,
+        *,
+        run_id: str | None = None,
+        broker_result: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def start_run(self, request: dict[str, Any]) -> str: ...
+
+    def record_risk_decision(self, run_id: str, decision: "RiskDecision") -> None: ...
+
+    def finish_run(self, run_id: str, result: dict[str, Any], *, status: str = "ok") -> None: ...
+
+
 class InMemoryTradingLedger:
     def __init__(self) -> None:
         self._order_keys: set[str] = set()
+        self._run_counter = 0
 
     def has_order(self, idempotency_key: str) -> bool:
         return idempotency_key in self._order_keys
 
-    def record_order(self, order: OrderRequest) -> None:
+    def record_order(
+        self,
+        order: OrderRequest,
+        *,
+        run_id: str | None = None,
+        broker_result: dict[str, Any] | None = None,
+    ) -> None:
+        del run_id, broker_result
         self._order_keys.add(order.idempotency_key)
+
+    def start_run(self, request: dict[str, Any]) -> str:
+        del request
+        self._run_counter += 1
+        return f"memory-run-{self._run_counter}"
+
+    def record_risk_decision(self, run_id: str, decision: "RiskDecision") -> None:
+        del run_id, decision
+
+    def finish_run(self, run_id: str, result: dict[str, Any], *, status: str = "ok") -> None:
+        del run_id, result, status
 
 
 class FixedThresholdStrategy:
@@ -116,7 +158,7 @@ class MaxNotionalRiskPolicy:
         signal: StrategySignal,
         account: AccountSnapshot,
         positions: list[PositionSnapshot],
-        ledger: InMemoryTradingLedger,
+        ledger: TradingLedger,
     ) -> RiskDecision:
         del positions
         idempotency_key = self._build_idempotency_key(signal)
@@ -176,7 +218,7 @@ class TradingAutomationService:
         broker: Broker,
         strategy: FixedThresholdStrategy,
         risk_policy: MaxNotionalRiskPolicy,
-        ledger: InMemoryTradingLedger,
+        ledger: TradingLedger,
     ) -> None:
         self.market_data = market_data
         self.broker = broker
@@ -186,36 +228,67 @@ class TradingAutomationService:
 
     def run_once(self, codes: Iterable[str]) -> dict[str, Any]:
         requested_codes = [str(code).strip() for code in codes if str(code).strip()]
-        snapshots = self.market_data.get_market_snapshots(requested_codes)
-        account = self.broker.get_account()
-        positions = self.broker.get_positions()
-        signals = self.strategy.generate(snapshots, account, positions)
+        run_request = {"codes": requested_codes, "count": len(requested_codes)}
+        started_at = _utc_now()
+        run_id = self.ledger.start_run(run_request)
+        try:
+            snapshots = self.market_data.get_market_snapshots(requested_codes)
+            account = self.broker.get_account()
+            positions = self.broker.get_positions()
+            signals = self.strategy.generate(snapshots, account, positions)
 
-        risk_decisions: list[dict[str, Any]] = []
-        orders: list[dict[str, Any]] = []
-        for signal in signals:
-            decision = self.risk_policy.evaluate(signal, account, positions, self.ledger)
-            risk_decisions.append(decision.to_dict())
-            if decision.status != "accepted" or decision.request is None:
-                continue
+            risk_decisions: list[dict[str, Any]] = []
+            orders: list[dict[str, Any]] = []
+            for signal in signals:
+                decision = self.risk_policy.evaluate(signal, account, positions, self.ledger)
+                risk_decisions.append(decision.to_dict())
+                self.ledger.record_risk_decision(run_id, decision)
+                if decision.status != "accepted" or decision.request is None:
+                    continue
 
-            broker_result = self.broker.submit_order(decision.request)
-            self.ledger.record_order(decision.request)
-            orders.append(
+                broker_result = self.broker.submit_order(decision.request)
+                self.ledger.record_order(
+                    decision.request,
+                    run_id=run_id,
+                    broker_result=broker_result,
+                )
+                orders.append(
+                    {
+                        "request": decision.request.to_dict(),
+                        "result": broker_result,
+                    }
+                )
+
+            result = {
+                "status": "ok",
+                "run_id": run_id,
+                "strategy_version": self.strategy.strategy_version_id,
+                "started_at": started_at,
+                "finished_at": _utc_now(),
+                "source": getattr(self.market_data, "source", "unknown"),
+                "request": run_request,
+                "account": account.to_dict(),
+                "positions": [position.to_dict() for position in positions],
+                "snapshots": [snapshot.to_dict() for snapshot in snapshots],
+                "signals": [signal.to_dict() for signal in signals],
+                "risk_decisions": risk_decisions,
+                "orders": orders,
+            }
+            self.ledger.finish_run(run_id, result, status="ok")
+            return result
+        except Exception as exc:
+            self.ledger.finish_run(
+                run_id,
                 {
-                    "request": decision.request.to_dict(),
-                    "result": broker_result,
-                }
+                    "status": "failed",
+                    "run_id": run_id,
+                    "strategy_version": self.strategy.strategy_version_id,
+                    "started_at": started_at,
+                    "finished_at": _utc_now(),
+                    "source": getattr(self.market_data, "source", "unknown"),
+                    "request": run_request,
+                    "error": str(exc),
+                },
+                status="failed",
             )
-
-        return {
-            "status": "ok",
-            "source": getattr(self.market_data, "source", "unknown"),
-            "request": {"codes": requested_codes, "count": len(requested_codes)},
-            "account": account.to_dict(),
-            "positions": [position.to_dict() for position in positions],
-            "snapshots": [snapshot.to_dict() for snapshot in snapshots],
-            "signals": [signal.to_dict() for signal in signals],
-            "risk_decisions": risk_decisions,
-            "orders": orders,
-        }
+            raise

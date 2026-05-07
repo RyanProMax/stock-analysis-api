@@ -1,6 +1,6 @@
 # Skill / Agent CLI Contract
 
-更新时间：2026-05-04
+更新时间：2026-05-07
 
 本文件是 `stock-analysis-api` 内部 skill / agent CLI contract 的唯一规格说明，不属于公共 HTTP API 文档。
 
@@ -105,6 +105,53 @@
   - `partial`
   - `failed`
 
+### 3. `scripts/trading_run_once.py`
+
+用途：
+
+- 模拟盘自动交易一期的内部单次执行 CLI
+- 供 agent / worker / cron / launchd 调用确定性 `run_once` 流程
+- 默认只使用 dry-run broker，不连接真实交易环境
+
+参数：
+
+- `--codes`: 逗号分隔，使用 Futu 格式，例如 `HK.00700`
+- `--strategy-version`
+- `--buy-above`: 逗号分隔阈值，例如 `HK.00700=100`
+- `--quantity`
+- `--max-order-notional`
+- `--ledger-db`: 覆盖 SQLite ledger 路径；未传时读取 `TRADING_LEDGER_DB_PATH` 或 `.cache/trading_ledger.sqlite`
+- `--snapshots-json`: 行情快照 JSON 字符串或文件路径；用于测试、回放和离线验证
+- `--account-cash`
+- `--currency`
+- `--pretty`
+
+输出：
+
+- 顶层固定返回：
+  - `status`
+  - `run_id`
+  - `strategy_version`
+  - `started_at`
+  - `request`
+  - `source`
+  - `broker_mode`
+  - `account`
+  - `positions`
+  - `snapshots`
+  - `signals`
+  - `risk_decisions`
+  - `orders`
+  - `finished_at`
+
+语义约束：
+
+- CLI stdout 必须是纯 JSON。
+- `--snapshots-json` 存在时只使用注入行情，不连接 Futu/OpenD。
+- 未传 `--snapshots-json` 时允许读取 Futu/OpenD snapshot，但 broker 仍固定为 dry-run。
+- 已通过风控并提交过的订单必须写入 SQLite ledger，`idempotency_key` 跨进程生效。
+- 重复执行同一策略版本、代码、方向、数量和触发价时，不得重复提交 dry-run broker 订单。
+
 ## 数据源与降级规则
 
 ### `stock_analyze.py`
@@ -130,6 +177,15 @@
 - 若两条链路都失败：
   - item `status = failed`
   - `quote_data = null`
+
+### `trading_run_once.py`
+
+- 行情来源：
+  - `--snapshots-json` 注入的静态行情
+  - 或 Futu/OpenD snapshot
+- broker 当前固定为 dry-run broker
+- 审计与幂等固定写入 SQLite trading ledger
+- 不新增公共 HTTP API，不调用外部 `futuapi` skill 脚本
 
 ## 输出质量要求
 

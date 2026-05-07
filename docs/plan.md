@@ -1,9 +1,10 @@
 # 当前任务计划
 
-更新时间：2026-05-06
+更新时间：2026-05-07
 
 ## 当前目标
 
+- 优先补齐模拟盘自动交易进入定时轮询前的高 ROI 基础能力：SQLite 持久化 ledger 与内部 dry-run `run_once` CLI
 - 将 skill / agent 标准化 CLI 能力彻底收口到 `stock-analysis-api`
 - 新增内部 `poll_realtime_quotes` CLI，承接原 `stock-analysis-skill` 中的 A 股 / ETF 日内行情轮询逻辑
 - 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
@@ -31,6 +32,10 @@
 - 已新增内部 `scripts/futu_market_data.py`，覆盖 `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力：`global-state`、`ipo-list`、`kline`、`snapshot`。
 - 已将 `futu-api>=10.4.6408` 纳入 API 仓库依赖，真实 CLI 调用不再依赖外部 skill 的 Python 环境。
 - 已将 `src.services` package import 改为 lazy export，避免 `scripts/futu_market_data.py` 导入 Futu CLI 时初始化无关 SQLite 行情仓。
+- 已新增 `SqliteTradingLedger`，持久化 trading run、risk decision、order request/result 和 `idempotency_key`。
+- 已新增内部 `scripts/trading_run_once.py`，默认 dry-run broker，支持 `--snapshots-json` 离线行情注入与 SQLite ledger 复用。
+- 已补充持久化 ledger 和 dry-run CLI contract 测试，覆盖跨 service 实例重复执行不重复提交订单。
+- 已更新 `docs/specs/skill-cli-contract.md`，补齐 `trading_run_once.py` 的输入、输出、降级和幂等语义。
 
 ## 当前状态
 
@@ -39,6 +44,7 @@
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
+  - `scripts/trading_run_once.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -47,13 +53,14 @@
   - 实时行情：`quotation`
   - 降级：旧版 `get_realtime_quotes`
 - 当前仍待完成：
-  - `docs/architecture.md` / `docs/specs/` 的内部 CLI 规格补齐
   - cross-repo `stock-analysis-skill` 文档与命名收口
   - 端到端验证与双仓提交
 - 模拟盘自动交易一期已完成最小执行闭环：
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`
   - 已新增 `src/services/trading_automation_service.py`
+  - 已新增 `src/repositories/trading_ledger_repository.py`
+  - 已新增 `src/services/trading_run_once_cli.py`
 - Futu/OpenD hkipo / research 迁移在 API 侧已完成内部 CLI 与 contract 测试：
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
@@ -62,16 +69,13 @@
 
 ## 下一步计划
 
-- 更新 `docs/architecture.md`，明确 `poll_realtime_quotes.py` 是内部 CLI，不属于公共 API
-- 新增 `docs/specs/skill-cli-contract.md`，统一记录 `poll_realtime_quotes.py` 与 `stock_analyze.py` 的输入、输出与状态语义
 - 完成 `stock-analysis-skill` 仓库重构：
   - 删除本地 wrapper
   - 文档改名为 `stock-analysis-skill`
   - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
 - 运行 API / skill 两仓验证并分别提交 commit
 - 新增真实 Futu `SIMULATE` broker adapter，封装账户、持仓、下单和撤单查询，但继续禁止真实交易与 `unlock_trade`
-- 增加本地持久化 ledger，替换当前只用于一期 contract 的 `InMemoryTradingLedger`
-- 增加定时调度脚本和单次 dry-run 入口，供 Agent / launchd / cron 调用
+- 增加定时调度脚本，供 Agent / launchd / cron 调用 `trading_run_once.py`
 - 补齐盘后总结、回测分析和结构化 `strategy_proposal` 评审链路
 
 ## 已知风险与阻塞
@@ -83,4 +87,4 @@
 - Futu/OpenD 依赖本机 OpenD 进程、端口和权限；单元测试必须使用 fake gateway / broker，不能依赖真实网络或真实账户。
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
-- 当前 `InMemoryTradingLedger` 只保证单进程内幂等，进入定时调度前必须落 SQLite 或同等持久化存储。
+- SQLite ledger 已能跨进程复用 `idempotency_key` 去重；进入定时调度前仍需要确保 worker 串行或加调度锁，避免并发 worker 在同一窗口重复通过预检。
