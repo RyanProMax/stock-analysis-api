@@ -85,6 +85,8 @@ class TushareDataSource(BaseStockDataSource):
                 "status": security_status,
                 "error": security_error,
             }
+        if security_status in {"permission_denied", "error"}:
+            return {"record": None, "status": security_status, "error": security_error}
 
         fund_record = cls._fetch_cn_fund_security_info(pro, symbol=normalized, ts_code=ts_code)
         if fund_record is not None:
@@ -575,26 +577,27 @@ class TushareDataSource(BaseStockDataSource):
             fund_map[symbol] = normalized_row
         return fund_map
 
+    @classmethod
     def _fetch_cn_fund_basic_row(
-        self,
+        cls,
         pro: Any,
         *,
         symbol: str,
         raw_ts_code: str,
     ) -> Dict[str, Any]:
         candidates: list[str] = []
-        for candidate in (raw_ts_code, f"{symbol}.OF", self._build_cn_ts_code(symbol)):
+        for candidate in (raw_ts_code, f"{symbol}.OF", cls._build_cn_ts_code(symbol)):
             text = str(candidate or "").strip().upper()
             if text and text not in candidates:
                 candidates.append(text)
 
         for ts_code in candidates:
-            df = self._safe_query_dataframe(pro, "fund_basic", ts_code=ts_code)
+            df = cls._safe_query_dataframe(pro, "fund_basic", ts_code=ts_code)
             if df is None or df.empty:
                 continue
-            row = self.normalize_dataframe(df.iloc[[0]])[0]
+            row = cls.normalize_dataframe(df.iloc[[0]])[0]
             row["ts_code"] = ts_code
-            row["exchange"] = self._normalize_cn_exchange(
+            row["exchange"] = cls._normalize_cn_exchange(
                 row.get("market") or row.get("exchange"),
                 ts_code=ts_code,
                 symbol=symbol,

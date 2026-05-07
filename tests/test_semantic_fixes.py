@@ -313,6 +313,44 @@ class TestSourceFieldNormalizationFixes:
         assert rows[0]["ts_code"] == "159002.SZ"
         assert rows[0]["exchange"] == "SZSE"
 
+    def test_tushare_fetch_security_info_returns_empty_when_stock_and_fund_are_absent(
+        self, monkeypatch
+    ):
+        class ProStub:
+            def stock_basic(self, **kwargs):
+                return pd.DataFrame()
+
+            def etf_basic(self, **kwargs):
+                return pd.DataFrame()
+
+            def fund_basic(self, **kwargs):
+                return pd.DataFrame()
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+
+        payload = TushareDataSource.fetch_security_info("cn", "300827")
+
+        assert payload == {"record": None, "status": "empty", "error": None}
+
+    def test_tushare_fetch_security_info_propagates_stock_basic_errors(self, monkeypatch):
+        class ProStub:
+            def stock_basic(self, **kwargs):
+                raise RuntimeError("订单失效。（请获取正确Token）")
+
+            def etf_basic(self, **kwargs):
+                return pd.DataFrame()
+
+            def fund_basic(self, **kwargs):
+                return pd.DataFrame()
+
+        monkeypatch.setattr(TushareDataSource, "get_pro", classmethod(lambda cls: ProStub()))
+
+        payload = TushareDataSource.fetch_security_info("cn", "600000")
+
+        assert payload["record"] is None
+        assert payload["status"] == "error"
+        assert "Token" in payload["error"]
+
     def test_yfinance_normalized_fields_use_canonical_names(self):
         class TickerStub:
             dividends = pd.Series(
