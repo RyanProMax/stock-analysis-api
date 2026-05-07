@@ -46,6 +46,17 @@
   7. 返回结构化执行结果
 - 首个策略实现只用于建立 contract，不代表正式交易策略。
 
+### Futu SIMULATE broker adapter
+
+- 新增 `FutuOpenDTradeGateway` 和 `FutuSimulateBroker`，用于显式 opt-in 的 Futu 模拟盘 broker 路径。
+- `FutuOpenDTradeGateway` 只封装：
+  - `accinfo_query(trd_env=TrdEnv.SIMULATE, refresh_cache=True)`
+  - `position_list_query(trd_env=TrdEnv.SIMULATE, refresh_cache=True)`
+  - `place_order(trd_env=TrdEnv.SIMULATE)`
+- 禁止封装或调用 `unlock_trade`。
+- `scripts/trading_run_once.py` 默认仍使用 dry-run broker；只有显式传 `--broker futu-simulate` 时才连接 Futu 模拟盘。
+- `--broker futu-simulate` 不允许和 `--snapshots-json` 混用，避免用离线 / 测试行情触发模拟盘订单。
+
 ### 持久化 ledger 与 dry-run CLI
 
 - 新增 SQLite trading ledger，用于保存：
@@ -117,6 +128,7 @@ Agent 输出只能是结构化 `strategy_proposal`，必须经过：
 - 覆盖 Futu code normalization。
 - 覆盖 Futu snapshot 到 `MarketSnapshot` 的字段映射。
 - 覆盖 `run_once` 默认 `SIMULATE` 下单。
+- 覆盖 Futu `SIMULATE` broker 的账户、持仓和下单映射，不依赖真实 OpenD。
 - 覆盖 idempotency key 去重，重复轮询不能重复下单。
 - 覆盖最大订单金额风控拒绝。
 - SDK 缺失或 OpenD 不可用时，模块 import 不能失败，只有真实调用时返回明确错误。

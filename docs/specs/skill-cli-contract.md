@@ -127,6 +127,7 @@
 - `--snapshots-json`: 行情快照 JSON 字符串或文件路径；用于测试、回放和离线验证
 - `--account-cash`
 - `--currency`
+- `--broker`: `dry-run` 或 `futu-simulate`，默认 `dry-run`
 - `--pretty`
 
 输出：
@@ -152,6 +153,8 @@
 - CLI stdout 必须是纯 JSON。
 - `--snapshots-json` 存在时只使用注入行情，不连接 Futu/OpenD。
 - 未传 `--snapshots-json` 时允许读取 Futu/OpenD snapshot，但 broker 仍固定为 dry-run。
+- 只有显式传 `--broker futu-simulate` 时，broker 才连接 Futu `SIMULATE` 环境。
+- `--broker futu-simulate` 固定 `TrdEnv.SIMULATE`，禁止调用 `unlock_trade`，并且不允许和 `--snapshots-json` 混用。
 - 已通过风控并提交过的订单必须写入 SQLite ledger，`idempotency_key` 跨进程生效。
 - 重复执行同一策略版本、代码、方向、数量和触发价时，不得重复提交 dry-run broker 订单。
 - 默认必须先拿 SQLite `trading_run_once` 调度锁；拿不到锁时返回 `status=skipped`、`reason=lock_unavailable`，不得继续读取行情或提交 dry-run broker。
@@ -201,7 +204,7 @@
 
 关键参数：
 
-- 透传 `trading_run_once.py` 参数：`--codes`、`--strategy-version`、`--buy-above`、`--quantity`、`--max-order-notional`、`--ledger-db`、`--snapshots-json`
+- 透传 `trading_run_once.py` 参数：`--codes`、`--strategy-version`、`--buy-above`、`--quantity`、`--max-order-notional`、`--ledger-db`、`--snapshots-json`、`--broker`
 - 调度参数：
   - `--interval-seconds`: 默认 300
   - `--timezone`: 默认 `Asia/Shanghai`

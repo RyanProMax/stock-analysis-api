@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Iterable
 
-from ...model.trading import MarketSnapshot
+from ...model.trading import MarketSnapshot, OrderRequest
 
 FUTU_CODE_PREFIXES = {"HK", "US", "SH", "SZ", "SG"}
 
@@ -26,6 +26,14 @@ def normalize_futu_code(raw_code: str) -> str:
     if normalized_prefix not in FUTU_CODE_PREFIXES or not normalized_body:
         raise ValueError(f"Unsupported Futu code: {raw_code}")
     return f"{normalized_prefix}.{normalized_body}"
+
+
+def infer_futu_trade_market(raw_code: str) -> str:
+    normalized = normalize_futu_code(raw_code)
+    prefix = normalized.split(".", 1)[0]
+    if prefix in {"SH", "SZ"}:
+        return "CN"
+    return prefix
 
 
 def _safe_float(value: Any) -> float | None:
@@ -248,6 +256,118 @@ class FutuOpenDGateway:
                 records.extend(df_to_records(data))
                 page_count += 1
             return records
+        finally:
+            ctx.close()
+
+
+class FutuOpenDTradeGateway:
+    def __init__(
+        self,
+        *,
+        market: str,
+        host: str | None = None,
+        port: int | None = None,
+        acc_id: int = 0,
+        acc_index: int = 0,
+    ) -> None:
+        self.market = str(market or "").strip().upper()
+        self.host = host or os.environ.get("FUTU_OPEND_HOST", "127.0.0.1")
+        self.port = int(port or os.environ.get("FUTU_OPEND_PORT", "11111"))
+        self.acc_id = int(acc_id or 0)
+        self.acc_index = int(acc_index or 0)
+
+    @staticmethod
+    def _open_trade_context(
+        open_sec_trade_context: Any,
+        *,
+        host: str,
+        port: int,
+        market: str,
+    ) -> Any:
+        try:
+            return open_sec_trade_context(filter_trdmarket=market, host=host, port=port, ai_type=1)
+        except TypeError:
+            return open_sec_trade_context(filter_trdmarket=market, host=host, port=port)
+
+    def _context(self) -> Any:
+        try:
+            from futu import OpenSecTradeContext  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+        return self._open_trade_context(
+            OpenSecTradeContext,
+            host=self.host,
+            port=self.port,
+            market=self.market,
+        )
+
+    def get_account(self, *, currency: str) -> dict[str, Any]:
+        try:
+            from futu import RET_OK, TrdEnv  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        ctx = self._context()
+        try:
+            ret, data = ctx.accinfo_query(
+                trd_env=TrdEnv.SIMULATE,
+                acc_id=self.acc_id,
+                acc_index=self.acc_index,
+                refresh_cache=True,
+                currency=currency,
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu accinfo_query failed: {data}")
+            records = df_to_records(data)
+            return records[0] if records else {}
+        finally:
+            ctx.close()
+
+    def get_positions(self) -> list[dict[str, Any]]:
+        try:
+            from futu import RET_OK, TrdEnv  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        ctx = self._context()
+        try:
+            ret, data = ctx.position_list_query(
+                trd_env=TrdEnv.SIMULATE,
+                acc_id=self.acc_id,
+                acc_index=self.acc_index,
+                refresh_cache=True,
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu position_list_query failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def place_order(self, order: OrderRequest) -> dict[str, Any]:
+        try:
+            from futu import OrderType, RET_OK, TrdEnv, TrdSide  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        order_type = OrderType.MARKET if order.order_type == "MARKET" else OrderType.NORMAL
+        trd_side = TrdSide.BUY if order.side.value == "BUY" else TrdSide.SELL
+        ctx = self._context()
+        try:
+            ret, data = ctx.place_order(
+                price=float(order.price or 0.0),
+                qty=float(order.quantity),
+                code=normalize_futu_code(order.code),
+                trd_side=trd_side,
+                order_type=order_type,
+                trd_env=TrdEnv.SIMULATE,
+                acc_id=self.acc_id,
+                acc_index=self.acc_index,
+                remark=order.idempotency_key[:32],
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu place_order failed: {data}")
+            records = df_to_records(data)
+            return records[0] if records else {"raw": to_jsonable(data)}
         finally:
             ctx.close()
 

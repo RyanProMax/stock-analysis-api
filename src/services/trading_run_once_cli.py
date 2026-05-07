@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence, TextIO
 import warnings
 
-from ..data_provider.sources.futu import FutuMarketDataProvider
+from ..data_provider.sources.futu import FutuMarketDataProvider, infer_futu_trade_market
 from ..model.trading import AccountSnapshot, MarketSnapshot, OrderRequest, PositionSnapshot
 from ..repositories.trading_ledger_repository import SqliteTradingLedger
+from .futu_simulate_broker import FutuSimulateBroker
 from .trading_automation_service import (
     FixedThresholdStrategy,
     MaxNotionalRiskPolicy,
@@ -83,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--account-cash", type=float, default=1_000_000)
     parser.add_argument("--currency", default="HKD")
+    parser.add_argument(
+        "--broker",
+        choices=["dry-run", "futu-simulate"],
+        default="dry-run",
+        help="Broker adapter; dry-run is default, futu-simulate is explicit opt-in only",
+    )
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -166,6 +173,17 @@ def _load_snapshots_json(raw: str) -> list[MarketSnapshot]:
     return snapshots
 
 
+def _build_broker(args: argparse.Namespace, codes: list[str]):
+    if args.broker == "dry-run":
+        return DryRunBroker(cash=args.account_cash, currency=args.currency)
+    if args.snapshots_json:
+        raise ValueError("--broker futu-simulate cannot use --snapshots-json")
+    markets = {infer_futu_trade_market(code) for code in codes}
+    if len(markets) != 1:
+        raise ValueError("--broker futu-simulate requires all codes to use one trade market")
+    return FutuSimulateBroker(currency=args.currency, market=next(iter(markets)))
+
+
 def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -180,6 +198,7 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
             if args.snapshots_json
             else FutuMarketDataProvider()
         )
+        broker = _build_broker(args, codes)
         ledger = SqliteTradingLedger(args.ledger_db)
         lock = None
         if not args.disable_lock:
@@ -190,14 +209,13 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
                         "status": "skipped",
                         "reason": "lock_unavailable",
                         "lock_name": args.lock_name,
-                        "broker_mode": "dry_run",
+                        "broker_mode": "dry_run" if args.broker == "dry-run" else "futu_simulate",
                     },
                     args.pretty,
                     writer,
                 )
                 return 0
 
-        broker = DryRunBroker(cash=args.account_cash, currency=args.currency)
         service = TradingAutomationService(
             market_data=market_data,
             broker=broker,

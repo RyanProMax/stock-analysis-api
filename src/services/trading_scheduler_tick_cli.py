@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snapshots-json")
     parser.add_argument("--account-cash", type=float, default=1_000_000)
     parser.add_argument("--currency", default="HKD")
+    parser.add_argument("--broker", choices=["dry-run", "futu-simulate"], default="dry-run")
     parser.add_argument("--lock-name", default="trading_run_once")
     parser.add_argument("--lock-ttl-seconds", type=int, default=900)
     parser.add_argument("--disable-lock", action="store_true")
@@ -133,6 +134,8 @@ def _build_run_once_args(args: argparse.Namespace) -> list[str]:
         str(args.account_cash),
         "--currency",
         args.currency,
+        "--broker",
+        args.broker,
         "--lock-name",
         args.lock_name,
         "--lock-ttl-seconds",

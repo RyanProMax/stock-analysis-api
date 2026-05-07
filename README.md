@@ -44,6 +44,7 @@ Agent / skill CLI 入口：
 uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode base --pretty
 uv run python scripts/stock_analyze.py --market us --symbols NVDA,MSFT --mode full --pretty
 uv run python scripts/trading_run_once.py --codes HK.00700 --buy-above HK.00700=100 --quantity 10 --max-order-notional 2000 --pretty
+uv run python scripts/trading_run_once.py --broker futu-simulate --codes HK.00700 --buy-above HK.00700=100 --quantity 10 --max-order-notional 2000
 uv run python scripts/trading_scheduler_tick.py --codes HK.00700 --buy-above HK.00700=100 --quantity 10 --max-order-notional 2000
 uv run python scripts/trading_daily_summary.py --date 2026-05-07 --pretty
 uv run python scripts/trading_strategy_review.py --date 2026-05-07 --min-runs 3 --pretty
@@ -81,12 +82,15 @@ black --line-length 100 .
 | `CACHE_DIR` | 本地 SQLite 仓默认目录，可选 |
 | `MARKET_DATA_DB_PATH` | 本地 SQLite 仓文件路径，可选 |
 | `TRADING_LEDGER_DB_PATH` | 模拟盘 trading ledger SQLite 文件路径，可选 |
+| `FUTU_OPEND_HOST` | Futu OpenD 地址，默认 `127.0.0.1` |
+| `FUTU_OPEND_PORT` | Futu OpenD 端口，默认 `11111` |
 
 ## 使用级注意事项
 
 - `scripts/stock_analyze.py` 的 stdout 设计为纯 JSON，方便外部 Agent 直接消费
-- `scripts/trading_run_once.py` 默认使用 dry-run broker 和 SQLite 调度锁，只做模拟盘单次执行与 ledger 审计，不连接真实交易环境
-- `scripts/trading_scheduler_tick.py` 是 cron / launchd / Agent 的调度 tick 入口，只判断时间窗和间隔，到点后调用单次 dry-run 执行
+- `scripts/trading_run_once.py` 默认使用 dry-run broker 和 SQLite 调度锁，只做模拟盘单次执行与 ledger 审计；只有显式传 `--broker futu-simulate` 时才连接 Futu `SIMULATE` broker
+- `--broker futu-simulate` 固定使用 Futu `TrdEnv.SIMULATE`，不调用 `unlock_trade`，也不允许和 `--snapshots-json` 混用
+- `scripts/trading_scheduler_tick.py` 是 cron / launchd / Agent 的调度 tick 入口，只判断时间窗和间隔，到点后调用单次执行；`--broker` 会透传给 `trading_run_once.py`
 - `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，生成当日 run / order / 风控 / snapshot 摘要
 - `scripts/trading_strategy_review.py` 基于 ledger 摘要生成候选 `strategy_proposal`，不会写入策略配置或触发盘中下单
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`

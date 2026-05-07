@@ -6,6 +6,7 @@
 
 - 优先补齐模拟盘自动交易进入定时轮询前的高 ROI 基础能力：SQLite 持久化 ledger 与内部 dry-run `run_once` CLI
 - 补齐模拟盘盘后只读闭环 MVP：从 SQLite ledger 生成每日操作 / 行情摘要，并产出需要人工批准的结构化 `strategy_proposal`
+- 补齐显式 opt-in 的 Futu `SIMULATE` broker adapter，默认仍保持 dry-run，禁止真实交易与 `unlock_trade`
 - 将 skill / agent 标准化 CLI 能力彻底收口到 `stock-analysis-api`
 - 新增内部 `poll_realtime_quotes` CLI，承接原 `stock-analysis-skill` 中的 A 股 / ETF 日内行情轮询逻辑
 - 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
@@ -46,6 +47,8 @@
 - 已新增 `scripts/trading_daily_summary.py`，只读 SQLite trading ledger 汇总当日 run、order、risk decision 和 snapshot 首末变化。
 - 已新增 `scripts/trading_strategy_review.py`，基于 ledger summary 输出 `ledger_snapshot_replay` 指标和需人工批准的结构化 `strategy_proposal`，不自动应用策略。
 - 已补充盘后真实脚本链路测试：`trading_run_once.py` 写 ledger 后，`trading_daily_summary.py` 与 `trading_strategy_review.py` 读取同一 ledger 并输出严格 JSON。
+- 已新增 `FutuSimulateBroker` 与 `FutuOpenDTradeGateway`，`trading_run_once.py --broker futu-simulate` 可显式启用 Futu `SIMULATE` broker；默认仍是 dry-run，且 `futu-simulate` 禁止与 `--snapshots-json` 混用。
+- `trading_scheduler_tick.py` 已支持透传 `--broker`，因此显式 opt-in 的 Futu `SIMULATE` 也能接入 cron / launchd / Agent 调度 tick。
 
 ## 当前状态
 
@@ -82,14 +85,9 @@
 
 ## 下一步计划
 
-- 完成 `stock-analysis-skill` 仓库重构：
-  - 删除本地 wrapper
-  - 文档改名为 `stock-analysis-skill`
-  - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
-- 运行 API / skill 两仓验证并分别提交 commit
-- 新增真实 Futu `SIMULATE` broker adapter，封装账户、持仓、下单和撤单查询，但继续禁止真实交易与 `unlock_trade`
-- 将盘后总结和策略评审入口同步到 `stock-analysis-skill` 路由说明
 - 后续如需完整历史回测，再接入 Futu K 线 / 本地分钟线数据，和当前 `ledger_snapshot_replay` 口径明确区分
+- 继续迁移剩余 Futu 只读 provider 能力：盘口、逐笔、分时、期权、账户、资金、持仓、订单、成交和流水查询
+- 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
 
 ## 已知风险与阻塞
 

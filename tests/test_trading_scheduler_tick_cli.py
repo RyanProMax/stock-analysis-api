@@ -4,6 +4,7 @@ from io import StringIO
 import json
 
 from src.repositories.trading_ledger_repository import SqliteTradingLedger
+from src.services import trading_scheduler_tick_cli
 from src.services.trading_scheduler_tick_cli import main as trading_scheduler_tick_main
 
 SNAPSHOTS_JSON = json.dumps(
@@ -119,3 +120,45 @@ def test_scheduler_tick_surfaces_run_once_lock_skip(tmp_path):
     assert payload["run_once"]["reason"] == "lock_unavailable"
     assert ledger.list_runs() == []
     assert ledger.get_scheduler_tick("test-strategy") is None
+
+
+def test_scheduler_tick_passes_broker_mode_to_run_once(tmp_path, monkeypatch):
+    captured_args = []
+
+    def fake_run_once(argv, *, writer):
+        captured_args.extend(argv)
+        writer.write('{"status":"ok"}\n')
+        return 0
+
+    monkeypatch.setattr(trading_scheduler_tick_cli, "trading_run_once_main", fake_run_once)
+
+    writer = StringIO()
+    exit_code = trading_scheduler_tick_main(
+        [
+            "--codes",
+            "HK.00700",
+            "--strategy-version",
+            "threshold-v1",
+            "--buy-above",
+            "HK.00700=100",
+            "--quantity",
+            "10",
+            "--max-order-notional",
+            "2000",
+            "--ledger-db",
+            str(tmp_path / "trading_ledger.sqlite"),
+            "--state-key",
+            "test-futu-simulate",
+            "--now",
+            "2026-05-07T10:00:00+08:00",
+            "--broker",
+            "futu-simulate",
+        ],
+        writer=writer,
+    )
+    payload = _strict_json_loads(writer.getvalue())
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert "--broker" in captured_args
+    assert captured_args[captured_args.index("--broker") + 1] == "futu-simulate"

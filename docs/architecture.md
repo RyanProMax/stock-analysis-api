@@ -46,8 +46,10 @@ src/
 - `repositories/` 负责单机 SQLite 行情仓访问，不承载分析规则
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
 - `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；账户、持仓、模拟盘订单只能通过 service 层定义的 broker contract 暴露
+- `data_provider/sources/futu.py` 同时提供 `FutuOpenDTradeGateway` 作为 Futu `SIMULATE` broker 的底层网关；该网关固定 `TrdEnv.SIMULATE`，不得封装 `unlock_trade`
 - `scripts/futu_market_data.py` 只暴露 hkipo / research 已迁移所需的 Futu/OpenD 只读能力：OpenD global state、IPO list、history kline 和 snapshot
 - `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
+- `scripts/trading_run_once.py --broker futu-simulate` 是显式 opt-in 的 Futu 模拟盘 broker 路径；该路径禁止与 `--snapshots-json` 混用，避免用离线行情触发模拟盘订单
 - `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`
 - `scripts/trading_scheduler_tick.py` 只负责 cron / launchd / Agent 调度判断：时间窗、间隔和 state key；到点后复用 `trading_run_once.py` 的单轮执行能力，不复制策略或风控逻辑
 - `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，汇总当日 run、snapshot、risk decision 和 dry-run order，不参与实时交易链路
@@ -195,7 +197,7 @@ src/
   - 所有订单必须携带可复算的 idempotency key，重复轮询不得重复下单
   - 订单幂等和运行审计必须持久化到 SQLite trading ledger，不能依赖单进程内存态
   - 调度入口必须使用 SQLite 锁或等价互斥，防止并发 worker 在同一窗口重复通过预检
-  - 内部 `trading_run_once.py` 默认使用 dry-run broker；真实 Futu `SIMULATE` broker adapter 必须另行接入并继续禁止 `unlock_trade`
+  - 内部 `trading_run_once.py` 默认使用 dry-run broker；真实 Futu `SIMULATE` broker adapter 只能通过 `--broker futu-simulate` 显式启用，并继续禁止 `unlock_trade`
   - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
 
 ## 演进方向
