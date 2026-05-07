@@ -12,6 +12,7 @@
 - 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
 - 启动模拟盘自动交易一期：把 Futu/OpenD 作为 API 内部正式 data provider / broker adapter 接入，先建立确定性 `run_once` 执行闭环
 - 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
+- 继续补齐高 ROI Futu/OpenD 只读 provider 能力，优先支持盘口、逐笔、分时、期权链、账户、资金、持仓、订单、成交和流水查询，保持禁止写入、订阅、交易解锁和真实交易
 
 ## 最近完成项
 
@@ -51,6 +52,8 @@
 - 已新增 `FutuSimulateBroker` 与 `FutuOpenDTradeGateway`，`trading_run_once.py --broker futu-simulate` 可显式启用 Futu `SIMULATE` broker；默认仍是 dry-run，且 `futu-simulate` 禁止与 `--snapshots-json` 混用。
 - `trading_scheduler_tick.py` 已支持透传 `--broker`，因此显式 opt-in 的 Futu `SIMULATE` 也能接入 cron / launchd / Agent 调度 tick。
 - 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
+- 已扩展 `scripts/futu_market_data.py` Futu/OpenD 只读查询能力，新增 `order-book`、`ticker`、`rt-data`、`option-expirations`、`option-chain`、`account`、`positions`、`orders`、`deals`、`cash-flow` 子命令。
+- 已补充 Futu 只读 CLI contract 与安全回归测试，覆盖新增命令 stdout JSON、Futu `SIMULATE` 账户类只读查询，以及 CLI 不暴露写入类子命令。
 
 ## 当前状态
 
@@ -84,13 +87,14 @@
 - Futu/OpenD hkipo / research 迁移在 API 侧已完成内部 CLI 与 contract 测试：
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
-  - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` JSON contract
+  - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` / `order-book` / `ticker` / `rt-data` / `option-expirations` / `option-chain` / `account` / `positions` / `orders` / `deals` / `cash-flow` JSON contract
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
+- Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
 
 ## 下一步计划
 
-- 继续迁移剩余 Futu 只读 provider 能力：盘口、逐笔、分时、期权、账户、资金、持仓、订单、成交和流水查询
+- 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
 

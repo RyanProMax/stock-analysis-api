@@ -98,6 +98,17 @@ def df_to_records(data: Any) -> list[dict[str, Any]]:
     return [to_jsonable(dict(record)) for record in records]
 
 
+def futu_payload_to_jsonable(data: Any) -> Any:
+    if isinstance(data, Mapping):
+        return {
+            str(key): df_to_records(item) if hasattr(item, "to_dict") else to_jsonable(item)
+            for key, item in data.items()
+        }
+    if hasattr(data, "to_dict"):
+        return df_to_records(data)
+    return to_jsonable(data)
+
+
 def _as_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -172,6 +183,128 @@ class FutuOpenDGateway:
             ret, data = ctx.get_ipo_list(futu_market)
             if ret != RET_OK:
                 raise FutuProviderError(f"Futu get_ipo_list failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_order_book(self, code: str, *, num: int = 10) -> Any:
+        normalized_code = normalize_futu_code(code)
+        try:
+            from futu import OpenQuoteContext, RET_OK  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDGateway") from exc
+
+        ctx = self._open_quote_context(OpenQuoteContext, host=self.host, port=self.port)
+        try:
+            ret, data = ctx.get_order_book(normalized_code, num=max(1, int(num or 10)))
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_order_book failed: {data}")
+            return futu_payload_to_jsonable(data)
+        finally:
+            ctx.close()
+
+    def get_rt_ticker(self, code: str, *, num: int = 500) -> list[dict[str, Any]]:
+        normalized_code = normalize_futu_code(code)
+        try:
+            from futu import OpenQuoteContext, RET_OK  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDGateway") from exc
+
+        ctx = self._open_quote_context(OpenQuoteContext, host=self.host, port=self.port)
+        try:
+            ret, data = ctx.get_rt_ticker(normalized_code, num=max(1, int(num or 500)))
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_rt_ticker failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_rt_data(self, code: str) -> list[dict[str, Any]]:
+        normalized_code = normalize_futu_code(code)
+        try:
+            from futu import OpenQuoteContext, RET_OK  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDGateway") from exc
+
+        ctx = self._open_quote_context(OpenQuoteContext, host=self.host, port=self.port)
+        try:
+            ret, data = ctx.get_rt_data(normalized_code)
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_rt_data failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_option_expiration_date(
+        self,
+        code: str,
+        *,
+        index_option_type: str = "NORMAL",
+    ) -> list[dict[str, Any]]:
+        normalized_code = normalize_futu_code(code)
+        try:
+            from futu import IndexOptionType, OpenQuoteContext, RET_OK  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDGateway") from exc
+
+        option_type_key = str(index_option_type or "NORMAL").strip().upper()
+        futu_index_option_type = getattr(IndexOptionType, option_type_key, IndexOptionType.NORMAL)
+
+        ctx = self._open_quote_context(OpenQuoteContext, host=self.host, port=self.port)
+        try:
+            ret, data = ctx.get_option_expiration_date(
+                normalized_code,
+                index_option_type=futu_index_option_type,
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_option_expiration_date failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_option_chain(
+        self,
+        code: str,
+        *,
+        index_option_type: str = "NORMAL",
+        start: str | None = None,
+        end: str | None = None,
+        option_type: str = "ALL",
+        option_cond_type: str = "ALL",
+    ) -> list[dict[str, Any]]:
+        normalized_code = normalize_futu_code(code)
+        try:
+            from futu import (  # type: ignore
+                IndexOptionType,
+                OpenQuoteContext,
+                OptionCondType,
+                OptionType,
+                RET_OK,
+            )
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDGateway") from exc
+
+        index_option_type_key = str(index_option_type or "NORMAL").strip().upper()
+        option_type_key = str(option_type or "ALL").strip().upper()
+        option_cond_type_key = str(option_cond_type or "ALL").strip().upper()
+        futu_index_option_type = getattr(
+            IndexOptionType, index_option_type_key, IndexOptionType.NORMAL
+        )
+        futu_option_type = getattr(OptionType, option_type_key, OptionType.ALL)
+        futu_option_cond_type = getattr(OptionCondType, option_cond_type_key, OptionCondType.ALL)
+
+        ctx = self._open_quote_context(OpenQuoteContext, host=self.host, port=self.port)
+        try:
+            ret, data = ctx.get_option_chain(
+                normalized_code,
+                index_option_type=futu_index_option_type,
+                start=start,
+                end=end,
+                option_type=futu_option_type,
+                option_cond_type=futu_option_cond_type,
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_option_chain failed: {data}")
             return df_to_records(data)
         finally:
             ctx.close()
@@ -323,15 +456,20 @@ class FutuOpenDTradeGateway:
         finally:
             ctx.close()
 
-    def get_positions(self) -> list[dict[str, Any]]:
+    def get_positions(self, *, code: str = "") -> list[dict[str, Any]]:
+        return self.query_positions(code=code)
+
+    def query_positions(self, *, code: str = "") -> list[dict[str, Any]]:
         try:
             from futu import RET_OK, TrdEnv  # type: ignore
         except ImportError as exc:
             raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
 
+        normalized_code = normalize_futu_code(code) if str(code or "").strip() else ""
         ctx = self._context()
         try:
             ret, data = ctx.position_list_query(
+                code=normalized_code,
                 trd_env=TrdEnv.SIMULATE,
                 acc_id=self.acc_id,
                 acc_index=self.acc_index,
@@ -339,6 +477,112 @@ class FutuOpenDTradeGateway:
             )
             if ret != RET_OK:
                 raise FutuProviderError(f"Futu position_list_query failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_orders(
+        self,
+        *,
+        code: str = "",
+        start: str = "",
+        end: str = "",
+        history: bool = False,
+    ) -> list[dict[str, Any]]:
+        try:
+            from futu import RET_OK, TrdEnv  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        normalized_code = normalize_futu_code(code) if str(code or "").strip() else ""
+        ctx = self._context()
+        try:
+            if history:
+                ret, data = ctx.history_order_list_query(
+                    code=normalized_code,
+                    start=start,
+                    end=end,
+                    trd_env=TrdEnv.SIMULATE,
+                    acc_id=self.acc_id,
+                    acc_index=self.acc_index,
+                )
+            else:
+                ret, data = ctx.order_list_query(
+                    code=normalized_code,
+                    start=start,
+                    end=end,
+                    trd_env=TrdEnv.SIMULATE,
+                    acc_id=self.acc_id,
+                    acc_index=self.acc_index,
+                    refresh_cache=True,
+                )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu order query failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_deals(
+        self,
+        *,
+        code: str = "",
+        start: str = "",
+        end: str = "",
+        history: bool = False,
+    ) -> list[dict[str, Any]]:
+        try:
+            from futu import RET_OK, TrdEnv  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        normalized_code = normalize_futu_code(code) if str(code or "").strip() else ""
+        ctx = self._context()
+        try:
+            if history:
+                ret, data = ctx.history_deal_list_query(
+                    code=normalized_code,
+                    start=start,
+                    end=end,
+                    trd_env=TrdEnv.SIMULATE,
+                    acc_id=self.acc_id,
+                    acc_index=self.acc_index,
+                )
+            else:
+                ret, data = ctx.deal_list_query(
+                    code=normalized_code,
+                    trd_env=TrdEnv.SIMULATE,
+                    acc_id=self.acc_id,
+                    acc_index=self.acc_index,
+                    refresh_cache=True,
+                )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu deal query failed: {data}")
+            return df_to_records(data)
+        finally:
+            ctx.close()
+
+    def get_cash_flow(
+        self,
+        *,
+        clearing_date: str = "",
+        direction: str = "N/A",
+    ) -> list[dict[str, Any]]:
+        try:
+            from futu import RET_OK, TrdEnv  # type: ignore
+        except ImportError as exc:
+            raise FutuProviderError("futu-api is required for FutuOpenDTradeGateway") from exc
+
+        ctx = self._context()
+        try:
+            ret, data = ctx.get_acc_cash_flow(
+                clearing_date=clearing_date,
+                trd_env=TrdEnv.SIMULATE,
+                acc_id=self.acc_id,
+                acc_index=self.acc_index,
+                cashflow_direction=str(direction or "N/A").strip().upper(),
+            )
+            if ret != RET_OK:
+                raise FutuProviderError(f"Futu get_acc_cash_flow failed: {data}")
             return df_to_records(data)
         finally:
             ctx.close()

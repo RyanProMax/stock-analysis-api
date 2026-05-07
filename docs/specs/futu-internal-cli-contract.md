@@ -14,12 +14,25 @@
 uv run python scripts/futu_market_data.py <command> --json
 ```
 
-第一阶段只覆盖已被 `/hkipo` / `/research` / HK IPO 回测实际使用的能力：
+第一阶段覆盖已被 `/hkipo` / `/research` / HK IPO 回测实际使用的能力：
 
 - `global-state`：OpenD 行情登录和全局状态预检，替代 `futuapi/scripts/quote/get_global_state.py`
 - `ipo-list --market HK`：港股 IPO 当前池，替代 `futuapi/scripts/quote/get_ipo_list.py HK`
 - `kline --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --ktype 1d --rehab none`：历史日 K，替代 HK IPO 回测里直接调用 Futu SDK
 - `snapshot --codes HK.00700,US.AAPL`：港股 `/research` prompt 中需要的只读行情快照入口
+
+第二阶段补齐高频只读查询能力：
+
+- `order-book --code HK.00700 --num 10`：盘口查询
+- `ticker --code HK.00700 --num 500`：逐笔成交查询
+- `rt-data --code HK.00700`：分时数据查询
+- `option-expirations --code US.AAPL`：期权到期日查询
+- `option-chain --code US.AAPL --start YYYY-MM-DD --end YYYY-MM-DD --option-type CALL|PUT|ALL`：期权链查询
+- `account --market HK --currency HKD`：Futu `SIMULATE` 账户资金只读查询
+- `positions --market HK --code HK.00700`：Futu `SIMULATE` 持仓只读查询
+- `orders --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`：Futu `SIMULATE` 订单只读查询
+- `deals --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`：Futu `SIMULATE` 成交只读查询
+- `cash-flow --market HK --clearing-date YYYY-MM-DD`：Futu `SIMULATE` 交易流水只读查询
 
 ## 运行依赖
 
@@ -30,8 +43,8 @@ uv run python scripts/futu_market_data.py <command> --json
 ## 非范围
 
 - 不新增公共 HTTP API。
-- 不迁移盘口、逐笔、分时、期权、账户、持仓和订单只读查询；这些后续按能力逐步迁移。
 - 不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
+- 不在 `futu_market_data.py` 暴露下单、改单、撤单、交易解锁、订阅、提醒、自选股或配置写入类子命令。
 - 不从 API 仓库反向调用外部 `futuapi` skill 脚本。
 
 ## 输出
@@ -61,3 +74,4 @@ uv run python scripts/futu_market_data.py <command> --json
 - stdout 必须是可被严格 JSON parser 解析的标准 JSON，不允许混入 Futu SDK 连接日志。
 - 成功路径不向 stderr 输出 Futu SDK warning / log 噪声。
 - Futu 原始数据里的 `NaN` / `Infinity` 等非有限数值统一归一化为 `null`。
+- 账户、持仓、订单、成交和流水查询固定使用 Futu `TrdEnv.SIMULATE`，且只读展示最小必要信息；不得触发 `place_order`、`modify_order`、`cancel_order`、`unlock_trade`、`subscribe` 或其他写操作。

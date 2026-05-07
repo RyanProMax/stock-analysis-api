@@ -105,7 +105,45 @@
   - `partial`
   - `failed`
 
-### 3. `scripts/trading_run_once.py`
+### 3. `scripts/futu_market_data.py`
+
+用途：
+
+- Futu/OpenD 内部只读查询 CLI
+- 供 `/hkipo`、`/research`、多市场 watchlist 和账户只读查询消费
+- 不属于公共 HTTP API，不承载任何写入、订阅或交易解锁能力
+
+子命令：
+
+- `global-state`: OpenD 行情登录和市场状态预检
+- `ipo-list --market HK`: IPO 当前池查询
+- `snapshot --codes HK.00700,US.AAPL`: 多市场行情快照
+- `kline --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD`: 历史 K 线
+- `order-book --code HK.00700 --num 10`: 盘口
+- `ticker --code HK.00700 --num 500`: 逐笔成交
+- `rt-data --code HK.00700`: 分时数据
+- `option-expirations --code US.AAPL`: 期权到期日
+- `option-chain --code US.AAPL --start YYYY-MM-DD --end YYYY-MM-DD --option-type CALL|PUT|ALL`: 期权链
+- `account --market HK --currency HKD`: Futu `SIMULATE` 账户资金只读查询
+- `positions --market HK --code HK.00700`: Futu `SIMULATE` 持仓只读查询
+- `orders --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`: Futu `SIMULATE` 订单只读查询
+- `deals --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`: Futu `SIMULATE` 成交只读查询
+- `cash-flow --market HK --clearing-date YYYY-MM-DD`: Futu `SIMULATE` 流水只读查询
+
+输出语义：
+
+- 顶层固定包含：
+  - `status`
+  - `source=futu_opend`
+  - `request` 或命令对应的请求摘要
+  - `data`
+- 账户相关只读命令额外包含：
+  - `environment=SIMULATE`
+  - `market`
+- stdout 必须是标准 JSON；Futu SDK stdout / warning 必须被屏蔽。
+- 不暴露 `place-order`、`modify-order`、`cancel-order`、`unlock-trade`、`subscribe` 等写入类子命令。
+
+### 4. `scripts/trading_run_once.py`
 
 用途：
 
@@ -194,7 +232,7 @@
 - 审计与幂等固定写入 SQLite trading ledger
 - 不新增公共 HTTP API，不调用外部 `futuapi` skill 脚本
 
-### 4. `scripts/trading_scheduler_tick.py`
+### 5. `scripts/trading_scheduler_tick.py`
 
 用途：
 
@@ -219,7 +257,7 @@
 - 未到执行间隔：`status=skipped`、`reason=not_due`。
 - 单轮执行锁冲突：`status=skipped`，`run_once.reason=lock_unavailable`。
 
-### 5. `scripts/trading_daily_summary.py`
+### 6. `scripts/trading_daily_summary.py`
 
 用途：
 
@@ -259,7 +297,7 @@
   - `strategy_versions`
 - 默认输出遵循最小必要原则：只给用户盘后总结需要的计数、标的、策略版本、风控原因分布和行情首末变化；明细仅供调试或策略评审内部使用。
 
-### 6. `scripts/trading_strategy_review.py`
+### 7. `scripts/trading_strategy_review.py`
 
 用途：
 
@@ -296,7 +334,7 @@
   - `evidence`
   - `constraints`
 
-### 7. `scripts/trading_strategy_backtest.py`
+### 8. `scripts/trading_strategy_backtest.py`
 
 用途：
 

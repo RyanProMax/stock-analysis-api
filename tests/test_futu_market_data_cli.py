@@ -7,7 +7,10 @@ import subprocess
 import sys
 import warnings
 
-from src.services.futu_market_data_cli import main as futu_market_data_cli_main
+from src.services.futu_market_data_cli import (
+    _build_parser,
+    main as futu_market_data_cli_main,
+)
 
 
 def _strict_json_loads(raw: str) -> dict:
@@ -72,6 +75,99 @@ class FakeFutuGateway:
             }
         ]
 
+    def get_order_book(self, code: str, *, num: int):
+        assert code == "HK.00700"
+        assert num == 3
+        return {
+            "bid": [{"price": 390.0, "volume": 1000, "order_count": 2}],
+            "ask": [{"price": 390.2, "volume": 1200, "order_count": 3}],
+        }
+
+    def get_rt_ticker(self, code: str, *, num: int):
+        assert code == "HK.00700"
+        assert num == 5
+        return [{"time": "09:31:01", "price": 390.2, "volume": 100}]
+
+    def get_rt_data(self, code: str):
+        assert code == "HK.00700"
+        return [{"time": "09:31", "price": 390.2, "volume": 1000}]
+
+    def get_option_expiration_date(self, code: str, *, index_option_type: str):
+        assert code == "US.AAPL"
+        assert index_option_type == "NORMAL"
+        return [{"strike_time": "2026-05-15"}]
+
+    def get_option_chain(
+        self,
+        code: str,
+        *,
+        index_option_type: str,
+        start: str | None,
+        end: str | None,
+        option_type: str,
+        option_cond_type: str,
+    ):
+        assert code == "US.AAPL"
+        assert index_option_type == "NORMAL"
+        assert start == "2026-05-15"
+        assert end == "2026-06-19"
+        assert option_type == "CALL"
+        assert option_cond_type == "ALL"
+        return [
+            {
+                "code": "US.AAPL260515C00200000",
+                "option_type": "CALL",
+                "strike_price": 200.0,
+                "last_price": 6.2,
+            }
+        ]
+
+
+class FakeReadonlyTradeGateway:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def get_account(self, *, currency: str):
+        assert currency == "HKD"
+        self.calls.append("get_account")
+        return {"cash": 50000.0, "total_assets": 51000.0, "currency": "HKD"}
+
+    def get_positions(self, *, code: str = ""):
+        assert code == "HK.00700"
+        self.calls.append("get_positions")
+        return [{"code": "HK.00700", "qty": 100, "market_val": 41000.0}]
+
+    def get_orders(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
+        assert code == "HK.00700"
+        assert start == "2026-05-01"
+        assert end == "2026-05-07"
+        assert history is True
+        self.calls.append("get_orders")
+        return [{"order_id": "O-1", "code": "HK.00700", "order_status": "FILLED_ALL"}]
+
+    def get_deals(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
+        assert code == "HK.00700"
+        assert start == "2026-05-01"
+        assert end == "2026-05-07"
+        assert history is True
+        self.calls.append("get_deals")
+        return [{"deal_id": "D-1", "code": "HK.00700", "qty": 100}]
+
+    def get_cash_flow(self, *, clearing_date: str = "", direction: str = "N/A"):
+        assert clearing_date == "2026-05-07"
+        assert direction == "N/A"
+        self.calls.append("get_cash_flow")
+        return [{"clearing_date": "2026-05-07", "cash_flow": -39020.0}]
+
+    def place_order(self, *args, **kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("readonly CLI must not place orders")
+
+    def unlock_trade(self, *args, **kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("readonly CLI must not unlock trading")
+
+    def subscribe(self, *args, **kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("readonly CLI must not subscribe")
+
 
 class NoisyFutuGateway(FakeFutuGateway):
     def get_global_state(self):
@@ -88,6 +184,18 @@ def _run_cli(*args: str) -> tuple[int, dict]:
         gateway=FakeFutuGateway(),
     )
     return exit_code, _strict_json_loads(writer.getvalue())
+
+
+def _run_trade_cli(*args: str) -> tuple[int, dict, FakeReadonlyTradeGateway]:
+    writer = StringIO()
+    trade_gateway = FakeReadonlyTradeGateway()
+    exit_code = futu_market_data_cli_main(
+        list(args),
+        writer=writer,
+        gateway=FakeFutuGateway(),
+        trade_gateway=trade_gateway,
+    )
+    return exit_code, _strict_json_loads(writer.getvalue()), trade_gateway
 
 
 def test_global_state_cli_contract():
@@ -176,3 +284,145 @@ def test_snapshot_cli_contract():
     assert payload["request"] == {"codes": ["HK.00700"], "count": 1}
     assert payload["data"][0]["code"] == "HK.00700"
     assert payload["data"][0]["raw"]["stock_owner"] is None
+
+
+def test_order_book_ticker_rt_data_cli_contracts():
+    exit_code, order_book = _run_cli("order-book", "--code", "HK.00700", "--num", "3", "--json")
+    assert exit_code == 0
+    assert order_book["status"] == "ok"
+    assert order_book["request"] == {"code": "HK.00700", "num": 3}
+    assert order_book["data"]["bid"][0]["price"] == 390.0
+
+    exit_code, ticker = _run_cli("ticker", "--code", "HK.00700", "--num", "5", "--json")
+    assert exit_code == 0
+    assert ticker["status"] == "ok"
+    assert ticker["request"] == {"code": "HK.00700", "num": 5}
+    assert ticker["data"][0]["price"] == 390.2
+
+    exit_code, rt_data = _run_cli("rt-data", "--code", "HK.00700", "--json")
+    assert exit_code == 0
+    assert rt_data["status"] == "ok"
+    assert rt_data["request"] == {"code": "HK.00700"}
+    assert rt_data["data"][0]["volume"] == 1000
+
+
+def test_option_expirations_and_chain_cli_contracts():
+    exit_code, expirations = _run_cli("option-expirations", "--code", "US.AAPL", "--json")
+    assert exit_code == 0
+    assert expirations["status"] == "ok"
+    assert expirations["request"] == {"code": "US.AAPL", "index_option_type": "NORMAL"}
+    assert expirations["data"][0]["strike_time"] == "2026-05-15"
+
+    exit_code, chain = _run_cli(
+        "option-chain",
+        "--code",
+        "US.AAPL",
+        "--start",
+        "2026-05-15",
+        "--end",
+        "2026-06-19",
+        "--option-type",
+        "CALL",
+        "--json",
+    )
+    assert exit_code == 0
+    assert chain["status"] == "ok"
+    assert chain["request"] == {
+        "code": "US.AAPL",
+        "index_option_type": "NORMAL",
+        "start": "2026-05-15",
+        "end": "2026-06-19",
+        "option_type": "CALL",
+        "option_cond_type": "ALL",
+    }
+    assert chain["data"][0]["code"] == "US.AAPL260515C00200000"
+
+
+def test_account_positions_orders_deals_and_cash_flow_are_readonly():
+    exit_code, account, trade_gateway = _run_trade_cli(
+        "account",
+        "--market",
+        "HK",
+        "--currency",
+        "HKD",
+        "--json",
+    )
+    assert exit_code == 0
+    assert account["status"] == "ok"
+    assert account["environment"] == "SIMULATE"
+    assert account["data"]["cash"] == 50000.0
+
+    exit_code, positions, _ = _run_trade_cli(
+        "positions",
+        "--market",
+        "HK",
+        "--code",
+        "HK.00700",
+        "--json",
+    )
+    assert exit_code == 0
+    assert positions["status"] == "ok"
+    assert positions["data"][0]["code"] == "HK.00700"
+
+    exit_code, orders, _ = _run_trade_cli(
+        "orders",
+        "--market",
+        "HK",
+        "--code",
+        "HK.00700",
+        "--start",
+        "2026-05-01",
+        "--end",
+        "2026-05-07",
+        "--history",
+        "--json",
+    )
+    assert exit_code == 0
+    assert orders["status"] == "ok"
+    assert orders["data"][0]["order_id"] == "O-1"
+
+    exit_code, deals, _ = _run_trade_cli(
+        "deals",
+        "--market",
+        "HK",
+        "--code",
+        "HK.00700",
+        "--start",
+        "2026-05-01",
+        "--end",
+        "2026-05-07",
+        "--history",
+        "--json",
+    )
+    assert exit_code == 0
+    assert deals["status"] == "ok"
+    assert deals["data"][0]["deal_id"] == "D-1"
+
+    exit_code, cash_flow, _ = _run_trade_cli(
+        "cash-flow",
+        "--market",
+        "HK",
+        "--clearing-date",
+        "2026-05-07",
+        "--json",
+    )
+    assert exit_code == 0
+    assert cash_flow["status"] == "ok"
+    assert cash_flow["data"][0]["cash_flow"] == -39020.0
+    assert trade_gateway.calls == ["get_account"]
+
+
+def test_futu_market_data_cli_does_not_expose_write_subcommands():
+    parser = _build_parser()
+    subcommands = next(action for action in parser._actions if action.dest == "command")
+    exposed = set(subcommands.choices)
+
+    assert not exposed.intersection(
+        {
+            "place-order",
+            "modify-order",
+            "cancel-order",
+            "unlock-trade",
+            "subscribe",
+        }
+    )
