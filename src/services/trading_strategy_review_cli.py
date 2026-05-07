@@ -113,6 +113,7 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
             ledger,
             target_date=target_date,
             timezone_name=args.timezone,
+            include_details=True,
         )
         backtest = build_ledger_backtest(summary)
         gate_reasons = _gate_reasons(

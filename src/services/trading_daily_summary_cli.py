@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ledger-db", help="SQLite trading ledger path")
     parser.add_argument("--date", help="Trading date in YYYY-MM-DD; defaults to today")
     parser.add_argument("--timezone", default="Asia/Shanghai")
+    parser.add_argument("--include-details", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -49,6 +50,7 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
             ledger,
             target_date=target_date,
             timezone_name=args.timezone,
+            include_details=args.include_details,
         )
         _emit(payload, args.pretty, writer)
         return 0

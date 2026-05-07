@@ -232,11 +232,12 @@
 - `--ledger-db`: 覆盖 SQLite ledger 路径
 - `--date`: `YYYY-MM-DD`，不传时按 `--timezone` 取当天
 - `--timezone`: 默认 `Asia/Shanghai`
+- `--include-details`: 显式输出 `orders` / `risk_decisions` / `runs` 明细；默认不输出
 - `--pretty`
 
 输出语义：
 
-- 顶层固定返回：
+- 顶层默认返回 summary-only：
   - `status`
   - `source=trading_daily_summary`
   - `date`
@@ -244,6 +245,7 @@
   - `summary`
   - `risk_reason_counts`
   - `market`
+- 显式传 `--include-details` 时才额外返回：
   - `orders`
   - `risk_decisions`
   - `runs`
@@ -255,6 +257,7 @@
   - `rejected_risk_decisions`
   - `codes`
   - `strategy_versions`
+- 默认输出遵循最小必要原则：只给用户盘后总结需要的计数、标的、策略版本、风控原因分布和行情首末变化；明细仅供调试或策略评审内部使用。
 
 ### 6. `scripts/trading_strategy_review.py`
 

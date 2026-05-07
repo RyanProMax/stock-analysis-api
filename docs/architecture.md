@@ -53,7 +53,7 @@ src/
 - `scripts/trading_run_once.py --broker futu-simulate` 是显式 opt-in 的 Futu 模拟盘 broker 路径；该路径禁止与 `--snapshots-json` 混用，避免用离线行情触发模拟盘订单
 - `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`
 - `scripts/trading_scheduler_tick.py` 只负责 cron / launchd / Agent 调度判断：时间窗、间隔和 state key；到点后复用 `trading_run_once.py` 的单轮执行能力，不复制策略或风控逻辑
-- `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，汇总当日 run、snapshot、risk decision 和 dry-run order，不参与实时交易链路
+- `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，默认 summary-only 汇总当日 run 数、snapshot 首末变化、risk decision / dry-run order 计数和风控原因分布；明细仅在显式 `--include-details` 时输出，不参与实时交易链路
 - `scripts/trading_strategy_review.py` 只读 ledger summary 和 ledger snapshot replay 指标，输出候选 `strategy_proposal`；该 proposal 不自动写回策略配置，也不触发下单
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `core/` 仅保留流程编排和旧导入兼容

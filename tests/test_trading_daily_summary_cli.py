@@ -97,5 +97,27 @@ def test_trading_daily_summary_cli_summarizes_real_ledger_runs_orders_and_market
     assert payload["market"][0]["first_price"] == 101
     assert payload["market"][0]["latest_price"] == 105
     assert payload["market"][0]["change_ratio"] == pytest.approx((105 - 101) / 101)
+    assert "orders" not in payload
+    assert "risk_decisions" not in payload
+    assert "runs" not in payload
+
+
+def test_trading_daily_summary_cli_includes_details_only_when_requested(tmp_path):
+    ledger_db = tmp_path / "trading_ledger.sqlite"
+    _run_once(ledger_db, price=101)
+
+    exit_code, payload = _run_summary(
+        "--ledger-db",
+        str(ledger_db),
+        "--date",
+        "2026-05-07",
+        "--timezone",
+        "Asia/Shanghai",
+        "--include-details",
+    )
+
+    assert exit_code == 0
     assert payload["orders"][0]["code"] == "HK.00700"
     assert payload["orders"][0]["broker_result"]["status"] == "dry_run_submitted"
+    assert payload["risk_decisions"][0]["status"] == "accepted"
+    assert payload["runs"][0]["status"] == "ok"

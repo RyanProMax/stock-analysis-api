@@ -92,7 +92,7 @@ black --line-length 100 .
 - `scripts/trading_run_once.py` 默认使用 dry-run broker 和 SQLite 调度锁，只做模拟盘单次执行与 ledger 审计；只有显式传 `--broker futu-simulate` 时才连接 Futu `SIMULATE` broker
 - `--broker futu-simulate` 固定使用 Futu `TrdEnv.SIMULATE`，不调用 `unlock_trade`，也不允许和 `--snapshots-json` 混用
 - `scripts/trading_scheduler_tick.py` 是 cron / launchd / Agent 的调度 tick 入口，只判断时间窗和间隔，到点后调用单次执行；`--broker` 会透传给 `trading_run_once.py`
-- `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，生成当日 run / order / 风控 / snapshot 摘要
+- `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，默认只输出 summary-only 关键信息；调试明细需显式加 `--include-details`
 - `scripts/trading_strategy_review.py` 基于 ledger 摘要生成候选 `strategy_proposal`，不会写入策略配置或触发盘中下单
 - `scripts/trading_strategy_backtest.py` 基于历史 K 线或注入 K 线 JSON 回测当前 threshold 策略，用于区别于 ledger replay 的离线评估
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`

@@ -90,9 +90,10 @@
 ### 盘后总结与策略评审
 
 - 新增内部 CLI `scripts/trading_daily_summary.py`，只读 SQLite trading ledger，按交易日和时区汇总：
-  - `run_once` 执行次数、状态与请求。
+  - `run_once` 执行次数。
   - 当日 snapshot 的首末价格、变化比例和来源。
-  - dry-run order、broker result、risk decision 与拒绝原因计数。
+  - dry-run order 数量、risk decision 数量与拒绝原因计数。
+  - 默认遵循 summary-only 和最小必要原则；只有显式传 `--include-details` 才输出 `orders`、`risk_decisions`、`runs` 明细。
 - 新增内部 CLI `scripts/trading_strategy_review.py`，只读 daily summary 并生成 ledger replay 指标：
   - 当前 MVP 的回测口径为 `ledger_snapshot_replay`，即用 ledger 中已有 snapshot 和 dry-run order 做当日回放式评估。
   - 后续接入历史 K 线或分钟线回测时，必须在输出中显式区分方法名，不能把 replay 指标伪装成完整历史回测。

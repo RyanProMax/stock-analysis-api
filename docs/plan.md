@@ -47,6 +47,7 @@
 - 已新增 `scripts/trading_daily_summary.py`，只读 SQLite trading ledger 汇总当日 run、order、risk decision 和 snapshot 首末变化。
 - 已新增 `scripts/trading_strategy_review.py`，基于 ledger summary 输出 `ledger_snapshot_replay` 指标和需人工批准的结构化 `strategy_proposal`，不自动应用策略。
 - 已补充盘后真实脚本链路测试：`trading_run_once.py` 写 ledger 后，`trading_daily_summary.py` 与 `trading_strategy_review.py` 读取同一 ledger 并输出严格 JSON。
+- 已将 `scripts/trading_daily_summary.py` 默认输出改为 summary-only：只保留关键信息，`orders` / `risk_decisions` / `runs` 明细必须显式 `--include-details` 才输出。
 - 已新增 `FutuSimulateBroker` 与 `FutuOpenDTradeGateway`，`trading_run_once.py --broker futu-simulate` 可显式启用 Futu `SIMULATE` broker；默认仍是 dry-run，且 `futu-simulate` 禁止与 `--snapshots-json` 混用。
 - `trading_scheduler_tick.py` 已支持透传 `--broker`，因此显式 opt-in 的 Futu `SIMULATE` 也能接入 cron / launchd / Agent 调度 tick。
 - 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
@@ -85,6 +86,7 @@
   - 已新增 `scripts/futu_market_data.py`
   - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` JSON contract
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
+- `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
 
 ## 下一步计划
 

@@ -111,6 +111,7 @@ def build_daily_summary(
     *,
     target_date: date,
     timezone_name: str,
+    include_details: bool = False,
 ) -> dict[str, Any]:
     runs = [
         run
@@ -148,7 +149,7 @@ def build_daily_summary(
     risk_reason_counts = Counter(str(decision.get("reason") or "") for decision in risk_decisions)
     risk_status_counts = Counter(str(decision.get("status") or "") for decision in risk_decisions)
 
-    return {
+    payload = {
         "status": "ok",
         "source": "trading_daily_summary",
         "date": target_date.isoformat(),
@@ -164,10 +165,16 @@ def build_daily_summary(
         },
         "risk_reason_counts": dict(sorted(risk_reason_counts.items())),
         "market": _summarize_market(snapshots, timezone_name=timezone_name),
-        "orders": orders,
-        "risk_decisions": risk_decisions,
-        "runs": runs,
     }
+    if include_details:
+        payload.update(
+            {
+                "orders": orders,
+                "risk_decisions": risk_decisions,
+                "runs": runs,
+            }
+        )
+    return payload
 
 
 def build_ledger_backtest(summary: dict[str, Any]) -> dict[str, Any]:
