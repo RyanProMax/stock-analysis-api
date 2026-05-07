@@ -105,6 +105,19 @@
   - `--max-rejection-rate`
   - 是否具备可回放 snapshot
 
+### 历史 K 线回测
+
+- 新增内部 CLI `scripts/trading_strategy_backtest.py`，用于离线回测当前固定 threshold 策略。
+- 输入来源：
+  - `--kline-json` 注入 K 线数组，供测试、复现和离线样本使用。
+  - 未传 `--kline-json` 时，通过 Futu/OpenD `request_history_kline` 读取历史 K 线。
+- 回测口径：
+  - 首次 `close >= buy_above[code]` 时按收盘价建仓。
+  - 使用 `--quantity` 和 `--max-order-notional` 做同一套最大订单金额风控。
+  - 以样本最后一根 K 线 close 做 mark-to-market。
+- 该入口只读历史行情，不读写 ledger，不触发 broker，不生成交易指令。
+- 输出 `source=trading_strategy_backtest`，与 `ledger_snapshot_replay` 明确区分。
+
 ### Agent 参与点
 
 Agent 只在盘后或离线任务中消费：
@@ -129,6 +142,7 @@ Agent 输出只能是结构化 `strategy_proposal`，必须经过：
 - 覆盖 Futu snapshot 到 `MarketSnapshot` 的字段映射。
 - 覆盖 `run_once` 默认 `SIMULATE` 下单。
 - 覆盖 Futu `SIMULATE` broker 的账户、持仓和下单映射，不依赖真实 OpenD。
+- 覆盖 `trading_strategy_backtest.py` 的离线 K 线回测、风控拒绝和严格 JSON 脚本入口。
 - 覆盖 idempotency key 去重，重复轮询不能重复下单。
 - 覆盖最大订单金额风控拒绝。
 - SDK 缺失或 OpenD 不可用时，模块 import 不能失败，只有真实调用时返回明确错误。

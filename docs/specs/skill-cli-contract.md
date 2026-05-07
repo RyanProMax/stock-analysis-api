@@ -293,6 +293,55 @@
   - `evidence`
   - `constraints`
 
+### 7. `scripts/trading_strategy_backtest.py`
+
+用途：
+
+- 模拟盘策略历史 K 线回测入口
+- 基于注入 K 线 JSON 或 Futu/OpenD 历史 K 线，离线回测固定 threshold 策略
+- 不读写 ledger、不触发 broker、不生成实时交易指令
+
+关键参数：
+
+- `--codes`: 逗号分隔 Futu 格式代码
+- `--strategy-version`
+- `--buy-above`: 逗号分隔阈值，例如 `HK.00700=100`
+- `--quantity`
+- `--max-order-notional`
+- `--kline-json`: 可选，K 线 JSON 字符串或文件路径
+- `--start` / `--end`: 未传 `--kline-json` 时用于 Futu 历史 K 线
+- `--ktype`: 默认 `1d`
+- `--rehab`: 默认 `none`
+- `--pretty`
+
+输出语义：
+
+- 顶层固定返回：
+  - `status=ok|failed`
+  - `source=trading_strategy_backtest`
+  - `strategy_version`
+  - `request`
+  - `summary`
+  - `results`
+- `summary` 至少包含：
+  - `codes_total`
+  - `bars_total`
+  - `orders_total`
+  - `accepted_orders`
+  - `rejected_orders`
+  - `average_return_ratio`
+  - `total_unrealized_pnl`
+- 单个 `results[]` 至少包含：
+  - `code`
+  - `bars_total`
+  - `entry_time`
+  - `entry_price`
+  - `exit_time`
+  - `exit_price`
+  - `return_ratio`
+  - `unrealized_pnl`
+  - `decision`
+
 ## 输出质量要求
 
 - CLI stdout 必须是纯 JSON，不得混入初始化日志或调试 print

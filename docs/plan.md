@@ -49,6 +49,7 @@
 - 已补充盘后真实脚本链路测试：`trading_run_once.py` 写 ledger 后，`trading_daily_summary.py` 与 `trading_strategy_review.py` 读取同一 ledger 并输出严格 JSON。
 - 已新增 `FutuSimulateBroker` 与 `FutuOpenDTradeGateway`，`trading_run_once.py --broker futu-simulate` 可显式启用 Futu `SIMULATE` broker；默认仍是 dry-run，且 `futu-simulate` 禁止与 `--snapshots-json` 混用。
 - `trading_scheduler_tick.py` 已支持透传 `--broker`，因此显式 opt-in 的 Futu `SIMULATE` 也能接入 cron / launchd / Agent 调度 tick。
+- 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
 
 ## 当前状态
 
@@ -61,6 +62,7 @@
   - `scripts/trading_scheduler_tick.py`
   - `scripts/trading_daily_summary.py`
   - `scripts/trading_strategy_review.py`
+  - `scripts/trading_strategy_backtest.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -68,15 +70,16 @@
   - 身份信息：`stock_basic / etf_basic`
   - 实时行情：`quotation`
   - 降级：旧版 `get_realtime_quotes`
-- 当前仍待完成：
-  - cross-repo `stock-analysis-skill` 文档与命名收口
-  - 端到端验证与双仓提交
 - 模拟盘自动交易一期已完成最小执行闭环：
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`
   - 已新增 `src/services/trading_automation_service.py`
   - 已新增 `src/repositories/trading_ledger_repository.py`
   - 已新增 `src/services/trading_run_once_cli.py`
+  - 已新增 `src/services/futu_simulate_broker.py`
+  - 已新增 `src/services/trading_daily_summary_cli.py`
+  - 已新增 `src/services/trading_strategy_review_cli.py`
+  - 已新增 `src/services/trading_strategy_backtest_cli.py`
 - Futu/OpenD hkipo / research 迁移在 API 侧已完成内部 CLI 与 contract 测试：
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
@@ -85,9 +88,9 @@
 
 ## 下一步计划
 
-- 后续如需完整历史回测，再接入 Futu K 线 / 本地分钟线数据，和当前 `ledger_snapshot_replay` 口径明确区分
 - 继续迁移剩余 Futu 只读 provider 能力：盘口、逐笔、分时、期权、账户、资金、持仓、订单、成交和流水查询
 - 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
+- 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
 
 ## 已知风险与阻塞
 

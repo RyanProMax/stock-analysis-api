@@ -48,6 +48,7 @@ uv run python scripts/trading_run_once.py --broker futu-simulate --codes HK.0070
 uv run python scripts/trading_scheduler_tick.py --codes HK.00700 --buy-above HK.00700=100 --quantity 10 --max-order-notional 2000
 uv run python scripts/trading_daily_summary.py --date 2026-05-07 --pretty
 uv run python scripts/trading_strategy_review.py --date 2026-05-07 --min-runs 3 --pretty
+uv run python scripts/trading_strategy_backtest.py --codes HK.00700 --buy-above HK.00700=100 --start 2026-05-01 --end 2026-05-07 --pretty
 ```
 
 后台常驻 HTTP 服务：
@@ -93,6 +94,7 @@ black --line-length 100 .
 - `scripts/trading_scheduler_tick.py` 是 cron / launchd / Agent 的调度 tick 入口，只判断时间窗和间隔，到点后调用单次执行；`--broker` 会透传给 `trading_run_once.py`
 - `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，生成当日 run / order / 风控 / snapshot 摘要
 - `scripts/trading_strategy_review.py` 基于 ledger 摘要生成候选 `strategy_proposal`，不会写入策略配置或触发盘中下单
+- `scripts/trading_strategy_backtest.py` 基于历史 K 线或注入 K 线 JSON 回测当前 threshold 策略，用于区别于 ledger replay 的离线评估
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步

@@ -14,6 +14,7 @@
   - `scripts/trading_scheduler_tick.py`
   - `scripts/trading_daily_summary.py`
   - `scripts/trading_strategy_review.py`
+  - `scripts/trading_strategy_backtest.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -54,6 +55,7 @@ src/
 - `scripts/trading_scheduler_tick.py` 只负责 cron / launchd / Agent 调度判断：时间窗、间隔和 state key；到点后复用 `trading_run_once.py` 的单轮执行能力，不复制策略或风控逻辑
 - `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，汇总当日 run、snapshot、risk decision 和 dry-run order，不参与实时交易链路
 - `scripts/trading_strategy_review.py` 只读 ledger summary 和 ledger snapshot replay 指标，输出候选 `strategy_proposal`；该 proposal 不自动写回策略配置，也不触发下单
+- `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
