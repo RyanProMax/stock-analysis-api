@@ -54,9 +54,7 @@ class StockService:
 
     # ==================== 股票列表服务 ====================
 
-    def get_stock_list(
-        self, market: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_stock_list(self, market: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         获取股票列表
 
@@ -209,6 +207,7 @@ class StockService:
         """
         report = self.analyze_symbol(symbol)
         return report.qlib.factors if report else None
+
 
 # 创建全局实例
 stock_service = StockService()

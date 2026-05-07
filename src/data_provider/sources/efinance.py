@@ -28,7 +28,6 @@ import logging
 from ..base import BaseStockDataSource
 from ..realtime_types import UnifiedRealtimeQuote, RealtimeSource
 
-
 logger = logging.getLogger(__name__)
 
 

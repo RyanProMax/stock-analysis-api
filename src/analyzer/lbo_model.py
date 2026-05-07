@@ -167,9 +167,7 @@ class LBOModel:
                 purchase_price=sources_uses.total_uses,
                 equity_check=sources_uses.equity,
                 leverage_multiple=(
-                    sources_uses.total_debt / sources_uses.equity
-                    if sources_uses.equity > 0
-                    else 0
+                    sources_uses.total_debt / sources_uses.equity if sources_uses.equity > 0 else 0
                 ),
                 sources_and_uses=sources_uses,
                 operating_projections=operating,
@@ -240,9 +238,7 @@ class LBOModel:
         projections = []
         revenue = base_revenue
         ebitda_margin = (
-            base_ebitda / base_revenue
-            if base_revenue > 0
-            else self.DEFAULT_EBITDA_MARGIN
+            base_ebitda / base_revenue if base_revenue > 0 else self.DEFAULT_EBITDA_MARGIN
         )
 
         # 增长率递减
@@ -445,11 +441,7 @@ class LBOModel:
             irr = (moic ** (1 / self.holding_period)) - 1
 
         # Cash on Cash
-        coc = (
-            (exit_equity - equity_investment) / equity_investment
-            if equity_investment > 0
-            else 0
-        )
+        coc = (exit_equity - equity_investment) / equity_investment if equity_investment > 0 else 0
 
         return ReturnsAnalysis(
             total_investment=equity_investment,

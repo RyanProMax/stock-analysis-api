@@ -96,8 +96,7 @@ class TestMarketDataRepository:
         storage = MarketDataRepository(str(db_path))
 
         with storage.connect() as conn:
-            conn.executescript(
-                """
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS symbols (
                     symbol TEXT PRIMARY KEY,
                     name TEXT
@@ -122,8 +121,7 @@ class TestMarketDataRepository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_a_share_daily_symbol_date
                 ON a_share_daily(symbol, trade_date DESC);
-                """
-            )
+                """)
 
         storage.initialize()
 
@@ -174,7 +172,10 @@ class TestMarketDataRepository:
         assert "turnover_rate" in loaded.columns
         assert "total_mv" in loaded.columns
         assert loaded.iloc[-1]["turnover"] is not None
-        assert storage.get_latest_trade_date("300827", market="cn") == str(loaded.iloc[-1]["date"])[:10]
+        assert (
+            storage.get_latest_trade_date("300827", market="cn")
+            == str(loaded.iloc[-1]["date"])[:10]
+        )
 
         symbol_row = storage.get_symbol_record("300827", market="cn")
         assert symbol_row["name"] == "上能电气"
@@ -200,7 +201,12 @@ class TestMarketDataRepository:
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         storage.upsert_symbols(
             [
-                {"symbol": "300827", "ts_code": "300827.SZ", "name": "上能电气", "market": "创业板"},
+                {
+                    "symbol": "300827",
+                    "ts_code": "300827.SZ",
+                    "name": "上能电气",
+                    "market": "创业板",
+                },
                 {"symbol": "NVDA", "ts_code": "NVDA.US", "name": "NVIDIA", "market": "美股"},
             ]
         )
@@ -263,7 +269,9 @@ class TestDailyDataReadService:
         monkeypatch.setattr(
             daily_data_read_module.data_manager,
             "get_stock_daily",
-            lambda symbol: (_ for _ in ()).throw(AssertionError("should not call external provider")),
+            lambda symbol: (_ for _ in ()).throw(
+                AssertionError("should not call external provider")
+            ),
         )
 
         df, name, source = service.get_stock_daily("300827")
@@ -286,7 +294,9 @@ class TestDailyDataReadService:
 
         class FakeWriteService:
             def sync_symbol_daily(self, symbol: str, market: str, start_date: str | None = None):
-                storage.upsert_daily_bars("300827", fresh_df.copy(), "CN_Tushare", market="cn", ts_code="300827.SZ")
+                storage.upsert_daily_bars(
+                    "300827", fresh_df.copy(), "CN_Tushare", market="cn", ts_code="300827.SZ"
+                )
                 return {"symbol": symbol, "rows": len(fresh_df), "source": "CN_Tushare"}
 
         service = DailyDataReadService(repository=storage, write_service=FakeWriteService())
@@ -372,13 +382,11 @@ class TestDailyDataWriteService:
         assert len(storage.load_daily_bars("300827", market="cn")) == 6
 
         with storage.connect() as conn:
-            row = conn.execute(
-                """
+            row = conn.execute("""
                 SELECT source, mode, market, scope, status, success_count, failure_count, rows_written
                 FROM sync_runs
                 ORDER BY id DESC LIMIT 1
-                """
-            ).fetchone()
+                """).fetchone()
 
         assert row["source"] == "CN_MULTI_SOURCE"
         assert row["mode"] == "cn_symbol_300827_30d"
@@ -579,12 +587,19 @@ class TestDailyDataWriteService:
         assert result["rows_written"] == len(base_df)
         assert loaded["total_mv"].notna().all()
         assert loaded["circ_mv"].notna().all()
-        assert storage.list_symbols_missing_standardized_daily_fields("cn", start_trade_date=trade_dates[0]) == []
+        assert (
+            storage.list_symbols_missing_standardized_daily_fields(
+                "cn", start_trade_date=trade_dates[0]
+            )
+            == []
+        )
         symbol_row_loaded = storage.get_symbol_record("300827", market="cn")
         assert symbol_row_loaded["daily_start_date"] == trade_dates[0]
         assert symbol_row_loaded["daily_end_date"] == trade_dates[-1]
 
-    def test_sync_market_data_skips_stale_symbol_when_suspend_signal_exists(self, tmp_path, monkeypatch):
+    def test_sync_market_data_skips_stale_symbol_when_suspend_signal_exists(
+        self, tmp_path, monkeypatch
+    ):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         stale_df = _daily_df(end_offset_days=-30).assign(total_mv=1_000_000.0, circ_mv=800_000.0)
         symbol_row = {
@@ -596,7 +611,9 @@ class TestDailyDataWriteService:
             "list_date": "2020-04-10",
         }
         storage.upsert_symbols([symbol_row], market="cn")
-        storage.upsert_daily_bars("300827", stale_df, "CN_Tushare", market="cn", ts_code="300827.SZ")
+        storage.upsert_daily_bars(
+            "300827", stale_df, "CN_Tushare", market="cn", ts_code="300827.SZ"
+        )
 
         service = DailyDataWriteService(
             repository=storage,
@@ -645,7 +662,11 @@ class TestSyncCli:
             "src.main.daily_data_write_service.sync_market_data",
             fake_sync_market_data,
         )
-        monkeypatch.setattr(sys, "argv", ["sync-market-data", "--market", "cn", "--scope", "symbol", "--symbol", "300827"])
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["sync-market-data", "--market", "cn", "--scope", "symbol", "--symbol", "300827"],
+        )
 
         sync_market_data()
 

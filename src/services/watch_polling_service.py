@@ -82,7 +82,9 @@ class WatchPollingService:
             daily_source=daily_source,
             computed_at=computed_at,
         )
-        technical_payload = self._build_technical_payload(daily_df=daily_df, quote_payload=quote_payload, symbol=symbol)
+        technical_payload = self._build_technical_payload(
+            daily_df=daily_df, quote_payload=quote_payload, symbol=symbol
+        )
         fundamentals_payload = self._build_fundamentals_payload(
             financial_data=financial_data,
             quote=quote,
@@ -238,9 +240,7 @@ class WatchPollingService:
         raw_info = raw_data.get("info", {}) if isinstance(raw_data, dict) else {}
 
         dividend_field = (
-            normalized_fields.get("dividend_yield")
-            if isinstance(normalized_fields, dict)
-            else None
+            normalized_fields.get("dividend_yield") if isinstance(normalized_fields, dict) else None
         )
         dividend_yield = None
         if isinstance(dividend_field, dict):
@@ -274,7 +274,9 @@ class WatchPollingService:
             "book_value_per_share": self._extract_normalized_field_value(
                 normalized_fields, "book_value_per_share"
             ),
-            "source": financial_source or quote_source or ("yfinance.info" if market == "us" else None),
+            "source": financial_source
+            or quote_source
+            or ("yfinance.info" if market == "us" else None),
             "partial": (
                 all(value is None for value in [pe_ratio, pb_ratio, market_cap])
                 if market == "cn"
@@ -362,7 +364,9 @@ class WatchPollingService:
                 changed_fields.append("price")
 
         current_volume_ratio = self._float_or_none(current.get("technical", {}).get("volume_ratio"))
-        previous_volume_ratio = self._float_or_none(previous.get("technical", {}).get("volume_ratio"))
+        previous_volume_ratio = self._float_or_none(
+            previous.get("technical", {}).get("volume_ratio")
+        )
         volume_ratio_change = None
         if current_volume_ratio is not None and previous_volume_ratio is not None:
             volume_ratio_change = current_volume_ratio - previous_volume_ratio
@@ -526,7 +530,9 @@ class WatchPollingService:
                     severity="medium",
                     summary="财报日期已进入近 7 天窗口",
                     evidence={
-                        "next_earnings_date": current.get("earnings_watch", {}).get("next_earnings_date"),
+                        "next_earnings_date": current.get("earnings_watch", {}).get(
+                            "next_earnings_date"
+                        ),
                         "earnings_proximity_days": earnings_days,
                     },
                     symbol=symbol,
@@ -639,9 +645,7 @@ class WatchPollingService:
         return sources
 
     @staticmethod
-    def _extract_normalized_field_value(
-        normalized_fields: Any, field_name: str
-    ) -> Optional[float]:
+    def _extract_normalized_field_value(normalized_fields: Any, field_name: str) -> Optional[float]:
         if not isinstance(normalized_fields, dict):
             return None
         payload = normalized_fields.get(field_name)
@@ -682,9 +686,15 @@ class WatchPollingService:
         if price is None:
             return "none"
 
-        lookback_df = daily_df.iloc[-(self.BREAKOUT_LOOKBACK + 1):-1]
-        recent_high = self._float_or_none(lookback_df["high"].max()) if "high" in lookback_df.columns else None
-        recent_low = self._float_or_none(lookback_df["low"].min()) if "low" in lookback_df.columns else None
+        lookback_df = daily_df.iloc[-(self.BREAKOUT_LOOKBACK + 1) : -1]
+        recent_high = (
+            self._float_or_none(lookback_df["high"].max())
+            if "high" in lookback_df.columns
+            else None
+        )
+        recent_low = (
+            self._float_or_none(lookback_df["low"].min()) if "low" in lookback_df.columns else None
+        )
 
         if recent_high not in (None, 0) and price > float(recent_high):
             return "up"

@@ -259,9 +259,7 @@ class DCFModel:
 
         return components
 
-    def _get_historical_fcf(
-        self, stock, info: dict
-    ) -> Tuple[List[float], str, str, Optional[str]]:
+    def _get_historical_fcf(self, stock, info: dict) -> Tuple[List[float], str, str, Optional[str]]:
         """获取历史自由现金流，优先使用真实现金流表，禁止倒推伪历史。"""
         cashflow = None
         try:
@@ -307,7 +305,11 @@ class DCFModel:
         values: List[float] = []
         as_of = None
         columns = list(cashflow.columns)
-        if len(columns) >= 2 and isinstance(columns[0], pd.Timestamp) and isinstance(columns[-1], pd.Timestamp):
+        if (
+            len(columns) >= 2
+            and isinstance(columns[0], pd.Timestamp)
+            and isinstance(columns[-1], pd.Timestamp)
+        ):
             if columns[0] > columns[-1]:
                 columns = list(reversed(columns))
 

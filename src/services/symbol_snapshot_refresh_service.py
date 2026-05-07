@@ -16,7 +16,6 @@ from ..data_provider.sources.tushare import TushareDataSource
 from ..repositories import MarketDataRepository, market_data_repository
 from .symbol_catalog_service import SymbolCatalogService, symbol_catalog_service
 
-
 logger = logging.getLogger(__name__)
 
 

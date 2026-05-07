@@ -8,7 +8,6 @@ must not initialize unrelated repositories just because the package loaded.
 from importlib import import_module
 from typing import Any
 
-
 _EXPORT_MODULES = {
     "DailyDataReadService": "daily_data_read_service",
     "daily_data_read_service": "daily_data_read_service",

@@ -8,7 +8,6 @@ import tushare as ts
 
 from ..data_provider.sources.tushare import TushareDataSource
 
-
 STOCK_INFO_FIELDS = (
     "ts_code,symbol,name,area,industry,market,exchange,list_status,list_date,delist_date"
 )
@@ -31,7 +30,10 @@ class RealtimeQuotePollingService:
         requested_symbols = self.parse_symbols(symbols)
         pro = self._get_pro()
         computed_at = self._now_iso()
-        items = [self._fetch_item(pro, requested_symbol=symbol, computed_at=computed_at) for symbol in requested_symbols]
+        items = [
+            self._fetch_item(pro, requested_symbol=symbol, computed_at=computed_at)
+            for symbol in requested_symbols
+        ]
 
         success_count = sum(1 for item in items if item["status"] == "ok")
         failed_count = len(items) - success_count
@@ -216,8 +218,10 @@ class RealtimeQuotePollingService:
         info.update(
             {
                 "exchange": self._normalize_exchange_code(row.get("exchange"), info["exchange"]),
-                "name": self._as_optional_str(row.get("csname")) or self._as_optional_str(row.get("extname")),
-                "full_name": self._as_optional_str(row.get("cname")) or self._as_optional_str(row.get("extname")),
+                "name": self._as_optional_str(row.get("csname"))
+                or self._as_optional_str(row.get("extname")),
+                "full_name": self._as_optional_str(row.get("cname"))
+                or self._as_optional_str(row.get("extname")),
                 "list_status": self._as_optional_str(row.get("list_status")),
                 "list_date": self._as_optional_str(row.get("list_date")),
                 "setup_date": self._as_optional_str(row.get("setup_date")),

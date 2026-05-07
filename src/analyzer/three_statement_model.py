@@ -136,9 +136,7 @@ class ThreeStatementModel:
             )
 
             # 验证勾稽
-            checks = self._validate_linkages(
-                income_statements, balance_sheets, cash_flows
-            )
+            checks = self._validate_linkages(income_statements, balance_sheets, cash_flows)
 
             # 关键指标
             key_metrics = self._calculate_key_metrics(income_statements, balance_sheets)
@@ -171,9 +169,7 @@ class ThreeStatementModel:
             )
 
         except Exception as e:
-            return ThreeStatementResult(
-                symbol=symbol, error=f"三表模型分析异常: {str(e)}"
-            )
+            return ThreeStatementResult(symbol=symbol, error=f"三表模型分析异常: {str(e)}")
 
     def _load_historical_baseline(self, stock) -> Dict[str, Any]:
         """从真实历史报表提取三表模型起始基数，避免使用 per-share 字段。"""
@@ -186,47 +182,75 @@ class ThreeStatementModel:
         income_col = income.columns[0]
         bs_col = balance_sheet.columns[0]
 
-        revenue = self._get_statement_value(income, income_col, ["Total Revenue", "Operating Revenue"])
+        revenue = self._get_statement_value(
+            income, income_col, ["Total Revenue", "Operating Revenue"]
+        )
         total_assets = self._get_statement_value(
             balance_sheet,
             bs_col,
             ["Total Assets"],
         )
-        total_debt = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Total Debt", "Current Debt And Capital Lease Obligation", "Long Term Debt And Capital Lease Obligation"],
-        ) or 0.0
+        total_debt = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                [
+                    "Total Debt",
+                    "Current Debt And Capital Lease Obligation",
+                    "Long Term Debt And Capital Lease Obligation",
+                ],
+            )
+            or 0.0
+        )
         total_equity = self._get_statement_value(
             balance_sheet,
             bs_col,
             ["Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"],
         )
-        accounts_receivable = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Accounts Receivable", "Receivables", "Net Receivables"],
-        ) or 0.0
-        inventory = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Inventory", "Finished Goods", "Raw Materials"],
-        ) or 0.0
-        accounts_payable = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Accounts Payable", "Payables And Accrued Expenses", "Payables"],
-        ) or 0.0
-        ppe = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Net PPE", "Gross PPE", "Property Plant Equipment"],
-        ) or 0.0
-        cash = self._get_statement_value(
-            balance_sheet,
-            bs_col,
-            ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments", "Cash"],
-        ) or 0.0
+        accounts_receivable = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                ["Accounts Receivable", "Receivables", "Net Receivables"],
+            )
+            or 0.0
+        )
+        inventory = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                ["Inventory", "Finished Goods", "Raw Materials"],
+            )
+            or 0.0
+        )
+        accounts_payable = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                ["Accounts Payable", "Payables And Accrued Expenses", "Payables"],
+            )
+            or 0.0
+        )
+        ppe = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                ["Net PPE", "Gross PPE", "Property Plant Equipment"],
+            )
+            or 0.0
+        )
+        cash = (
+            self._get_statement_value(
+                balance_sheet,
+                bs_col,
+                [
+                    "Cash And Cash Equivalents",
+                    "Cash Cash Equivalents And Short Term Investments",
+                    "Cash",
+                ],
+            )
+            or 0.0
+        )
 
         if revenue is None or total_assets is None or total_equity is None:
             raise ValueError("历史财务报表字段不完整")
@@ -522,15 +546,11 @@ class ThreeStatementModel:
             dividend = abs(first_cf["dividend"])
             # ending_equity = beginning_equity + NI - Div
             # => beginning_equity = ending_equity - NI + Div
-            prev_equity = max(
-                first_bs["total_equity"] - first_income["net_income"] + dividend, 0
-            )
+            prev_equity = max(first_bs["total_equity"] - first_income["net_income"] + dividend, 0)
         else:
             prev_equity = 0
 
-        for i, (income, bs, cf) in enumerate(
-            zip(income_statements, balance_sheets, cash_flows)
-        ):
+        for i, (income, bs, cf) in enumerate(zip(income_statements, balance_sheets, cash_flows)):
             # 1. 资产负债表平衡检查
             bs_diff = abs(bs["balance_check"])
             details["bs_check_values"].append(round(bs_diff, 4))
@@ -601,9 +621,7 @@ class ThreeStatementModel:
             cash + latest_bs["accounts_receivable"] + latest_bs["inventory"],
         )
         current_liabilities = latest_bs["accounts_payable"] + debt * 0.3
-        current_ratio = (
-            current_assets / current_liabilities if current_liabilities > 0 else 0
-        )
+        current_ratio = current_assets / current_liabilities if current_liabilities > 0 else 0
 
         return {
             "revenue": round(revenue, 2),

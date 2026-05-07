@@ -27,7 +27,6 @@ from tenacity import (
 from ..base import BaseStockDataSource
 from ..realtime_types import UnifiedRealtimeQuote, RealtimeSource
 
-
 logger = logging.getLogger(__name__)
 
 # 默认通达信行情服务器列表

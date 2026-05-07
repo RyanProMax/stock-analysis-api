@@ -107,7 +107,11 @@ class DailyDataReadService:
             return df
 
         df[date_col] = BaseStockDataSource._normalize_datetime_series(df[date_col])
-        df = df.dropna(subset=[date_col]).sort_values(date_col, ascending=True).reset_index(drop=True)
+        df = (
+            df.dropna(subset=[date_col])
+            .sort_values(date_col, ascending=True)
+            .reset_index(drop=True)
+        )
         if df.empty:
             return df
 

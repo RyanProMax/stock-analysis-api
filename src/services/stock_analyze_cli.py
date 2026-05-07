@@ -13,7 +13,6 @@ from ..api.schemas import StandardResponse
 from .stock_analyze_service import StockAnalyzeService, stock_analyze_service
 from .symbol_catalog_service import symbol_catalog_service
 
-
 CN_SYMBOL_PATTERN = re.compile(r"\d{6}")
 US_SYMBOL_PATTERN = re.compile(r"[A-Z][A-Z0-9.-]{0,9}")
 

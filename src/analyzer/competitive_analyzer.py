@@ -148,21 +148,17 @@ class CompetitiveAnalyzer:
                 market_context=self._analyze_market_context(target_info, industry),
                 target_profile=self._format_target_profile(target_info),
                 competitors=competitor_profiles,
-                positioning=self._generate_positioning(
-                    target_info, competitor_metrics, industry
-                ),
-                comparative=self._generate_comparative(
-                    target_info, competitor_metrics, industry
-                ),
+                positioning=self._generate_positioning(target_info, competitor_metrics, industry),
+                comparative=self._generate_comparative(target_info, competitor_metrics, industry),
                 moat_assessment=self._assess_moat(target_info, competitor_metrics),
-                industry_metrics=self._calculate_industry_metrics(target_info, competitor_metrics, industry),
+                industry_metrics=self._calculate_industry_metrics(
+                    target_info, competitor_metrics, industry
+                ),
                 scenario_analysis=self._analyze_scenarios(target_info, competitor_metrics),
             )
 
         except Exception as e:
-            return CompetitiveAnalysisResult(
-                symbol=symbol, error=f"竞争分析异常: {str(e)}"
-            )
+            return CompetitiveAnalysisResult(symbol=symbol, error=f"竞争分析异常: {str(e)}")
 
     def _get_company_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """获取公司信息"""
@@ -308,9 +304,7 @@ class CompetitiveAnalyzer:
                 "methodology": "estimated as market_cap * 5 heuristic",
                 "derived_from": "target company marketCap",
             },
-            "key_metrics": self.INDUSTRY_METRICS.get(
-                industry, ["revenue", "growth", "margin"]
-            ),
+            "key_metrics": self.INDUSTRY_METRICS.get(industry, ["revenue", "growth", "margin"]),
             "market_position": self._get_market_position(market_cap),
         }
 
@@ -338,9 +332,7 @@ class CompetitiveAnalyzer:
         companies = [{"name": target.get("symbol"), **target}] + competitors
 
         # 按市值和增长排序
-        companies_sorted = sorted(
-            companies, key=lambda x: x.get("marketCap", 0), reverse=True
-        )
+        companies_sorted = sorted(companies, key=lambda x: x.get("marketCap", 0), reverse=True)
 
         # 生成 quadrant 数据
         quadrants = {
@@ -350,12 +342,8 @@ class CompetitiveAnalyzer:
             "underperformers": [],  # 高市值低增长
         }
 
-        median_growth = sorted([c.get("revenueGrowth", 0) for c in companies])[
-            len(companies) // 2
-        ]
-        median_mcap = sorted([c.get("marketCap", 0) for c in companies])[
-            len(companies) // 2
-        ]
+        median_growth = sorted([c.get("revenueGrowth", 0) for c in companies])[len(companies) // 2]
+        median_mcap = sorted([c.get("marketCap", 0) for c in companies])[len(companies) // 2]
 
         for c in companies_sorted:
             symbol = c.get("symbol")
@@ -429,7 +417,9 @@ class CompetitiveAnalyzer:
 
         return {"comparison_table": rows}
 
-    def _assess_moat(self, target: Dict[str, Any], competitors: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _assess_moat(
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """评估护城河"""
         # 基于财务指标简化评估
         gross_margin = target.get("grossMargins", 0)
@@ -441,9 +431,7 @@ class CompetitiveAnalyzer:
             "network_effects": self._score_network_effects(target),
             "switching_costs": self._score_switching_costs(target),
             "scale_economies": self._score_scale(market_cap, target.get("revenue", 0)),
-            "intangible_assets": self._score_intangibles(
-                gross_margin, operating_margin
-            ),
+            "intangible_assets": self._score_intangibles(gross_margin, operating_margin),
         }
 
         # 总体评估
@@ -451,11 +439,7 @@ class CompetitiveAnalyzer:
 
         return {
             "scores": moat_scores,
-            "overall": (
-                "Strong"
-                if avg_score > 0.7
-                else "Moderate" if avg_score > 0.4 else "Weak"
-            ),
+            "overall": ("Strong" if avg_score > 0.7 else "Moderate" if avg_score > 0.4 else "Weak"),
             "key_strengths": self._identify_strengths(moat_scores),
             "key_weaknesses": self._identify_weaknesses(moat_scores),
             "risk_factors": self._identify_risks(target, competitors),
@@ -526,7 +510,9 @@ class CompetitiveAnalyzer:
             weaknesses.append("利润率低于同行")
         return weaknesses or ["无明显劣势"]
 
-    def _identify_risks(self, target: Dict[str, Any], competitors: List[Dict[str, Any]]) -> List[str]:
+    def _identify_risks(
+        self, target: Dict[str, Any], competitors: List[Dict[str, Any]]
+    ) -> List[str]:
         """识别风险"""
         risks = []
 
@@ -579,54 +565,64 @@ class CompetitiveAnalyzer:
             growth = target.get("revenueGrowth", 0)
             margin = target.get("profitMargins", 0)
             rule_of_40 = (growth + margin) if growth and margin else 0
-            metrics.update({
-                "arr": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
-                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
-                "net_margin": f"{margin * 100:.1f}%" if margin else "N/A",
-                "rule_of_40": f"{rule_of_40 * 100:.1f}%" if rule_of_40 else "N/A",
-                "note": "ARR estimated as annual revenue; Rule of 40 = growth% + profit margin%",
-            })
+            metrics.update(
+                {
+                    "arr": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                    "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                    "net_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                    "rule_of_40": f"{rule_of_40 * 100:.1f}%" if rule_of_40 else "N/A",
+                    "note": "ARR estimated as annual revenue; Rule of 40 = growth% + profit margin%",
+                }
+            )
         elif industry == "payments":
             revenue = target.get("revenue", 0)
             gross_margin = target.get("grossMargins", 0)
             # take rate = revenue / GMV (GPV 需要额外数据源)
-            metrics.update({
-                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
-                "gross_margin": f"{gross_margin * 100:.1f}%" if gross_margin else "N/A",
-                "take_rate": "N/A (requires GPV data)",
-                "note": "Take rate requires Gross Payment Volume from filings",
-            })
+            metrics.update(
+                {
+                    "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                    "gross_margin": f"{gross_margin * 100:.1f}%" if gross_margin else "N/A",
+                    "take_rate": "N/A (requires GPV data)",
+                    "note": "Take rate requires Gross Payment Volume from filings",
+                }
+            )
         elif industry == "marketplace":
             revenue = target.get("revenue", 0)
             growth = target.get("revenueGrowth", 0)
-            metrics.update({
-                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
-                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
-                "gmv": "N/A (requires GMV data)",
-                "take_rate": "N/A",
-                "note": "GMV requires marketplace-specific data from filings",
-            })
+            metrics.update(
+                {
+                    "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                    "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                    "gmv": "N/A (requires GMV data)",
+                    "take_rate": "N/A",
+                    "note": "GMV requires marketplace-specific data from filings",
+                }
+            )
         elif industry == "retail":
             revenue = target.get("revenue", 0)
             margin = target.get("grossMargins", 0)
-            metrics.update({
-                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
-                "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
-                "same_store_sales": "N/A",
-                "note": "Same-store sales requires historical store count data",
-            })
+            metrics.update(
+                {
+                    "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                    "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                    "same_store_sales": "N/A",
+                    "note": "Same-store sales requires historical store count data",
+                }
+            )
         else:
             # technology / 默认
             revenue = target.get("revenue", 0)
             growth = target.get("revenueGrowth", 0)
             margin = target.get("grossMargins", 0)
             rd = target.get("rAndD", 0)
-            metrics.update({
-                "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
-                "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
-                "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
-                "rd_spending": f"${rd / 1e9:.1f}B" if rd else "N/A",
-            })
+            metrics.update(
+                {
+                    "revenue": f"${revenue / 1e9:.1f}B" if revenue > 0 else "N/A",
+                    "revenue_growth": f"{growth * 100:.1f}%" if growth else "N/A",
+                    "gross_margin": f"{margin * 100:.1f}%" if margin else "N/A",
+                    "rd_spending": f"${rd / 1e9:.1f}B" if rd else "N/A",
+                }
+            )
 
         return metrics
 
@@ -649,14 +645,12 @@ class CompetitiveAnalyzer:
             # Bull: 估值扩张 (P/E +30%), 增长加速 (+50%)
             bull_pe = pe * 1.3
             bull_growth_adj = 1.5
-            bull_target = (target.get("forwardEPS", current_price / pe) *
-                           bull_pe * bull_growth_adj)
+            bull_target = target.get("forwardEPS", current_price / pe) * bull_pe * bull_growth_adj
             # Base: 估值不变, 增长持平
             base_target = current_price * (1 + (growth or 0))
             # Bear: 估值压缩 (P/E -30%), 增长放缓 (-50%)
             bear_pe = pe * 0.7
-            bear_target = (target.get("forwardEPS", current_price / pe) *
-                           bear_pe * 0.5)
+            bear_target = target.get("forwardEPS", current_price / pe) * bear_pe * 0.5
         else:
             bull_target = base_target = bear_target = 0
 
@@ -672,7 +666,11 @@ class CompetitiveAnalyzer:
             },
             "base": {
                 "target_price": f"${base_target:.0f}" if base_target > 0 else "N/A",
-                "upside": f"+{(base_target / current_price - 1) * 100:.0f}%" if current_price > 0 else "N/A",
+                "upside": (
+                    f"+{(base_target / current_price - 1) * 100:.0f}%"
+                    if current_price > 0
+                    else "N/A"
+                ),
                 "drivers": "按预期增长，估值维持",
                 "probability": "55%",
             },

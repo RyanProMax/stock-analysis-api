@@ -19,7 +19,6 @@ from ..model import (
     PercentileAnalysis,
 )
 
-
 # 行业映射 - 用于查找可比公司
 INDUSTRY_COMPS: Dict[str, List[str]] = {
     "Technology": [

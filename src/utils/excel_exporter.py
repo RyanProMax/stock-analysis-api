@@ -20,17 +20,25 @@ from ..model import CompsResult, DCFResult
 
 # ==================== 颜色规范 ====================
 # 字体颜色 (区分输入/公式/链接)
-FONT_BLUE = Font(color="0000FF", size=10)      # 硬编码输入
-FONT_BLACK = Font(color="000000", size=10)     # 计算公式
-FONT_PURPLE = Font(color="800080", size=10)   # 同表链接
-FONT_GREEN = Font(color="008000", size=10)     # 跨表链接
+FONT_BLUE = Font(color="0000FF", size=10)  # 硬编码输入
+FONT_BLACK = Font(color="000000", size=10)  # 计算公式
+FONT_PURPLE = Font(color="800080", size=10)  # 同表链接
+FONT_GREEN = Font(color="008000", size=10)  # 跨表链接
 
 # 填充颜色
 HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")  # 深蓝表头
-COLUMN_HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")  # 浅蓝列头
-STATISTICS_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")  # 灰色统计
-INPUT_CELL_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")  # 浅灰输入
-KEY_OUTPUT_FILL = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")  # 中蓝关键输出
+COLUMN_HEADER_FILL = PatternFill(
+    start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
+)  # 浅蓝列头
+STATISTICS_FILL = PatternFill(
+    start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
+)  # 灰色统计
+INPUT_CELL_FILL = PatternFill(
+    start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
+)  # 浅灰输入
+KEY_OUTPUT_FILL = PatternFill(
+    start_color="BDD7EE", end_color="BDD7EE", fill_type="solid"
+)  # 中蓝关键输出
 
 # 字体
 HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
@@ -337,11 +345,31 @@ class CompsExcelExporter:
             cell.border = THIN_BORDER
 
         metrics = [
-            ("Revenue ($M)", result.operating_metrics.revenue_avg, result.operating_metrics.revenue_median),
-            ("Revenue Growth (%)", result.operating_metrics.growth_avg * 100, result.operating_metrics.growth_median * 100),
-            ("Gross Margin (%)", result.operating_metrics.gross_margin_avg * 100, result.operating_metrics.gross_margin_median * 100),
-            ("EBITDA Margin (%)", result.operating_metrics.ebitda_margin_avg * 100, result.operating_metrics.ebitda_margin_median * 100),
-            ("FCF Margin (%)", result.operating_metrics.fcf_margin_avg * 100, result.operating_metrics.fcf_margin_median * 100),
+            (
+                "Revenue ($M)",
+                result.operating_metrics.revenue_avg,
+                result.operating_metrics.revenue_median,
+            ),
+            (
+                "Revenue Growth (%)",
+                result.operating_metrics.growth_avg * 100,
+                result.operating_metrics.growth_median * 100,
+            ),
+            (
+                "Gross Margin (%)",
+                result.operating_metrics.gross_margin_avg * 100,
+                result.operating_metrics.gross_margin_median * 100,
+            ),
+            (
+                "EBITDA Margin (%)",
+                result.operating_metrics.ebitda_margin_avg * 100,
+                result.operating_metrics.ebitda_margin_median * 100,
+            ),
+            (
+                "FCF Margin (%)",
+                result.operating_metrics.fcf_margin_avg * 100,
+                result.operating_metrics.fcf_margin_median * 100,
+            ),
         ]
 
         row = 4
@@ -377,9 +405,21 @@ class CompsExcelExporter:
             ("P/E", result.valuation_multiples.pe_avg, result.valuation_multiples.pe_median),
             ("P/S", result.valuation_multiples.ps_avg, result.valuation_multiples.ps_median),
             ("P/B", result.valuation_multiples.pb_avg, result.valuation_multiples.pb_median),
-            ("EV/EBITDA", result.valuation_multiples.ev_ebitda_avg, result.valuation_multiples.ev_ebitda_median),
-            ("EV/Revenue", result.valuation_multiples.ev_revenue_avg, result.valuation_multiples.ev_revenue_median),
-            ("EV/FCF", result.valuation_multiples.ev_fcf_avg, result.valuation_multiples.ev_fcf_median),
+            (
+                "EV/EBITDA",
+                result.valuation_multiples.ev_ebitda_avg,
+                result.valuation_multiples.ev_ebitda_median,
+            ),
+            (
+                "EV/Revenue",
+                result.valuation_multiples.ev_revenue_avg,
+                result.valuation_multiples.ev_revenue_median,
+            ),
+            (
+                "EV/FCF",
+                result.valuation_multiples.ev_fcf_avg,
+                result.valuation_multiples.ev_fcf_median,
+            ),
         ]
 
         row = 4
@@ -458,10 +498,30 @@ class CompsExcelExporter:
             cell.border = THIN_BORDER
 
         percentiles = [
-            ("P/E", result.percentiles.pe_25th, result.percentiles.pe_50th, result.percentiles.pe_75th),
-            ("P/S", result.percentiles.ps_25th, result.percentiles.ps_50th, result.percentiles.ps_75th),
-            ("P/B", result.percentiles.pb_25th, result.percentiles.pb_50th, result.percentiles.pb_75th),
-            ("EV/EBITDA", result.percentiles.ev_ebitda_25th, result.percentiles.ev_ebitda_50th, result.percentiles.ev_ebitda_75th),
+            (
+                "P/E",
+                result.percentiles.pe_25th,
+                result.percentiles.pe_50th,
+                result.percentiles.pe_75th,
+            ),
+            (
+                "P/S",
+                result.percentiles.ps_25th,
+                result.percentiles.ps_50th,
+                result.percentiles.ps_75th,
+            ),
+            (
+                "P/B",
+                result.percentiles.pb_25th,
+                result.percentiles.pb_50th,
+                result.percentiles.pb_75th,
+            ),
+            (
+                "EV/EBITDA",
+                result.percentiles.ev_ebitda_25th,
+                result.percentiles.ev_ebitda_50th,
+                result.percentiles.ev_ebitda_75th,
+            ),
         ]
 
         row = 5
@@ -489,9 +549,24 @@ class CompsExcelExporter:
         row += 1
 
         operating = [
-            ("Revenue Growth (%)", result.percentiles.revenue_growth_25th * 100, result.percentiles.revenue_growth_50th * 100, result.percentiles.revenue_growth_75th * 100),
-            ("Gross Margin (%)", result.percentiles.gross_margin_25th * 100, result.percentiles.gross_margin_50th * 100, result.percentiles.gross_margin_75th * 100),
-            ("EBITDA Margin (%)", result.percentiles.ebitda_margin_25th * 100, result.percentiles.ebitda_margin_50th * 100, result.percentiles.ebitda_margin_75th * 100),
+            (
+                "Revenue Growth (%)",
+                result.percentiles.revenue_growth_25th * 100,
+                result.percentiles.revenue_growth_50th * 100,
+                result.percentiles.revenue_growth_75th * 100,
+            ),
+            (
+                "Gross Margin (%)",
+                result.percentiles.gross_margin_25th * 100,
+                result.percentiles.gross_margin_50th * 100,
+                result.percentiles.gross_margin_75th * 100,
+            ),
+            (
+                "EBITDA Margin (%)",
+                result.percentiles.ebitda_margin_25th * 100,
+                result.percentiles.ebitda_margin_50th * 100,
+                result.percentiles.ebitda_margin_75th * 100,
+            ),
         ]
 
         for name, p25, p50, p75 in operating:
@@ -551,7 +626,10 @@ class CompsExcelExporter:
         row += 1
 
         methodologies = [
-            ("Peer Group:", f"Selected {len(result.comps)} comparable companies in {result.sector}"),
+            (
+                "Peer Group:",
+                f"Selected {len(result.comps)} comparable companies in {result.sector}",
+            ),
             ("Valuation Method:", "Trading multiples analysis"),
             ("Metrics Used:", "P/E, P/S, P/B, EV/EBITDA, EV/Revenue"),
             ("Statistics:", "25th/50th/75th percentile analysis"),
@@ -792,7 +870,11 @@ class DCFExcelExporter:
         ws["A16"].fill = COLUMN_HEADER_FILL
 
         ws["A17"] = "Shares Outstanding:"
-        ws["B17"] = result.wacc_components.market_cap / result.current_price if result.current_price > 0 else 0
+        ws["B17"] = (
+            result.wacc_components.market_cap / result.current_price
+            if result.current_price > 0
+            else 0
+        )
         ws["B17"].number_format = "#,##0"
         ws["B17"].font = FONT_BLUE
         ws["B17"].fill = INPUT_CELL_FILL
@@ -1135,7 +1217,9 @@ class DCFExcelExporter:
 
         # 矩阵2: Revenue Growth vs EBITDA Margin
         row_offset = len(sens.wacc_values) + 8
-        ws.cell(row=row_offset, column=1, value="2. Revenue Growth vs EBITDA Margin").font = SUBTITLE_FONT
+        ws.cell(row=row_offset, column=1, value="2. Revenue Growth vs EBITDA Margin").font = (
+            SUBTITLE_FONT
+        )
         ws.cell(row=row_offset, column=1).fill = COLUMN_HEADER_FILL
 
         headers2 = ["Growth \\ Margin"] + [f"{m*100:.1f}%" for m in sens.ebitda_margin_values]
@@ -1147,7 +1231,9 @@ class DCFExcelExporter:
             cell.alignment = CENTER_ALIGN
 
         for row_idx, growth_val in enumerate(sens.revenue_growth_values):
-            ws.cell(row=row_offset + 2 + row_idx, column=1, value=f"{growth_val * 100:.1f}%").border = THIN_BORDER
+            ws.cell(
+                row=row_offset + 2 + row_idx, column=1, value=f"{growth_val * 100:.1f}%"
+            ).border = THIN_BORDER
             ws.cell(row=row_offset + 2 + row_idx, column=1).font = FONT_BLUE
 
             for col_idx, price in enumerate(sens.price_matrix_growth_margin[row_idx]):
@@ -1170,7 +1256,9 @@ class DCFExcelExporter:
             cell.alignment = CENTER_ALIGN
 
         for row_idx, multiple_val in enumerate(sens.exit_multiple_values):
-            ws.cell(row=row_offset2 + 2 + row_idx, column=1, value=f"{multiple_val:.1f}x").border = THIN_BORDER
+            ws.cell(
+                row=row_offset2 + 2 + row_idx, column=1, value=f"{multiple_val:.1f}x"
+            ).border = THIN_BORDER
             ws.cell(row=row_offset2 + 2 + row_idx, column=1).font = FONT_BLUE
 
             for col_idx, price in enumerate(sens.price_matrix_multiple_wacc[row_idx]):

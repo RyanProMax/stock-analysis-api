@@ -14,7 +14,6 @@ import requests
 from ..base import BaseStockDataSource
 from ...model.contracts import normalize_percent_to_ratio, select_latest_metric_column
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -212,16 +211,20 @@ class AkShareDataSource(BaseStockDataSource):
                                 financial_data["debt_ratio"] = float(latest_value)
                         raw_data["financial_abstract_common_meta"] = {
                             "latest_metric_column": latest_metric_col,
-                            "roe_ratio": normalize_percent_to_ratio(
-                                cls._coerce_metric_value(roe_row.iloc[0][latest_metric_col])
-                            )
-                            if len(roe_row) > 0 and latest_metric_col is not None
-                            else None,
-                            "debt_to_assets_ratio": normalize_percent_to_ratio(
-                                cls._coerce_metric_value(debt_row.iloc[0][latest_metric_col])
-                            )
-                            if len(debt_row) > 0 and latest_metric_col is not None
-                            else None,
+                            "roe_ratio": (
+                                normalize_percent_to_ratio(
+                                    cls._coerce_metric_value(roe_row.iloc[0][latest_metric_col])
+                                )
+                                if len(roe_row) > 0 and latest_metric_col is not None
+                                else None
+                            ),
+                            "debt_to_assets_ratio": (
+                                normalize_percent_to_ratio(
+                                    cls._coerce_metric_value(debt_row.iloc[0][latest_metric_col])
+                                )
+                                if len(debt_row) > 0 and latest_metric_col is not None
+                                else None
+                            ),
                         }
 
                     # 营收增长率
@@ -250,15 +253,15 @@ class AkShareDataSource(BaseStockDataSource):
                         raw_data["financial_abstract_growth_meta"] = {
                             "latest_metric_column": latest_growth_col,
                             "matched_metric": (
-                                revenue_row.iloc[0]["指标"]
-                                if len(revenue_row) > 0
+                                revenue_row.iloc[0]["指标"] if len(revenue_row) > 0 else None
+                            ),
+                            "revenue_growth_ratio": (
+                                normalize_percent_to_ratio(
+                                    cls._coerce_metric_value(revenue_row.iloc[0][latest_growth_col])
+                                )
+                                if len(revenue_row) > 0 and latest_growth_col is not None
                                 else None
                             ),
-                            "revenue_growth_ratio": normalize_percent_to_ratio(
-                                cls._coerce_metric_value(revenue_row.iloc[0][latest_growth_col])
-                            )
-                            if len(revenue_row) > 0 and latest_growth_col is not None
-                            else None,
                         }
 
             except Exception as e:

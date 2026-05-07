@@ -116,7 +116,9 @@ def sync_market_data():
             flush=True,
         )
 
-    parser = argparse.ArgumentParser(description="Sync market data into the local SQLite warehouse.")
+    parser = argparse.ArgumentParser(
+        description="Sync market data into the local SQLite warehouse."
+    )
     parser.add_argument("--market", choices=["cn", "us"], required=True)
     parser.add_argument("--scope", choices=["all", "symbol"], default="all")
     parser.add_argument("--symbol")

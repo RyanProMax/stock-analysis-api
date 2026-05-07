@@ -124,7 +124,9 @@ class MarketDataRepository:
     def __init__(self, db_path: Optional[str] = None):
         cache_root = os.environ.get("CACHE_DIR") or ".cache"
         self.db_path = Path(
-            db_path or os.environ.get("MARKET_DATA_DB_PATH") or (Path(cache_root) / "market_data.sqlite")
+            db_path
+            or os.environ.get("MARKET_DATA_DB_PATH")
+            or (Path(cache_root) / "market_data.sqlite")
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
@@ -147,8 +149,7 @@ class MarketDataRepository:
 
     def initialize(self) -> None:
         with self.connect() as conn:
-            conn.executescript(
-                """
+            conn.executescript("""
                 DROP INDEX IF EXISTS idx_daily_bars_symbol_date;
                 DROP INDEX IF EXISTS idx_a_share_daily_symbol_date;
                 DROP TABLE IF EXISTS daily_bars;
@@ -304,8 +305,7 @@ class MarketDataRepository:
                     daily_row_count INTEGER,
                     is_data_current INTEGER
                 );
-                """
-            )
+                """)
             self._ensure_columns(
                 conn,
                 "cn_symbols",
@@ -460,7 +460,9 @@ class MarketDataRepository:
         table = self._symbols_table(normalized_market)
         with self.connect() as conn:
             existing_summaries = {
-                str(row["symbol"]).strip().upper(): {
+                str(row["symbol"])
+                .strip()
+                .upper(): {
                     "daily_start_date": row["daily_start_date"],
                     "daily_end_date": row["daily_end_date"],
                 }
@@ -503,7 +505,11 @@ class MarketDataRepository:
         if date_col not in df.columns:
             return 0
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df = df.dropna(subset=[date_col]).sort_values(date_col, ascending=True).reset_index(drop=True)
+        df = (
+            df.dropna(subset=[date_col])
+            .sort_values(date_col, ascending=True)
+            .reset_index(drop=True)
+        )
         if df.empty:
             return 0
 
@@ -730,7 +736,9 @@ class MarketDataRepository:
         payload: list[tuple[Any, ...]] = []
         for row in daily_basic_df.to_dict("records"):
             ts_code = str(row.get("ts_code") or "").strip().upper()
-            symbol = str(row.get("symbol") or ts_code.split(".")[0] if ts_code else "").strip().upper()
+            symbol = (
+                str(row.get("symbol") or ts_code.split(".")[0] if ts_code else "").strip().upper()
+            )
             trade_date = self._normalize_trade_date(row.get("trade_date") or row.get("date"))
             if not symbol or not trade_date:
                 continue
@@ -784,8 +792,7 @@ class MarketDataRepository:
         markets = [self._normalize_market(market)] if market else ["cn", "us"]
         with self.connect() as conn:
             for normalized_market in markets:
-                conn.execute(
-                    f"""
+                conn.execute(f"""
                     UPDATE {self._symbols_table(normalized_market)}
                     SET daily_start_date = (
                             SELECT MIN(d.trade_date)
@@ -797,10 +804,11 @@ class MarketDataRepository:
                             FROM {self._daily_table(normalized_market)} d
                             WHERE d.symbol = {self._symbols_table(normalized_market)}.symbol
                         )
-                    """
-                )
+                    """)
 
-    def get_symbol_record(self, symbol: str, market: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_symbol_record(
+        self, symbol: str, market: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         normalized_symbol = str(symbol).strip().upper()
         normalized_market = self._normalize_market(market or normalized_symbol)
         with self.connect() as conn:
@@ -893,15 +901,13 @@ class MarketDataRepository:
     def get_symbol_snapshot_meta(self, market: str) -> Dict[str, Any]:
         normalized_market = self._normalize_market(market)
         with self.connect() as conn:
-            row = conn.execute(
-                f"""
+            row = conn.execute(f"""
                 SELECT
                     COUNT(*) AS symbol_count,
                     MIN(updated_at) AS min_updated_at,
                     MAX(updated_at) AS max_updated_at
                 FROM {self._symbols_table(normalized_market)}
-                """
-            ).fetchone()
+                """).fetchone()
         if row is None:
             return {"symbol_count": 0, "min_updated_at": None, "max_updated_at": None}
         return {
@@ -1045,7 +1051,14 @@ class MarketDataRepository:
                 SET processed_count = ?, skipped_count = ?, success_count = ?, failure_count = ?, rows_written = ?
                 WHERE id = ?
                 """,
-                (processed_count, skipped_count, success_count, failure_count, rows_written, run_id),
+                (
+                    processed_count,
+                    skipped_count,
+                    success_count,
+                    failure_count,
+                    rows_written,
+                    run_id,
+                ),
             )
 
     def summarize_market_sync_state(
@@ -1060,21 +1073,17 @@ class MarketDataRepository:
         daily_table = self._daily_table(normalized_market)
 
         with self.connect() as conn:
-            symbol_row = conn.execute(
-                f"""
+            symbol_row = conn.execute(f"""
                 SELECT COUNT(*) AS symbol_snapshot_count, MAX(updated_at) AS symbol_snapshot_updated_at
                 FROM {symbols_table}
-                """
-            ).fetchone()
-            coverage_row = conn.execute(
-                f"""
+                """).fetchone()
+            coverage_row = conn.execute(f"""
                 SELECT
                     MIN(trade_date) AS coverage_start_date,
                     MAX(trade_date) AS coverage_end_date,
                     COUNT(*) AS daily_row_count
                 FROM {daily_table}
-                """
-            ).fetchone()
+                """).fetchone()
 
             if start_trade_date:
                 covered_row = conn.execute(
@@ -1096,22 +1105,21 @@ class MarketDataRepository:
                 covered_row = conn.execute(
                     f"SELECT COUNT(DISTINCT symbol) AS covered_symbol_count FROM {daily_table}"
                 ).fetchone()
-                missing_row = conn.execute(
-                    f"""
+                missing_row = conn.execute(f"""
                     SELECT COUNT(*) AS missing_symbol_count
                     FROM {symbols_table} s
                     LEFT JOIN (
                         SELECT DISTINCT symbol FROM {daily_table}
                     ) d ON d.symbol = s.symbol
                     WHERE d.symbol IS NULL
-                    """
-                ).fetchone()
+                    """).fetchone()
 
             stale_count = 0
             if target_latest_trade_date:
                 try:
                     stale_cutoff = (
-                        pd.Timestamp(target_latest_trade_date) - pd.Timedelta(days=self.STALE_GRACE_DAYS)
+                        pd.Timestamp(target_latest_trade_date)
+                        - pd.Timedelta(days=self.STALE_GRACE_DAYS)
                     ).strftime("%Y-%m-%d")
                 except Exception:
                     stale_cutoff = target_latest_trade_date
@@ -1139,7 +1147,9 @@ class MarketDataRepository:
 
         has_required_history = True
         if start_trade_date:
-            has_required_history = coverage_start_date is not None and coverage_start_date <= start_trade_date
+            has_required_history = (
+                coverage_start_date is not None and coverage_start_date <= start_trade_date
+            )
 
         coverage_is_current = (
             target_latest_trade_date is None
@@ -1157,7 +1167,9 @@ class MarketDataRepository:
 
         return {
             "symbol_snapshot_count": symbol_snapshot_count,
-            "symbol_snapshot_updated_at": symbol_row["symbol_snapshot_updated_at"] if symbol_row else None,
+            "symbol_snapshot_updated_at": (
+                symbol_row["symbol_snapshot_updated_at"] if symbol_row else None
+            ),
             "target_latest_trade_date": target_latest_trade_date,
             "coverage_start_date": coverage_start_date,
             "coverage_end_date": coverage_end_date,
@@ -1206,11 +1218,7 @@ class MarketDataRepository:
     ) -> Dict[str, Dict[str, Any]]:
         normalized_market = self._normalize_market(market)
         normalized_symbols = sorted(
-            {
-                str(symbol).strip().upper()
-                for symbol in (symbols or [])
-                if str(symbol).strip()
-            }
+            {str(symbol).strip().upper() for symbol in (symbols or []) if str(symbol).strip()}
         )
         where_clause = ""
         params: list[Any] = []
@@ -1289,7 +1297,10 @@ class MarketDataRepository:
             return "cn"
         if text in {"us", "美股", "nasdaq", "nyse", "amex"}:
             return "us"
-        if any(ch.isalpha() for ch in str(value or "")) and str(value or "").strip().upper().isalpha():
+        if (
+            any(ch.isalpha() for ch in str(value or ""))
+            and str(value or "").strip().upper().isalpha()
+        ):
             return "us"
         return "cn"
 

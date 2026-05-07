@@ -4,7 +4,6 @@ from ...analyzer.normalizers import watch_poll_contract
 from ..deps import get_watch_polling_service
 from ..schemas import StandardResponse, StructuredInterfaceResponse, WatchPollRequest
 
-
 router = APIRouter()
 watch_polling_service = get_watch_polling_service()
 

@@ -77,7 +77,9 @@ class DailyDataWriteService:
             universe_source = f"{normalized_market.upper()}_TushareListedSnapshot"
             current_snapshot = self.repository.list_symbols(market=normalized_market)
             live_symbols = {str(row.get("symbol") or "").strip().upper() for row in live_snapshot}
-            current_symbols = {str(row.get("symbol") or "").strip().upper() for row in current_snapshot}
+            current_symbols = {
+                str(row.get("symbol") or "").strip().upper() for row in current_snapshot
+            }
             if live_snapshot and live_symbols != current_symbols:
                 self.repository.replace_symbols(live_snapshot, market=normalized_market)
             stocks = self._filter_daily_sync_universe(
@@ -86,7 +88,9 @@ class DailyDataWriteService:
             )
         else:
             universe_source = "symbol_request"
-            resolved = self.symbol_catalog.resolve_symbol(str(symbol or "").strip().upper(), market=normalized_market)
+            resolved = self.symbol_catalog.resolve_symbol(
+                str(symbol or "").strip().upper(), market=normalized_market
+            )
             stocks = [resolved] if resolved else []
             if resolved:
                 self.repository.upsert_symbols([resolved], market=normalized_market)
@@ -225,7 +229,10 @@ class DailyDataWriteService:
                 failure_count=0,
                 rows_written=0,
                 error_summary=None,
-                error_details={"reason": "data_current", "latest_run_id": latest_run.get("id") if latest_run else None},
+                error_details={
+                    "reason": "data_current",
+                    "latest_run_id": latest_run.get("id") if latest_run else None,
+                },
                 state_snapshot=state_after,
             )
             return {
@@ -394,7 +401,9 @@ class DailyDataWriteService:
         normalized_symbol = str(symbol).strip().upper()
         normalized_market = self._normalize_market(market)
         self._validate_window(days=days, years=years, start_date=start_date)
-        symbol_record = self.symbol_catalog.resolve_symbol(normalized_symbol, market=normalized_market)
+        symbol_record = self.symbol_catalog.resolve_symbol(
+            normalized_symbol, market=normalized_market
+        )
         if symbol_record:
             self.repository.upsert_symbols([symbol_record], market=normalized_market)
 
@@ -509,7 +518,9 @@ class DailyDataWriteService:
                 candidate_map[current_symbol] = stock
                 continue
 
-            daily_start_date = self._normalize_trade_date_text((stock or {}).get("daily_start_date"))
+            daily_start_date = self._normalize_trade_date_text(
+                (stock or {}).get("daily_start_date")
+            )
             daily_end_date = self._normalize_trade_date_text((stock or {}).get("daily_end_date"))
 
             if (
@@ -634,12 +645,7 @@ class DailyDataWriteService:
 
             batch_df = daily_basic_df.copy()
             batch_df["symbol"] = (
-                batch_df["ts_code"]
-                .astype(str)
-                .str.split(".")
-                .str[0]
-                .str.strip()
-                .str.upper()
+                batch_df["ts_code"].astype(str).str.split(".").str[0].str.strip().str.upper()
             )
             batch_df = batch_df[batch_df["symbol"].isin(target_symbols)]
             if batch_df.empty:
@@ -682,7 +688,9 @@ class DailyDataWriteService:
         error_summary = None
         error_summary_list: list[str] = []
         if remaining_symbols:
-            error_summary_list = [f"{symbol}:daily_basic_missing" for symbol in remaining_symbols[:20]]
+            error_summary_list = [
+                f"{symbol}:daily_basic_missing" for symbol in remaining_symbols[:20]
+            ]
             error_summary = "; ".join(error_summary_list)
             error_details = [
                 {"symbol": symbol, "status": "daily_basic_missing"}
@@ -818,7 +826,11 @@ class DailyDataWriteService:
                 latest_run.get("is_data_current")
             )
 
-        if latest_run is None or latest_run.get("status") != "completed" or int(latest_run.get("failure_count") or 0) != 0:
+        if (
+            latest_run is None
+            or latest_run.get("status") != "completed"
+            or int(latest_run.get("failure_count") or 0) != 0
+        ):
             return False
 
         stable_keys = (
@@ -878,7 +890,8 @@ class DailyDataWriteService:
             return None
         try:
             return (
-                pd.Timestamp(target_latest_trade_date) - pd.Timedelta(days=self.repository.STALE_GRACE_DAYS)
+                pd.Timestamp(target_latest_trade_date)
+                - pd.Timedelta(days=self.repository.STALE_GRACE_DAYS)
             ).strftime("%Y-%m-%d")
         except Exception:
             return target_latest_trade_date

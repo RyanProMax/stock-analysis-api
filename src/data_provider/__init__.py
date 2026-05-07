@@ -11,6 +11,7 @@
 from .manager import DataManager, data_manager
 from ..model.data_provider import DailyData, DailyDataCollection
 from .realtime_types import UnifiedRealtimeQuote, ChipDistribution, RealtimeSource
+
 __all__ = [
     "DataManager",
     "data_manager",

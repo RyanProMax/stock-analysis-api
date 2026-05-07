@@ -27,7 +27,6 @@ from tenacity import (
 from ..base import BaseStockDataSource
 from ..realtime_types import UnifiedRealtimeQuote
 
-
 logger = logging.getLogger(__name__)
 
 

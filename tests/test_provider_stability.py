@@ -110,9 +110,7 @@ class TestFinancialLoggingNoise:
 
 
 class TestWatchPollingCnLightMode:
-    def test_cn_snapshot_skips_heavy_financial_fetch_and_uses_quote_light_fields(
-        self, monkeypatch
-    ):
+    def test_cn_snapshot_skips_heavy_financial_fetch_and_uses_quote_light_fields(self, monkeypatch):
         from src.core.watch_polling import WatchPollingService
 
         service = WatchPollingService()

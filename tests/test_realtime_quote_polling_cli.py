@@ -196,7 +196,9 @@ class TestRealtimeQuotePollingCli:
 
     def test_missing_tushare_token_returns_failed_payload(self):
         service = RealtimeQuotePollingService(
-            get_pro=lambda: (_ for _ in ()).throw(RuntimeError("缺少 TUSHARE_TOKEN，请先在环境变量中配置。"))
+            get_pro=lambda: (_ for _ in ()).throw(
+                RuntimeError("缺少 TUSHARE_TOKEN，请先在环境变量中配置。")
+            )
         )
 
         exit_code, payload = _run_cli(service, "--symbols", "600000")

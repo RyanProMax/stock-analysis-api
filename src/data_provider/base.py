@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional, cast
 import pandas as pd
 from .realtime_types import UnifiedRealtimeQuote
 
-
 logger = logging.getLogger(__name__)
 
 

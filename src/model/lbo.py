@@ -148,16 +148,12 @@ class LBOResult:
                 "uses": {
                     "purchase_price": round(self.sources_and_uses.purchase_price, 2),
                     "financing_fees": round(self.sources_and_uses.financing_fees, 2),
-                    "transaction_fees": round(
-                        self.sources_and_uses.transaction_fees, 2
-                    ),
+                    "transaction_fees": round(self.sources_and_uses.transaction_fees, 2),
                     "total_uses": round(self.sources_and_uses.total_uses, 2),
                 },
                 "sources": {
                     "senior_debt": round(self.sources_and_uses.senior_debt, 2),
-                    "subordinated_debt": round(
-                        self.sources_and_uses.subordinated_debt, 2
-                    ),
+                    "subordinated_debt": round(self.sources_and_uses.subordinated_debt, 2),
                     "mezzanine_debt": round(self.sources_and_uses.mezzanine_debt, 2),
                     "total_debt": round(self.sources_and_uses.total_debt, 2),
                     "equity": round(self.sources_and_uses.equity, 2),

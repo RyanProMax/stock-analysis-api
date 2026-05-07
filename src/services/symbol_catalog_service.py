@@ -15,7 +15,6 @@ from ..data_provider.sources.nasdaq import NasdaqDataSource
 from ..data_provider.sources.tushare import TushareDataSource
 from ..repositories import MarketDataRepository, market_data_repository
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -153,10 +152,14 @@ class SymbolCatalogService:
                     merged = dict(row)
                     merged.update({k: v for k, v in enriched.items() if v not in (None, "")})
                     self.repository.upsert_symbols([merged], market=normalized_market)
-                    return self.repository.get_symbol_record(normalized_symbol, market=normalized_market)
+                    return self.repository.get_symbol_record(
+                        normalized_symbol, market=normalized_market
+                    )
             return row
 
-        matches = self.search_symbols(normalized_symbol, "美股" if normalized_market == "us" else "A股")
+        matches = self.search_symbols(
+            normalized_symbol, "美股" if normalized_market == "us" else "A股"
+        )
         for candidate in matches:
             if str(candidate.get("symbol") or "").strip().upper() == normalized_symbol:
                 return candidate

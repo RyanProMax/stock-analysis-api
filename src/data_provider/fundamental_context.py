@@ -45,7 +45,9 @@ def _non_empty_dict(value: Any) -> Optional[Dict[str, Any]]:
     return value if value else None
 
 
-def _block_data(fundamental_ctx: Optional[Dict[str, Any]], block_name: str) -> Optional[Dict[str, Any]]:
+def _block_data(
+    fundamental_ctx: Optional[Dict[str, Any]], block_name: str
+) -> Optional[Dict[str, Any]]:
     if not isinstance(fundamental_ctx, dict):
         return None
     block = fundamental_ctx.get(block_name)
@@ -241,18 +243,34 @@ def build_fundamental_context(
     if not isinstance(financial_data, dict):
         return build_market_not_supported_context(market, "financial data unavailable")
 
-    raw_data = financial_data.get("raw_data", {}) if isinstance(financial_data.get("raw_data"), dict) else {}
-    normalized_fields = raw_data.get("normalized_fields", {}) if isinstance(raw_data.get("normalized_fields"), dict) else {}
+    raw_data = (
+        financial_data.get("raw_data", {})
+        if isinstance(financial_data.get("raw_data"), dict)
+        else {}
+    )
+    normalized_fields = (
+        raw_data.get("normalized_fields", {})
+        if isinstance(raw_data.get("normalized_fields"), dict)
+        else {}
+    )
     info = raw_data.get("info", {}) if isinstance(raw_data.get("info"), dict) else {}
 
     valuation_payload = {}
     growth_payload = {}
     earnings_payload = {}
     institution_payload = {}
-    valuation_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
-    growth_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
-    earnings_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
-    institution_source = [_source_item("yfinance.info" if market == "us" else "financial_provider", "ok")]
+    valuation_source = [
+        _source_item("yfinance.info" if market == "us" else "financial_provider", "ok")
+    ]
+    growth_source = [
+        _source_item("yfinance.info" if market == "us" else "financial_provider", "ok")
+    ]
+    earnings_source = [
+        _source_item("yfinance.info" if market == "us" else "financial_provider", "ok")
+    ]
+    institution_source = [
+        _source_item("yfinance.info" if market == "us" else "financial_provider", "ok")
+    ]
 
     if market == "us":
         dividend_payload = normalized_fields.get("dividend_metrics", {})
@@ -352,7 +370,9 @@ def build_fundamental_context(
             "debt_to_assets": financial_data.get("debt_ratio"),
             "summary": _build_growth_summary(financial_data.get("revenue_growth"), None),
         }
-        income_meta = raw_data.get("income_meta", {}) if isinstance(raw_data.get("income_meta"), dict) else {}
+        income_meta = (
+            raw_data.get("income_meta", {}) if isinstance(raw_data.get("income_meta"), dict) else {}
+        )
         institution_payload = {}
         earnings_payload = {
             "financial_report": {
@@ -401,9 +421,15 @@ def build_fundamental_context(
             institution_source,
             [],
         ),
-        "capital_flow": build_fundamental_block("not_supported", {}, unsupported_chain, ["not implemented"]),
-        "dragon_tiger": build_fundamental_block("not_supported", {}, unsupported_chain, ["not implemented"]),
-        "boards": build_fundamental_block("not_supported", {}, unsupported_chain, ["not implemented"]),
+        "capital_flow": build_fundamental_block(
+            "not_supported", {}, unsupported_chain, ["not implemented"]
+        ),
+        "dragon_tiger": build_fundamental_block(
+            "not_supported", {}, unsupported_chain, ["not implemented"]
+        ),
+        "boards": build_fundamental_block(
+            "not_supported", {}, unsupported_chain, ["not implemented"]
+        ),
     }
 
     coverage = {name: block["status"] for name, block in blocks.items()}

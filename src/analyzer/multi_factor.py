@@ -231,9 +231,7 @@ class MultiFactorAnalyzer:
         volume_series = volume_series.ffill().fillna(0)
         volume_ma5 = float(volume_series.tail(5).mean())
         volume_ma20 = (
-            float(volume_series.tail(20).mean())
-            if len(volume_series) >= 20
-            else volume_ma5
+            float(volume_series.tail(20).mean()) if len(volume_series) >= 20 else volume_ma5
         )
 
         # --- 获取财务数据（基本面因子）---

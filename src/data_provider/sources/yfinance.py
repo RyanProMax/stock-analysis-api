@@ -20,7 +20,6 @@ from ...model.contracts import (
     format_ratio_as_percent,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

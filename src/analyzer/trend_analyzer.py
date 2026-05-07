@@ -31,7 +31,6 @@ from ..model.trend import (
     TrendAnalysisResult,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

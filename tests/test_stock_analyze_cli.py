@@ -235,10 +235,7 @@ class FakeAnalyzeService:
                 "end_date": kwargs.get("end_date"),
                 "mode": kwargs.get("mode"),
             },
-            "items": [
-                {"requested_symbol": symbol, "status": "ok"}
-                for symbol in kwargs["symbols"]
-            ],
+            "items": [{"requested_symbol": symbol, "status": "ok"} for symbol in kwargs["symbols"]],
         }
 
 
