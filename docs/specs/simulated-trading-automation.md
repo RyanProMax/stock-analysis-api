@@ -76,6 +76,24 @@
 - 未到执行间隔返回 `status=skipped / reason=not_due`。
 - 单轮执行拿不到调度锁时透传 `status=skipped / reason=lock_unavailable`。
 
+### 盘后总结与策略评审
+
+- 新增内部 CLI `scripts/trading_daily_summary.py`，只读 SQLite trading ledger，按交易日和时区汇总：
+  - `run_once` 执行次数、状态与请求。
+  - 当日 snapshot 的首末价格、变化比例和来源。
+  - dry-run order、broker result、risk decision 与拒绝原因计数。
+- 新增内部 CLI `scripts/trading_strategy_review.py`，只读 daily summary 并生成 ledger replay 指标：
+  - 当前 MVP 的回测口径为 `ledger_snapshot_replay`，即用 ledger 中已有 snapshot 和 dry-run order 做当日回放式评估。
+  - 后续接入历史 K 线或分钟线回测时，必须在输出中显式区分方法名，不能把 replay 指标伪装成完整历史回测。
+- `trading_strategy_review.py` 只输出结构化 `strategy_proposal`：
+  - `approval_required=true`
+  - `effective_status=candidate_only` 或 `not_applied`
+  - 不写策略配置、不改调度 state、不触发 broker。
+- 评审 gate 第一阶段至少包含：
+  - `--min-runs`
+  - `--max-rejection-rate`
+  - 是否具备可回放 snapshot
+
 ### Agent 参与点
 
 Agent 只在盘后或离线任务中消费：

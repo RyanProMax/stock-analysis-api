@@ -5,6 +5,7 @@
 ## 当前目标
 
 - 优先补齐模拟盘自动交易进入定时轮询前的高 ROI 基础能力：SQLite 持久化 ledger 与内部 dry-run `run_once` CLI
+- 补齐模拟盘盘后只读闭环 MVP：从 SQLite ledger 生成每日操作 / 行情摘要，并产出需要人工批准的结构化 `strategy_proposal`
 - 将 skill / agent 标准化 CLI 能力彻底收口到 `stock-analysis-api`
 - 新增内部 `poll_realtime_quotes` CLI，承接原 `stock-analysis-skill` 中的 A 股 / ETF 日内行情轮询逻辑
 - 保持 `scripts/stock_analyze.py` 继续作为唯一客观分析 CLI，不改公共 HTTP API
@@ -42,6 +43,9 @@
 - 已为 `trading_run_once.py` 增加默认 SQLite 调度锁；并发触发时返回 `status=skipped / reason=lock_unavailable`，不会继续读取行情或提交 dry-run broker。
 - 已新增 `scripts/trading_scheduler_tick.py`，作为 cron / launchd / Agent 高频调用入口；支持 active window、执行间隔、state key、`--force`，到点后复用 `trading_run_once.py`。
 - 已同步 `stock-analysis-skill` 对 dry-run 单轮执行和 scheduler tick 的路由说明；skill 只指向 API CLI，不放开真实交易、交易解锁或订阅能力。
+- 已新增 `scripts/trading_daily_summary.py`，只读 SQLite trading ledger 汇总当日 run、order、risk decision 和 snapshot 首末变化。
+- 已新增 `scripts/trading_strategy_review.py`，基于 ledger summary 输出 `ledger_snapshot_replay` 指标和需人工批准的结构化 `strategy_proposal`，不自动应用策略。
+- 已补充盘后真实脚本链路测试：`trading_run_once.py` 写 ledger 后，`trading_daily_summary.py` 与 `trading_strategy_review.py` 读取同一 ledger 并输出严格 JSON。
 
 ## 当前状态
 
@@ -52,6 +56,8 @@
   - `scripts/futu_market_data.py`
   - `scripts/trading_run_once.py`
   - `scripts/trading_scheduler_tick.py`
+  - `scripts/trading_daily_summary.py`
+  - `scripts/trading_strategy_review.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -82,7 +88,8 @@
   - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
 - 运行 API / skill 两仓验证并分别提交 commit
 - 新增真实 Futu `SIMULATE` broker adapter，封装账户、持仓、下单和撤单查询，但继续禁止真实交易与 `unlock_trade`
-- 补齐盘后总结、回测分析和结构化 `strategy_proposal` 评审链路
+- 将盘后总结和策略评审入口同步到 `stock-analysis-skill` 路由说明
+- 后续如需完整历史回测，再接入 Futu K 线 / 本地分钟线数据，和当前 `ledger_snapshot_replay` 口径明确区分
 
 ## 已知风险与阻塞
 

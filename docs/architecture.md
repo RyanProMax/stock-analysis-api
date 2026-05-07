@@ -12,6 +12,8 @@
   - `scripts/futu_market_data.py`
   - `scripts/trading_run_once.py`
   - `scripts/trading_scheduler_tick.py`
+  - `scripts/trading_daily_summary.py`
+  - `scripts/trading_strategy_review.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -48,6 +50,8 @@ src/
 - `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
 - `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`
 - `scripts/trading_scheduler_tick.py` 只负责 cron / launchd / Agent 调度判断：时间窗、间隔和 state key；到点后复用 `trading_run_once.py` 的单轮执行能力，不复制策略或风控逻辑
+- `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，汇总当日 run、snapshot、risk decision 和 dry-run order，不参与实时交易链路
+- `scripts/trading_strategy_review.py` 只读 ledger summary 和 ledger snapshot replay 指标，输出候选 `strategy_proposal`；该 proposal 不自动写回策略配置，也不触发下单
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -186,6 +190,7 @@ src/
   - 定时轮询、行情读取、策略执行、风控、模拟盘下单、成交回写和对账均不经过 Agent 即时决策
   - Agent 只参与盘后复盘、回测解释和策略迭代建议，产物必须是结构化 `strategy_proposal`
   - `strategy_proposal` 通过 schema 校验、回测门槛和人工批准后，才能生成候选或生效策略版本
+  - `trading_strategy_review.py` 当前只生成 `effective_status=candidate_only` 或 `not_applied`，不直接修改运行时策略
   - 第一阶段交易环境固定为 Futu `SIMULATE`，禁止实现真实交易、交易解锁、订阅推送或 OpenD 配置写入
   - 所有订单必须携带可复算的 idempotency key，重复轮询不得重复下单
   - 订单幂等和运行审计必须持久化到 SQLite trading ledger，不能依赖单进程内存态

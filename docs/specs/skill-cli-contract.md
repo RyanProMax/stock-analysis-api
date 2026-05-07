@@ -216,6 +216,80 @@
 - 未到执行间隔：`status=skipped`、`reason=not_due`。
 - 单轮执行锁冲突：`status=skipped`，`run_once.reason=lock_unavailable`。
 
+### 5. `scripts/trading_daily_summary.py`
+
+用途：
+
+- 模拟盘盘后总结入口
+- 只读 SQLite trading ledger，汇总当日 run、snapshot、risk decision 和 dry-run order
+- 供 Agent 盘后总结消费，不进入盘中执行链路
+
+关键参数：
+
+- `--ledger-db`: 覆盖 SQLite ledger 路径
+- `--date`: `YYYY-MM-DD`，不传时按 `--timezone` 取当天
+- `--timezone`: 默认 `Asia/Shanghai`
+- `--pretty`
+
+输出语义：
+
+- 顶层固定返回：
+  - `status`
+  - `source=trading_daily_summary`
+  - `date`
+  - `timezone`
+  - `summary`
+  - `risk_reason_counts`
+  - `market`
+  - `orders`
+  - `risk_decisions`
+  - `runs`
+- `summary` 至少包含：
+  - `runs_total`
+  - `orders_total`
+  - `risk_decisions_total`
+  - `accepted_risk_decisions`
+  - `rejected_risk_decisions`
+  - `codes`
+  - `strategy_versions`
+
+### 6. `scripts/trading_strategy_review.py`
+
+用途：
+
+- 模拟盘盘后策略评审入口
+- 基于 `trading_daily_summary.py` 同一套 ledger summary 生成 ledger replay 指标和结构化 `strategy_proposal`
+- Agent 可消费 proposal 做解释和迭代方向讨论，但本 CLI 不应用策略、不写配置、不触发下单
+
+关键参数：
+
+- `--ledger-db`: 覆盖 SQLite ledger 路径
+- `--date`: `YYYY-MM-DD`，不传时按 `--timezone` 取当天
+- `--timezone`: 默认 `Asia/Shanghai`
+- `--min-runs`: 最小 run 数，默认 3
+- `--max-rejection-rate`: 最大风控拒绝率，默认 0.5
+- `--pretty`
+
+输出语义：
+
+- 顶层固定返回：
+  - `status=ok|blocked|failed`
+  - `source=trading_strategy_review`
+  - `date`
+  - `timezone`
+  - `review`
+  - `strategy_proposal`
+- `review.ledger_backtest.method` 当前固定为 `ledger_snapshot_replay`，表示只用 ledger 内已有 snapshot 与 dry-run order 做回放式评估，不等同完整历史 K 线回测。
+- `strategy_proposal` 固定包含：
+  - `schema_version=trading_strategy_proposal.v1`
+  - `status=candidate|blocked`
+  - `strategy_version`
+  - `approval_required=true`
+  - `effective_status=candidate_only|not_applied`
+  - `proposed_changes`
+  - `evidence`
+  - `constraints`
+
 ## 输出质量要求
 
 - CLI stdout 必须是纯 JSON，不得混入初始化日志或调试 print
