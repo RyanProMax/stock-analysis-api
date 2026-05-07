@@ -17,7 +17,7 @@ def _utc_now() -> str:
 
 
 def _json_dumps(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
 
 
 def _json_loads(value: str | None) -> Any:

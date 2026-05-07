@@ -55,3 +55,9 @@ uv run python scripts/futu_market_data.py <command> --json
   "error": "..."
 }
 ```
+
+输出约束：
+
+- stdout 必须是可被严格 JSON parser 解析的标准 JSON，不允许混入 Futu SDK 连接日志。
+- 成功路径不向 stderr 输出 Futu SDK warning / log 噪声。
+- Futu 原始数据里的 `NaN` / `Infinity` 等非有限数值统一归一化为 `null`。

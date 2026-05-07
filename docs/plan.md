@@ -36,6 +36,9 @@
 - 已新增内部 `scripts/trading_run_once.py`，默认 dry-run broker，支持 `--snapshots-json` 离线行情注入与 SQLite ledger 复用。
 - 已补充持久化 ledger 和 dry-run CLI contract 测试，覆盖跨 service 实例重复执行不重复提交订单。
 - 已更新 `docs/specs/skill-cli-contract.md`，补齐 `trading_run_once.py` 的输入、输出、降级和幂等语义。
+- 已补充真实调用链路验证：`trading_run_once.py` 新增 subprocess 级入口测试，覆盖真实脚本入口、stdout JSON、SQLite ledger 跨进程去重。
+- 已修复 Futu/OpenD CLI 真实链路输出污染：SDK stdout 日志和 DeprecationWarning 不再污染 CLI 输出；Futu `NaN` / `Infinity` 原始值统一归一化为 `null`。
+- 已用真实 OpenD 验证 `scripts/futu_market_data.py global-state --json` 与 `scripts/trading_run_once.py` 无 `--snapshots-json` 路径，stdout 可被严格 JSON parser 解析且 stderr 为空。
 
 ## 当前状态
 
@@ -55,6 +58,7 @@
 - 当前仍待完成：
   - cross-repo `stock-analysis-skill` 文档与命名收口
   - 端到端验证与双仓提交
+  - 调度层串行锁或等价互斥，避免并发 worker 在同一窗口重复通过预检
 - 模拟盘自动交易一期已完成最小执行闭环：
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`

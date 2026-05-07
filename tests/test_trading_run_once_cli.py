@@ -5,6 +5,14 @@ import json
 
 from src.services.trading_run_once_cli import main as trading_run_once_cli_main
 
+
+def _strict_json_loads(raw: str) -> dict:
+    def reject_constant(value: str):
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(raw, parse_constant=reject_constant)
+
+
 SNAPSHOTS_JSON = json.dumps(
     [
         {
@@ -17,12 +25,24 @@ SNAPSHOTS_JSON = json.dumps(
     ],
     ensure_ascii=False,
 )
+SNAPSHOTS_JSON_WITH_NAN = """
+[
+  {
+    "code": "HK.00700",
+    "name": "Tencent",
+    "price": 101,
+    "stock_owner": NaN,
+    "as_of": "2026-05-07T10:00:00+08:00",
+    "source": "fixture"
+  }
+]
+"""
 
 
 def _run_cli(*args: str) -> tuple[int, dict]:
     writer = StringIO()
     exit_code = trading_run_once_cli_main(list(args), writer=writer)
-    return exit_code, json.loads(writer.getvalue())
+    return exit_code, _strict_json_loads(writer.getvalue())
 
 
 def test_trading_run_once_cli_outputs_pure_json_and_records_dry_run_order(tmp_path):
@@ -129,6 +149,29 @@ def test_trading_run_once_cli_accepts_long_inline_snapshots_json(tmp_path):
     assert exit_code == 0
     assert payload["status"] == "ok"
     assert payload["orders"][0]["result"]["status"] == "dry_run_submitted"
+
+
+def test_trading_run_once_cli_outputs_standard_json_when_raw_contains_nan(tmp_path):
+    exit_code, payload = _run_cli(
+        "--codes",
+        "HK.00700",
+        "--snapshots-json",
+        SNAPSHOTS_JSON_WITH_NAN,
+        "--strategy-version",
+        "threshold-v1",
+        "--buy-above",
+        "HK.00700=100",
+        "--quantity",
+        "10",
+        "--max-order-notional",
+        "2000",
+        "--ledger-db",
+        str(tmp_path / "trading_ledger.sqlite"),
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["snapshots"][0]["raw"]["stock_owner"] is None
 
 
 def test_trading_run_once_cli_rejects_invalid_buy_above(tmp_path):

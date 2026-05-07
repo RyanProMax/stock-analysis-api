@@ -190,5 +190,7 @@
 ## 输出质量要求
 
 - CLI stdout 必须是纯 JSON，不得混入初始化日志或调试 print
+- CLI 成功路径不得向 stderr 输出 SDK warning / log 噪声
+- JSON 输出必须是标准 JSON，`NaN` / `Infinity` 等非有限数值统一归一化为 `null`
 - 失败也应尽量输出结构化 JSON，而不是裸异常堆栈
 - 该 contract 仅供内部 skill / agent 消费，不写入 `docs/api.md`

@@ -55,8 +55,10 @@ def _safe_int(value: Any) -> int | None:
 def to_jsonable(value: Any) -> Any:
     if value is None:
         return None
-    if isinstance(value, (str, int, float, bool)):
+    if isinstance(value, (str, int, bool)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Mapping):
@@ -85,9 +87,7 @@ def df_to_records(data: Any) -> list[dict[str, Any]]:
         records = data.to_dict("records")
     else:
         records = list(data)
-    return [
-        to_jsonable(dict(record)) for record in records
-    ]
+    return [to_jsonable(dict(record)) for record in records]
 
 
 def _as_text(value: Any) -> str | None:

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
-from typing import Any, Iterable, TextIO
+from typing import Any, Callable, Iterable, TextIO, TypeVar
+import warnings
 
 from ..data_provider.sources.futu import (
     FutuMarketDataProvider,
@@ -11,12 +14,12 @@ from ..data_provider.sources.futu import (
     to_jsonable,
 )
 
-
 SOURCE = "futu_opend"
+T = TypeVar("T")
 
 
 def _write_payload(writer: TextIO, payload: dict[str, Any]) -> None:
-    writer.write(json.dumps(to_jsonable(payload), ensure_ascii=False))
+    writer.write(json.dumps(to_jsonable(payload), ensure_ascii=False, allow_nan=False))
     writer.write("\n")
 
 
@@ -26,6 +29,12 @@ def _parse_codes(raw_codes: str | Iterable[str]) -> list[str]:
     else:
         candidates = list(raw_codes)
     return [str(code).strip() for code in candidates if str(code).strip()]
+
+
+def _call_suppressing_stdout(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return func(*args, **kwargs)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -72,31 +81,44 @@ def main(
         args = parser.parse_args(argv)
         gateway = gateway or FutuOpenDGateway()
         if args.command == "global-state":
+            data = _call_suppressing_stdout(gateway.get_global_state)
             _write_payload(
                 writer,
                 {
                     "status": "ok",
                     "source": SOURCE,
-                    "data": gateway.get_global_state(),
+                    "data": data,
                 },
             )
             return 0
 
         if args.command == "ipo-list":
             market = str(args.market).strip().upper()
+            data = _call_suppressing_stdout(gateway.get_ipo_list, market)
             _write_payload(
                 writer,
                 {
                     "status": "ok",
                     "source": SOURCE,
                     "market": market,
-                    "data": gateway.get_ipo_list(market),
+                    "data": data,
                 },
             )
             return 0
 
         if args.command == "kline":
             code = str(args.code).strip().upper()
+            data = _call_suppressing_stdout(
+                gateway.request_history_kline,
+                code,
+                ktype=args.ktype,
+                start=args.start,
+                end=args.end,
+                max_count=args.num,
+                rehab=args.rehab,
+                session=args.session,
+                max_page=args.max_page,
+            )
             _write_payload(
                 writer,
                 {
@@ -104,16 +126,7 @@ def main(
                     "source": SOURCE,
                     "code": code,
                     "ktype": args.ktype,
-                    "data": gateway.request_history_kline(
-                        code,
-                        ktype=args.ktype,
-                        start=args.start,
-                        end=args.end,
-                        max_count=args.num,
-                        rehab=args.rehab,
-                        session=args.session,
-                        max_page=args.max_page,
-                    ),
+                    "data": data,
                 },
             )
             return 0
@@ -121,7 +134,7 @@ def main(
         if args.command == "snapshot":
             codes = _parse_codes(args.codes)
             provider = FutuMarketDataProvider(gateway=gateway)
-            snapshots = provider.get_market_snapshots(codes)
+            snapshots = _call_suppressing_stdout(provider.get_market_snapshots, codes)
             _write_payload(
                 writer,
                 {

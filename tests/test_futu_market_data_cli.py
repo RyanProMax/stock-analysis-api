@@ -5,8 +5,16 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 
 from src.services.futu_market_data_cli import main as futu_market_data_cli_main
+
+
+def _strict_json_loads(raw: str) -> dict:
+    def reject_constant(value: str):
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(raw, parse_constant=reject_constant)
 
 
 class FakeFutuGateway:
@@ -55,7 +63,21 @@ class FakeFutuGateway:
 
     def get_market_snapshots(self, codes: list[str]):
         assert codes == ["HK.00700"]
-        return [{"code": "HK.00700", "name": "Tencent", "last_price": 390.2}]
+        return [
+            {
+                "code": "HK.00700",
+                "name": "Tencent",
+                "last_price": 390.2,
+                "stock_owner": float("nan"),
+            }
+        ]
+
+
+class NoisyFutuGateway(FakeFutuGateway):
+    def get_global_state(self):
+        print("futu sdk stdout log")
+        warnings.warn("futu sdk warning", DeprecationWarning, stacklevel=1)
+        return super().get_global_state()
 
 
 def _run_cli(*args: str) -> tuple[int, dict]:
@@ -65,7 +87,7 @@ def _run_cli(*args: str) -> tuple[int, dict]:
         writer=writer,
         gateway=FakeFutuGateway(),
     )
-    return exit_code, json.loads(writer.getvalue())
+    return exit_code, _strict_json_loads(writer.getvalue())
 
 
 def test_global_state_cli_contract():
@@ -74,6 +96,24 @@ def test_global_state_cli_contract():
     assert exit_code == 0
     assert payload["status"] == "ok"
     assert payload["source"] == "futu_opend"
+    assert payload["data"]["qot_logined"] is True
+
+
+def test_futu_cli_suppresses_gateway_stdout_noise(capsys):
+    writer = StringIO()
+
+    exit_code = futu_market_data_cli_main(
+        ["global-state", "--json"],
+        writer=writer,
+        gateway=NoisyFutuGateway(),
+    )
+
+    captured = capsys.readouterr()
+    payload = _strict_json_loads(writer.getvalue())
+    assert exit_code == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    assert payload["status"] == "ok"
     assert payload["data"]["qot_logined"] is True
 
 
@@ -135,3 +175,4 @@ def test_snapshot_cli_contract():
     assert payload["source"] == "futu_opend"
     assert payload["request"] == {"codes": ["HK.00700"], "count": 1}
     assert payload["data"][0]["code"] == "HK.00700"
+    assert payload["data"][0]["raw"]["stock_owner"] is None

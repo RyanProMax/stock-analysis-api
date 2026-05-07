@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence, TextIO
+import warnings
 
 from ..data_provider.sources.futu import FutuMarketDataProvider
 from ..model.trading import AccountSnapshot, MarketSnapshot, OrderRequest, PositionSnapshot
@@ -81,6 +82,7 @@ def _emit(payload: dict[str, Any], pretty: bool, writer: Optional[TextIO]) -> No
     output = json.dumps(
         payload,
         ensure_ascii=False,
+        allow_nan=False,
         indent=2 if pretty else None,
         separators=(",", ": ") if pretty else (",", ":"),
     )
@@ -181,7 +183,8 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
             risk_policy=MaxNotionalRiskPolicy(max_order_notional=args.max_order_notional),
             ledger=SqliteTradingLedger(args.ledger_db),
         )
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
             payload = service.run_once(codes)
         payload = {
             **payload,

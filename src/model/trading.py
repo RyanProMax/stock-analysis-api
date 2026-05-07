@@ -1,8 +1,29 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+import math
 from typing import Any
+
+
+def json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+    if hasattr(value, "item"):
+        try:
+            return json_safe(value.item())
+        except Exception:
+            pass
+    return value
 
 
 class OrderSide(Enum):
@@ -32,7 +53,7 @@ class MarketSnapshot:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return json_safe(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -43,7 +64,7 @@ class AccountSnapshot:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return json_safe(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -56,7 +77,7 @@ class PositionSnapshot:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return json_safe(asdict(self))
 
 
 @dataclass(frozen=True)
