@@ -121,6 +121,9 @@
 - `--quantity`
 - `--max-order-notional`
 - `--ledger-db`: 覆盖 SQLite ledger 路径；未传时读取 `TRADING_LEDGER_DB_PATH` 或 `.cache/trading_ledger.sqlite`
+- `--lock-name`: SQLite 调度锁名称，默认 `trading_run_once`
+- `--lock-ttl-seconds`: 调度锁 TTL，默认 900 秒
+- `--disable-lock`: 关闭调度锁，仅用于本地调试或显式验证
 - `--snapshots-json`: 行情快照 JSON 字符串或文件路径；用于测试、回放和离线验证
 - `--account-cash`
 - `--currency`
@@ -151,6 +154,7 @@
 - 未传 `--snapshots-json` 时允许读取 Futu/OpenD snapshot，但 broker 仍固定为 dry-run。
 - 已通过风控并提交过的订单必须写入 SQLite ledger，`idempotency_key` 跨进程生效。
 - 重复执行同一策略版本、代码、方向、数量和触发价时，不得重复提交 dry-run broker 订单。
+- 默认必须先拿 SQLite `trading_run_once` 调度锁；拿不到锁时返回 `status=skipped`、`reason=lock_unavailable`，不得继续读取行情或提交 dry-run broker。
 
 ## 数据源与降级规则
 

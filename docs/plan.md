@@ -39,6 +39,7 @@
 - 已补充真实调用链路验证：`trading_run_once.py` 新增 subprocess 级入口测试，覆盖真实脚本入口、stdout JSON、SQLite ledger 跨进程去重。
 - 已修复 Futu/OpenD CLI 真实链路输出污染：SDK stdout 日志和 DeprecationWarning 不再污染 CLI 输出；Futu `NaN` / `Infinity` 原始值统一归一化为 `null`。
 - 已用真实 OpenD 验证 `scripts/futu_market_data.py global-state --json` 与 `scripts/trading_run_once.py` 无 `--snapshots-json` 路径，stdout 可被严格 JSON parser 解析且 stderr 为空。
+- 已为 `trading_run_once.py` 增加默认 SQLite 调度锁；并发触发时返回 `status=skipped / reason=lock_unavailable`，不会继续读取行情或提交 dry-run broker。
 
 ## 当前状态
 
@@ -58,7 +59,6 @@
 - 当前仍待完成：
   - cross-repo `stock-analysis-skill` 文档与命名收口
   - 端到端验证与双仓提交
-  - 调度层串行锁或等价互斥，避免并发 worker 在同一窗口重复通过预检
 - 模拟盘自动交易一期已完成最小执行闭环：
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`
@@ -79,7 +79,7 @@
   - 直接通过 `STOCK_ANALYSIS_API_ROOT` 消费本仓库 CLI
 - 运行 API / skill 两仓验证并分别提交 commit
 - 新增真实 Futu `SIMULATE` broker adapter，封装账户、持仓、下单和撤单查询，但继续禁止真实交易与 `unlock_trade`
-- 增加定时调度脚本，供 Agent / launchd / cron 调用 `trading_run_once.py`
+- 增加定时调度脚本，供 Agent / launchd / cron 调用默认带锁的 `trading_run_once.py`
 - 补齐盘后总结、回测分析和结构化 `strategy_proposal` 评审链路
 
 ## 已知风险与阻塞
@@ -91,4 +91,4 @@
 - Futu/OpenD 依赖本机 OpenD 进程、端口和权限；单元测试必须使用 fake gateway / broker，不能依赖真实网络或真实账户。
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
-- SQLite ledger 已能跨进程复用 `idempotency_key` 去重；进入定时调度前仍需要确保 worker 串行或加调度锁，避免并发 worker 在同一窗口重复通过预检。
+- SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。

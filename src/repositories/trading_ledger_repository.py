@@ -1,19 +1,35 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Generator
 
 from ..model.trading import OrderRequest
 
 
+@dataclass(frozen=True)
+class TradingRunLock:
+    lock_name: str
+    owner_id: str
+    expires_at: str
+
+
+def _utc_now_dt() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _format_dt(value: datetime) -> str:
+    return value.isoformat()
+
+
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _format_dt(_utc_now_dt())
 
 
 def _json_dumps(payload: Any) -> str:
@@ -91,11 +107,66 @@ class SqliteTradingLedger:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS trading_locks (
+                    lock_name TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    acquired_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_trading_risk_decisions_run
                     ON trading_risk_decisions(run_id);
                 CREATE INDEX IF NOT EXISTS idx_trading_orders_run
                     ON trading_orders(run_id);
                 """)
+
+    def try_acquire_lock(
+        self,
+        lock_name: str,
+        *,
+        ttl_seconds: int,
+        owner_id: str | None = None,
+    ) -> TradingRunLock | None:
+        normalized_lock_name = str(lock_name or "").strip()
+        if not normalized_lock_name:
+            raise ValueError("lock_name must not be empty")
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive")
+
+        owner = owner_id or str(uuid.uuid4())
+        now = _utc_now_dt()
+        acquired_at = _format_dt(now)
+        expires_at = _format_dt(now + timedelta(seconds=int(ttl_seconds)))
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO trading_locks (lock_name, owner_id, acquired_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(lock_name) DO UPDATE SET
+                    owner_id = excluded.owner_id,
+                    acquired_at = excluded.acquired_at,
+                    expires_at = excluded.expires_at
+                WHERE trading_locks.expires_at <= ?
+                """,
+                (normalized_lock_name, owner, acquired_at, expires_at, acquired_at),
+            )
+        if cursor.rowcount != 1:
+            return None
+        return TradingRunLock(
+            lock_name=normalized_lock_name,
+            owner_id=owner,
+            expires_at=expires_at,
+        )
+
+    def release_lock(self, lock: TradingRunLock) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM trading_locks
+                WHERE lock_name = ? AND owner_id = ?
+                """,
+                (lock.lock_name, lock.owner_id),
+            )
 
     def start_run(self, request: dict[str, Any]) -> str:
         run_id = str(uuid.uuid4())

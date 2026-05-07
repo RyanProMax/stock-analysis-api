@@ -54,6 +54,8 @@
   - 每条已提交模拟订单的 `idempotency_key`、请求和 broker 返回结果。
 - ledger 默认路径读取 `TRADING_LEDGER_DB_PATH`，未设置时使用 `.cache/trading_ledger.sqlite`。
 - `idempotency_key` 必须跨进程、跨服务实例生效；同一个策略版本、代码、方向、数量和触发价重复执行时，不得重复提交 broker 订单。
+- SQLite ledger 同时维护调度锁；内部 CLI 默认使用 `trading_run_once` 锁，避免 cron / launchd / Agent 并发触发同一轮 dry-run。
+- 拿不到调度锁时必须返回结构化 `status=skipped` 和 `reason=lock_unavailable`，不得进入行情、策略和 broker 提交流程。
 - 新增内部 CLI `scripts/trading_run_once.py`：
   - 仅属于内部 Agent / worker 入口，不新增公共 HTTP API。
   - 默认 broker 为 dry-run broker，只返回模拟提交结果，不连接真实交易环境。

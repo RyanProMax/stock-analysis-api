@@ -224,6 +224,34 @@ def test_sqlite_ledger_marks_run_failed_when_run_once_raises(tmp_path):
     assert runs[0]["result"]["strategy_version"] == "threshold-v1"
 
 
+def test_sqlite_ledger_lock_blocks_until_owner_releases(tmp_path):
+    ledger = SqliteTradingLedger(tmp_path / "trading_ledger.sqlite")
+
+    first_lock = ledger.try_acquire_lock(
+        "trading_run_once",
+        ttl_seconds=60,
+        owner_id="first-worker",
+    )
+    second_lock = ledger.try_acquire_lock(
+        "trading_run_once",
+        ttl_seconds=60,
+        owner_id="second-worker",
+    )
+
+    assert first_lock is not None
+    assert second_lock is None
+
+    ledger.release_lock(first_lock)
+    third_lock = ledger.try_acquire_lock(
+        "trading_run_once",
+        ttl_seconds=60,
+        owner_id="third-worker",
+    )
+
+    assert third_lock is not None
+    assert third_lock.owner_id == "third-worker"
+
+
 def test_risk_gate_rejects_order_above_max_notional():
     broker = FakeBroker()
     service = TradingAutomationService(

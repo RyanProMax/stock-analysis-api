@@ -18,6 +18,8 @@ from .trading_automation_service import (
     TradingAutomationService,
 )
 
+DEFAULT_LOCK_NAME = "trading_run_once"
+
 
 class StaticMarketDataProvider:
     source = "static_snapshot"
@@ -68,6 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quantity", type=int, default=1)
     parser.add_argument("--max-order-notional", type=float, default=10_000)
     parser.add_argument("--ledger-db", help="SQLite trading ledger path")
+    parser.add_argument(
+        "--lock-name",
+        default=DEFAULT_LOCK_NAME,
+        help="SQLite scheduler lock name; use --disable-lock to skip locking",
+    )
+    parser.add_argument("--lock-ttl-seconds", type=int, default=900)
+    parser.add_argument("--disable-lock", action="store_true")
     parser.add_argument(
         "--snapshots-json",
         help="Inline JSON array of market snapshots for dry-run replay and tests",
@@ -171,6 +180,23 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
             if args.snapshots_json
             else FutuMarketDataProvider()
         )
+        ledger = SqliteTradingLedger(args.ledger_db)
+        lock = None
+        if not args.disable_lock:
+            lock = ledger.try_acquire_lock(args.lock_name, ttl_seconds=args.lock_ttl_seconds)
+            if lock is None:
+                _emit(
+                    {
+                        "status": "skipped",
+                        "reason": "lock_unavailable",
+                        "lock_name": args.lock_name,
+                        "broker_mode": "dry_run",
+                    },
+                    args.pretty,
+                    writer,
+                )
+                return 0
+
         broker = DryRunBroker(cash=args.account_cash, currency=args.currency)
         service = TradingAutomationService(
             market_data=market_data,
@@ -181,11 +207,15 @@ def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = Non
                 quantity=args.quantity,
             ),
             risk_policy=MaxNotionalRiskPolicy(max_order_notional=args.max_order_notional),
-            ledger=SqliteTradingLedger(args.ledger_db),
+            ledger=ledger,
         )
-        with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            payload = service.run_once(codes)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                payload = service.run_once(codes)
+        finally:
+            if lock is not None:
+                ledger.release_lock(lock)
         payload = {
             **payload,
             "broker_mode": broker.mode,

@@ -82,7 +82,7 @@ black --line-length 100 .
 ## 使用级注意事项
 
 - `scripts/stock_analyze.py` 的 stdout 设计为纯 JSON，方便外部 Agent 直接消费
-- `scripts/trading_run_once.py` 默认使用 dry-run broker，只做模拟盘单次执行与 ledger 审计，不连接真实交易环境
+- `scripts/trading_run_once.py` 默认使用 dry-run broker 和 SQLite 调度锁，只做模拟盘单次执行与 ledger 审计，不连接真实交易环境
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步

@@ -4,6 +4,7 @@ from io import StringIO
 import json
 
 from src.services.trading_run_once_cli import main as trading_run_once_cli_main
+from src.repositories.trading_ledger_repository import SqliteTradingLedger
 
 
 def _strict_json_loads(raw: str) -> dict:
@@ -113,6 +114,43 @@ def test_trading_run_once_cli_reuses_ledger_for_cross_process_dedupe(tmp_path):
     assert second_exit_code == 0
     assert second_payload["orders"] == []
     assert second_payload["risk_decisions"][0]["reason"] == "duplicate_idempotency_key"
+
+
+def test_trading_run_once_cli_skips_when_scheduler_lock_is_held(tmp_path):
+    ledger_db = tmp_path / "trading_ledger.sqlite"
+    ledger = SqliteTradingLedger(ledger_db)
+    lock = ledger.try_acquire_lock(
+        "trading_run_once",
+        ttl_seconds=60,
+        owner_id="already-running",
+    )
+
+    exit_code, payload = _run_cli(
+        "--codes",
+        "HK.00700",
+        "--snapshots-json",
+        SNAPSHOTS_JSON,
+        "--strategy-version",
+        "threshold-v1",
+        "--buy-above",
+        "HK.00700=100",
+        "--quantity",
+        "10",
+        "--max-order-notional",
+        "2000",
+        "--ledger-db",
+        str(ledger_db),
+    )
+
+    assert lock is not None
+    assert exit_code == 0
+    assert payload == {
+        "status": "skipped",
+        "reason": "lock_unavailable",
+        "lock_name": "trading_run_once",
+        "broker_mode": "dry_run",
+    }
+    assert ledger.list_runs() == []
 
 
 def test_trading_run_once_cli_accepts_long_inline_snapshots_json(tmp_path):

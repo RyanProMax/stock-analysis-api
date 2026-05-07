@@ -45,6 +45,7 @@ src/
 - `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；账户、持仓、模拟盘订单只能通过 service 层定义的 broker contract 暴露
 - `scripts/futu_market_data.py` 只暴露 hkipo / research 已迁移所需的 Futu/OpenD 只读能力：OpenD global state、IPO list、history kline 和 snapshot
 - `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
+- `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -186,6 +187,7 @@ src/
   - 第一阶段交易环境固定为 Futu `SIMULATE`，禁止实现真实交易、交易解锁、订阅推送或 OpenD 配置写入
   - 所有订单必须携带可复算的 idempotency key，重复轮询不得重复下单
   - 订单幂等和运行审计必须持久化到 SQLite trading ledger，不能依赖单进程内存态
+  - 调度入口必须使用 SQLite 锁或等价互斥，防止并发 worker 在同一窗口重复通过预检
   - 内部 `trading_run_once.py` 默认使用 dry-run broker；真实 Futu `SIMULATE` broker adapter 必须另行接入并继续禁止 `unlock_trade`
   - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
 
