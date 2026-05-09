@@ -39,6 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record_verdict.add_argument("--verdict-json", required=True)
     record_verdict.add_argument("--pretty", action="store_true")
+
+    research_history = subparsers.add_parser(
+        "research-history", help="Summarize recorded alpha research loop runs"
+    )
+    research_history.add_argument("--limit", type=int, default=20)
+    research_history.add_argument("--pretty", action="store_true")
     return parser
 
 
@@ -91,6 +97,8 @@ def main(
             payload = registry_service.list_versions()
         elif args.command == "record-verdict":
             payload = registry_service.record_judge_verdict(_load_json(args.verdict_json))
+        elif args.command == "research-history":
+            payload = registry_service.research_history(limit=args.limit)
         else:
             raise ValueError(f"unsupported command: {args.command}")
         _emit(payload, pretty, writer)

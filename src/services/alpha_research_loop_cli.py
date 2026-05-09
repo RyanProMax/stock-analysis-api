@@ -5,6 +5,7 @@ import json
 import sys
 from typing import Optional, Sequence, TextIO
 
+from ..repositories.strategy_registry_repository import SqliteStrategyRegistry
 from .alpha_research_loop_service import AlphaResearchLoopService
 
 
@@ -36,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-observations", type=int, default=20)
     parser.add_argument("--allow-data-gaps", action="store_true")
     parser.add_argument("--include-attempt-details", action="store_true")
+    parser.add_argument("--record-to-registry", action="store_true")
+    parser.add_argument("--registry-db", help="SQLite strategy registry path")
+    parser.add_argument("--run-id")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -78,7 +82,8 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    loop_service = service or AlphaResearchLoopService()
+    registry = SqliteStrategyRegistry(args.registry_db) if args.record_to_registry else None
+    loop_service = service or AlphaResearchLoopService(strategy_registry=registry)
     try:
         payload = loop_service.run(
             market=args.market,
@@ -101,6 +106,8 @@ def main(
             min_observations=args.min_observations,
             allow_data_gaps=args.allow_data_gaps,
             include_attempt_details=args.include_attempt_details,
+            record_to_registry=args.record_to_registry,
+            run_id=args.run_id,
         )
         _emit(payload, args.pretty, writer)
         return 0

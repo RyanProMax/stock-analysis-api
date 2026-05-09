@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 from ..model.serialization import json_safe
+from ..repositories.strategy_registry_repository import SqliteStrategyRegistry
 from .alpha_daily_report_service import AlphaDailyReportService
 from .strategy_judge_service import StrategyJudgeService
 
@@ -13,9 +14,11 @@ class AlphaResearchLoopService:
         self,
         report_service: Optional[AlphaDailyReportService] = None,
         judge_service: Optional[StrategyJudgeService] = None,
+        strategy_registry: Optional[SqliteStrategyRegistry] = None,
     ) -> None:
         self.report_service = report_service or AlphaDailyReportService()
         self.judge_service = judge_service or StrategyJudgeService()
+        self.strategy_registry = strategy_registry
 
     def run(
         self,
@@ -40,6 +43,8 @@ class AlphaResearchLoopService:
         min_observations: int = 20,
         allow_data_gaps: bool = False,
         include_attempt_details: bool = False,
+        record_to_registry: bool = False,
+        run_id: str | None = None,
     ) -> dict:
         role_ids = self._roles(
             researcher_id=researcher_id,
@@ -90,10 +95,12 @@ class AlphaResearchLoopService:
                 break
 
         human_review_ready = selected is not None
+        computed_at = self._now()
         payload = {
+            "run_id": run_id or self._run_id(computed_at),
             "status": "human_review_ready" if human_review_ready else "needs_iteration",
             "source": "alpha_research_loop",
-            "computed_at": self._now(),
+            "computed_at": computed_at,
             "team": {
                 "researcher": {
                     "id": role_ids["researcher_id"],
@@ -131,11 +138,15 @@ class AlphaResearchLoopService:
                 "human_review_ready": human_review_ready,
                 "proposal_not_applied": True,
                 "approval_required": True,
+                "recorded_to_registry": bool(record_to_registry),
             },
             "attempts": attempts,
             "selected": selected,
             "next_research_actions": [] if selected else self._next_actions(attempts),
+            "recorded": None,
         }
+        if record_to_registry:
+            payload["recorded"] = self._record_to_registry(payload)
         return json_safe(payload)
 
     def _attempt(
@@ -243,6 +254,25 @@ class AlphaResearchLoopService:
         if "strategy_proposal_missing" in reasons:
             actions.append("lower_candidate_filters_or_expand_universe")
         return actions
+
+    def _record_to_registry(self, payload: dict) -> dict:
+        registry = self.strategy_registry or SqliteStrategyRegistry()
+        run_payload = json_safe({**payload, "recorded": None})
+        run_record = registry.record_research_loop_run(run_payload)
+        verdict_records = []
+        for attempt in payload.get("attempts") or []:
+            verdict = attempt.get("verdict") if isinstance(attempt, dict) else None
+            if not isinstance(verdict, dict):
+                continue
+            verdict_records.append(registry.record_judge_verdict(verdict))
+        return {
+            "research_loop_run": run_record,
+            "judge_verdicts": verdict_records,
+        }
+
+    def _run_id(self, computed_at: str) -> str:
+        safe = computed_at.replace("-", "").replace(":", "").replace(".", "").replace("+", "")
+        return f"research-loop-{safe}"
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()

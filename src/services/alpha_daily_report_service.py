@@ -203,6 +203,8 @@ class AlphaDailyReportService:
         return {
             "status": evaluation.get("status"),
             "summary": evaluation.get("summary") or {},
+            "evaluation_id": result.get("evaluation_id"),
+            "candidate_id": result.get("candidate_id"),
             "metrics": result.get("metrics") or {},
             "sample_split": result.get("sample_split") or {},
             "data_gaps": result.get("data_gaps") or [],

@@ -83,6 +83,23 @@ def _activate_strategy(registry: StrategyRegistryService) -> None:
         "effective_status": "candidate_only",
     }
     registry.propose(proposal)
+    registry.record_judge_verdict(
+        {
+            "verdict_id": "judge-proposal-alpha-worker-eval-worker",
+            "proposal_id": "proposal-alpha-worker",
+            "strategy_version": "alpha_topn_momentum_5d.20260512",
+            "evaluator_id": "judge-agent",
+            "generated_at": "2026-05-12T08:05:00+00:00",
+            "gate_status": "passed",
+            "researcher_id": "researcher-agent",
+            "evaluation_id": "eval-worker",
+            "thresholds": {"min_rank_ic_mean": 0.03},
+            "metrics": {"rank_ic_mean": 0.1, "observations": 30},
+            "reasons": [],
+            "human_review_ready": True,
+            "proposal_not_applied": True,
+        }
+    )
     registry.approve(strategy_version="alpha_topn_momentum_5d.20260512", approved_by="ryan")
     registry.activate(strategy_version="alpha_topn_momentum_5d.20260512")
 

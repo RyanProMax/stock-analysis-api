@@ -138,11 +138,14 @@ uv run python scripts/strategy_registry.py current --pretty
 - 顶层固定为 `status`、`source=strategy_registry`、`action`，并按命令返回 `proposal`、`strategy_version`、`current_strategy`、`events`、`activation` 等结构化字段。
 - `propose` 只接受 `approval_required=true` 且 `effective_status=candidate_only` 的 `StrategyProposal`；保存后 strategy status 为 `candidate`，不会 active，也不会写运行时策略配置。
 - `approve` 必须显式传 `--approved-by`；审批记录写入 `strategy_approvals`。
+- `approve` 必须已有同 strategy version 的 passed judge verdict；否则拒绝审批。
 - `activate` 必须先存在 approval record；否则返回 `status=failed`，不会产生 active strategy。
+- `activate` 只允许 `approved -> active`，不得重复激活 active 或重新激活 retired。
 - `activate` 成功时只允许一个 `active`，已有 active 会被标记为 `retired`。
 - 状态变化必须写入 append-only `strategy_version_events`；激活历史必须写入 `strategy_activation_history`。
 - `alpha_candidates` 和 `alpha_evaluations` 表作为 append-only research 记录入口，供后续日报和 registry 汇总使用。
 - `record-verdict` 只追加独立 judge verdict，不创建 approval，不 activate。
+- `research-history` 汇总已记录的 alpha research loop runs、阻断原因和 factor 指标漂移，不改变策略状态。
 - 该 CLI 不触发 broker、不下单、不调用 Futu `SIMULATE`、不交易解锁，也不让 Agent 自动 approve / activate。
 
 ## Judge Gate CLI
@@ -170,6 +173,8 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 
 ```bash
 uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --pretty
+uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --record-to-registry --registry-db .cache/strategy_registry.sqlite --pretty
+uv run python scripts/strategy_registry.py --registry-db .cache/strategy_registry.sqlite research-history --pretty
 ```
 
 输出 contract：
@@ -185,6 +190,8 @@ uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,m
 - `status=needs_iteration` 表示所有 attempt 均 blocked，必须输出 `next_research_actions`，不得伪装为通过。
 - 默认 summary-only；attempt 明细必须显式 `--include-attempt-details` 才输出。
 - 默认不写 registry、不 approve、不 activate、不触发 broker。
+- 只有显式 `--record-to-registry` 时才追加记录 research loop run 和 judge verdict；该记录动作仍不得 propose / approve / activate。
+- 已记录的 research loop run 必须保留 `run_id`、attempts、judge verdict、proposal_not_applied 和 approval_required。
 
 ## P6 Alpha Daily Report CLI
 
@@ -236,4 +243,5 @@ uv run python scripts/watch_worker_tick.py --state-key cn-alpha-watch --interval
 - `uv run pytest tests/test_alpha_research_loop_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
+- `approve` 前必须存在 passed judge verdict。
 - P1 开始前不得新增交易写入能力。

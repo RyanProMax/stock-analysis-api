@@ -66,11 +66,11 @@ src/
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
-- `scripts/strategy_registry.py` 只管理候选策略、人工审批记录和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `activate` 必须已有人工 approval record
+- `scripts/strategy_registry.py` 只管理候选策略、人工审批记录、research history 和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `approve` 必须已有 passed judge verdict，`activate` 必须已有人工 approval record
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
 - `scripts/strategy_judge.py` 作为独立 evaluator / judge gate，仅输出 `passed` / `blocked` verdict；该入口不写策略状态、不 approve、不 activate
-- `scripts/alpha_research_loop.py` 作为离线 agent teams 编排入口，串联 alpha daily report 和 judge gate；默认只输出 JSON，不写 registry、不 approve、不 activate、不触发 broker
+- `scripts/alpha_research_loop.py` 作为离线 agent teams 编排入口，串联 alpha daily report 和 judge gate；默认只输出 JSON，不写 registry、不 approve、不 activate、不触发 broker；只有显式 `--record-to-registry` 才追加 research loop run 和 judge verdict
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -228,10 +228,11 @@ src/
   - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
 - 策略 registry workflow 固定为人工治理链路：
   - `strategy_registry.py propose` 只能写入候选 proposal 和 candidate strategy version，不能 active
-  - `strategy_registry.py approve` 必须显式记录 `approved_by`
-  - `strategy_registry.py activate` 必须先查到 approval record，且激活时保证单 active
+  - `strategy_registry.py approve` 必须显式记录 `approved_by`，且目标必须仍是 `candidate` 并已有 passed judge verdict
+  - `strategy_registry.py activate` 必须先查到 approval record，目标必须仍是 `approved`，且激活时保证单 active
   - strategy version 当前态可以更新，但每次状态变化必须追加到 `strategy_version_events`
   - strategy registry 不属于日内交易链路，不调用 broker，不写 trading ledger，不绕过人工批准
+  - `strategy_registry.py research-history` 只读汇总 alpha research loop runs、阻断原因和 factor drift，不改变策略状态
 - Alpha 日报 workflow 固定为盘后候选生成链路：
   - `alpha_daily_report.py` 默认 summary-only，只展示候选、关键评估指标和人工动作
   - 明细必须显式 `--include-details`
@@ -253,6 +254,7 @@ src/
   - 每轮只处理一个 factor，先生成 proposal 和 evaluation，再交给 judge gate
   - 全部 blocked 时返回 `needs_iteration` 和下一步研究动作，不能伪装为可审核
   - 通过 judge gate 时只输出 `human_review_ready` 材料，仍不得自动 approve 或 activate
+  - 默认不写 registry；显式记录时只能 append research run 与 verdict，不创建 approval 或 active strategy
 
 ## 演进方向
 

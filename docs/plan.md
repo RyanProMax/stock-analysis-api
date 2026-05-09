@@ -101,7 +101,13 @@
   - 串联 `alpha_daily_report.py` 与 `strategy_judge.py`，按 factor 多轮尝试
   - researcher / backtester / evaluator 三类 role id 必须互不相同
   - 通过时返回 `human_review_ready` 和候选 proposal；全阻断时返回 `needs_iteration` 与下一步研究动作
-  - 默认不写 registry、不 approve、不 activate、不触发 broker
+  - 默认不写 registry、不 approve、不 activate、不触发 broker；显式 `--record-to-registry` 时只追加 research run 与 judge verdict
+- 已补齐 MVP 历史闭环和治理状态机：
+  - 新增 `strategy_registry.py research-history`，汇总 research loop run、阻断原因和 factor drift
+  - registry 新增 append-only `alpha_research_loop_runs`
+  - `approve` 现在要求目标仍是 `candidate` 且已有同 strategy version 的 passed judge verdict
+  - `activate` 现在只允许 `approved -> active`，拒绝重复激活 active 或重新激活 retired
+  - research loop summary-only verdict 保留 `evaluation_id`，避免评估证据丢失
 
 ## 当前状态
 
@@ -185,13 +191,15 @@
   - `alpha_research_loop.py` 默认 summary-only 串联候选生成、因子评估和 judge gate
   - researcher / backtester / evaluator 三类 role id 必须独立
   - `status=human_review_ready` 只代表可交给人审；`status=needs_iteration` 表示继续研究，不写入生效策略
+  - 显式 `--record-to-registry` 会记录 research loop run 和 verdict；`strategy_registry.py research-history` 可查询历史 run、阻断原因和 factor drift
+  - 人工审批必须已有 passed judge verdict；策略激活必须保持 `candidate -> approved -> active` 状态机
 
 ## 下一步计划
 
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
-- 后续若要增强 self-iteration，需要补跨日 registry 查询面、历史漂移、失败归因持久化和更真实的组合级回测；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
+- 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级和 research loop 的 registry / 历史评估闭环；保持默认只读或 dry-run，不允许真实交易
+- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级；保持默认只读或 dry-run，不允许真实交易
 
 ## 已知风险与阻塞
 

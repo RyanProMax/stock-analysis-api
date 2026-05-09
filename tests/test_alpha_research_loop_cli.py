@@ -6,9 +6,11 @@ import json
 import pandas as pd
 
 from src.repositories.market_data_repository import MarketDataRepository
+from src.repositories.strategy_registry_repository import SqliteStrategyRegistry
 from src.services.alpha_daily_report_service import AlphaDailyReportService
 from src.services.alpha_research_loop_cli import main as alpha_research_loop_cli_main
 from src.services.alpha_research_loop_service import AlphaResearchLoopService
+from src.services.strategy_registry_service import StrategyRegistryService
 
 
 def _daily_rows(closes: list[float], volumes: list[float] | None = None) -> pd.DataFrame:
@@ -69,11 +71,16 @@ def _seed_market(repository: MarketDataRepository) -> None:
     )
 
 
-def _service(tmp_path) -> AlphaResearchLoopService:
+def _service(
+    tmp_path,
+    *,
+    registry: SqliteStrategyRegistry | None = None,
+) -> AlphaResearchLoopService:
     repository = _repository(tmp_path)
     _seed_market(repository)
     return AlphaResearchLoopService(
         report_service=AlphaDailyReportService(repository=repository),
+        strategy_registry=registry,
     )
 
 
@@ -127,6 +134,7 @@ def test_alpha_research_loop_returns_human_review_ready_without_applying_strateg
     assert payload["summary"]["proposal_not_applied"] is True
     assert payload["summary"]["approval_required"] is True
     assert payload["selected"]["verdict"]["gate_status"] == "passed"
+    assert payload["selected"]["verdict"]["evaluation_id"] == "alpha-eval-2026-05-10-momentum_5d"
     assert payload["selected"]["strategy_proposal"]["approval_required"] is True
     assert payload["selected"]["strategy_proposal"]["effective_status"] == "candidate_only"
     assert payload["attempts"][0]["roles"]["researcher_id"] == "researcher-agent"
@@ -200,3 +208,150 @@ def test_alpha_research_loop_rejects_non_independent_roles(tmp_path):
     assert payload["status"] == "failed"
     assert payload["source"] == "alpha_research_loop"
     assert "agent team roles must be distinct" in payload["error"]
+
+
+def test_alpha_research_loop_records_run_and_verdicts_only_when_explicitly_enabled(tmp_path):
+    registry = SqliteStrategyRegistry(tmp_path / "strategy_registry.sqlite")
+    exit_code, payload = _run_cli(
+        _service(tmp_path, registry=registry),
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factors",
+        "momentum_5d,momentum_20d",
+        "--date",
+        "2026-05-12",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--researcher-id",
+        "researcher-agent",
+        "--backtester-id",
+        "backtester-agent",
+        "--evaluator-id",
+        "judge-agent",
+        "--min-rank-ic-mean",
+        "-1",
+        "--min-quantile-spread",
+        "-1",
+        "--min-observations",
+        "1",
+        "--allow-data-gaps",
+        "--record-to-registry",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "human_review_ready"
+    assert payload["summary"]["recorded_to_registry"] is True
+    assert payload["recorded"]["research_loop_run"]["run_id"] == payload["run_id"]
+    assert payload["recorded"]["judge_verdicts"][0]["verdict"]["gate_status"] == "passed"
+    assert (
+        payload["recorded"]["judge_verdicts"][0]["verdict"]["evaluation_id"]
+        == "alpha-eval-2026-05-10-momentum_5d"
+    )
+    assert registry.current_strategy() is None
+    runs = registry.list_research_loop_runs()
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == payload["run_id"]
+    assert runs[0]["status"] == "human_review_ready"
+    assert runs[0]["payload"]["summary"]["approval_required"] is True
+    verdicts = registry.list_judge_verdicts()
+    assert len(verdicts) == 1
+    assert verdicts[0]["gate_status"] == "passed"
+
+
+def test_alpha_research_loop_does_not_record_without_explicit_flag(tmp_path):
+    registry = SqliteStrategyRegistry(tmp_path / "strategy_registry.sqlite")
+    exit_code, payload = _run_cli(
+        _service(tmp_path, registry=registry),
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factors",
+        "momentum_5d",
+        "--date",
+        "2026-05-12",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--researcher-id",
+        "researcher-agent",
+        "--backtester-id",
+        "backtester-agent",
+        "--evaluator-id",
+        "judge-agent",
+        "--min-rank-ic-mean",
+        "-1",
+        "--min-quantile-spread",
+        "-1",
+        "--min-observations",
+        "1",
+    )
+
+    assert exit_code == 0
+    assert payload["summary"]["recorded_to_registry"] is False
+    assert payload["recorded"] is None
+    assert registry.list_research_loop_runs() == []
+    assert registry.list_judge_verdicts() == []
+
+
+def test_alpha_research_loop_recorded_verdict_allows_manual_approval_chain(tmp_path):
+    registry = SqliteStrategyRegistry(tmp_path / "strategy_registry.sqlite")
+    exit_code, payload = _run_cli(
+        _service(tmp_path, registry=registry),
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factors",
+        "momentum_5d",
+        "--date",
+        "2026-05-12",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--researcher-id",
+        "researcher-agent",
+        "--backtester-id",
+        "backtester-agent",
+        "--evaluator-id",
+        "judge-agent",
+        "--min-rank-ic-mean",
+        "-1",
+        "--min-quantile-spread",
+        "-1",
+        "--min-observations",
+        "1",
+        "--allow-data-gaps",
+        "--record-to-registry",
+    )
+    assert exit_code == 0
+    assert payload["status"] == "human_review_ready"
+    governance = StrategyRegistryService(registry=registry)
+
+    proposed = governance.propose(payload["selected"]["strategy_proposal"])
+    assert proposed["current_strategy"] is None
+    approved = governance.approve(
+        strategy_version=payload["selected"]["strategy_version"],
+        approved_by="ryan",
+    )
+    assert approved["strategy_version"]["status"] == "approved"
+    activated = governance.activate(strategy_version=payload["selected"]["strategy_version"])
+
+    assert activated["current_strategy"]["status"] == "active"
+    assert (
+        activated["current_strategy"]["strategy_version"] == payload["selected"]["strategy_version"]
+    )
+    assert len(registry.list_research_loop_runs()) == 1
+    assert len(registry.list_judge_verdicts()) == 1

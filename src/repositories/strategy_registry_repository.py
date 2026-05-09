@@ -128,6 +128,15 @@ class SqliteStrategyRegistry:
                     recorded_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS alpha_research_loop_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    selected_factor TEXT,
+                    payload_json TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_strategy_versions_status
                     ON strategy_versions(status);
                 CREATE INDEX IF NOT EXISTS idx_strategy_approvals_version
@@ -142,6 +151,10 @@ class SqliteStrategyRegistry:
                     ON alpha_candidates(candidate_id);
                 CREATE INDEX IF NOT EXISTS idx_alpha_evaluations_evaluation_id
                     ON alpha_evaluations(evaluation_id);
+                CREATE INDEX IF NOT EXISTS idx_alpha_research_loop_runs_run_id
+                    ON alpha_research_loop_runs(run_id);
+                CREATE INDEX IF NOT EXISTS idx_alpha_research_loop_runs_status
+                    ON alpha_research_loop_runs(status);
             """)
 
     def save_candidate_strategy(self, *, proposal: dict[str, Any], version: dict[str, Any]) -> dict:
@@ -243,11 +256,22 @@ class SqliteStrategyRegistry:
         if not normalized_approver:
             raise ValueError("approved_by is required")
         current = self.get_strategy_version(strategy_version)
+        if current["status"] != "candidate":
+            raise ValueError("only candidate strategies can be approved")
+        judge_verdict = self.latest_judge_verdict(
+            strategy_version,
+            gate_status="passed",
+            proposal_id=current["source_proposal_id"],
+        )
+        if judge_verdict is None:
+            raise ValueError("passed judge verdict required before approval")
         now = _utc_now()
         approval_payload = {
             "strategy_version": strategy_version,
             "approved_by": normalized_approver,
             "approved_at": now,
+            "judge_verdict_id": judge_verdict["verdict_id"],
+            "proposal_id": judge_verdict["proposal_id"],
         }
         with self.connect() as conn:
             conn.execute(
@@ -303,6 +327,8 @@ class SqliteStrategyRegistry:
         approval = self.latest_approval(strategy_version)
         if approval is None:
             raise ValueError("approval record required before activation")
+        if target["status"] != "approved":
+            raise ValueError("only approved strategies can be activated")
 
         now = _utc_now()
         previous_active = self.current_strategy()
@@ -461,6 +487,40 @@ class SqliteStrategyRegistry:
             )
         return {"verdict_id": verdict_id, "recorded_at": now, "verdict": verdict}
 
+    def record_research_loop_run(self, run: dict[str, Any]) -> dict[str, Any]:
+        run_id = str(run.get("run_id") or "").strip()
+        status = str(run.get("status") or "").strip()
+        if not run_id:
+            raise ValueError("run_id is required")
+        if not status:
+            raise ValueError("status is required")
+        selected = run.get("selected") if isinstance(run.get("selected"), dict) else None
+        selected_factor = selected.get("factor") if selected else None
+        now = _utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO alpha_research_loop_runs (
+                    run_id, status, selected_factor, payload_json, recorded_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    status,
+                    selected_factor,
+                    _json_dumps(run),
+                    now,
+                ),
+            )
+        return {
+            "run_id": run_id,
+            "status": status,
+            "selected_factor": selected_factor,
+            "recorded_at": now,
+            "payload": run,
+        }
+
     def list_activation_history(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -493,6 +553,45 @@ class SqliteStrategyRegistry:
                 params,
             ).fetchall()
         return [self._judge_verdict_from_row(row) for row in rows]
+
+    def latest_judge_verdict(
+        self,
+        strategy_version: str,
+        *,
+        gate_status: str | None = None,
+        proposal_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        clauses = ["strategy_version = ?"]
+        params: list[Any] = [strategy_version]
+        if gate_status:
+            clauses.append("gate_status = ?")
+            params.append(gate_status)
+        if proposal_id:
+            clauses.append("proposal_id = ?")
+            params.append(proposal_id)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT * FROM strategy_judge_verdicts
+                WHERE {' AND '.join(clauses)}
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                tuple(params),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._judge_verdict_from_row(row)
+
+    def list_research_loop_runs(self, limit: int | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM alpha_research_loop_runs ORDER BY id ASC"
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (max(int(limit), 0),)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._research_loop_run_from_row(row) for row in rows]
 
     def _insert_event(
         self,
@@ -583,5 +682,15 @@ class SqliteStrategyRegistry:
             "gate_status": row["gate_status"],
             "evaluator_id": row["evaluator_id"],
             "verdict": _json_loads(row["verdict_json"]),
+            "recorded_at": row["recorded_at"],
+        }
+
+    def _research_loop_run_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "status": row["status"],
+            "selected_factor": row["selected_factor"],
+            "payload": _json_loads(row["payload_json"]),
             "recorded_at": row["recorded_at"],
         }
