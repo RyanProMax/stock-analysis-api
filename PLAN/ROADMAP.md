@@ -27,12 +27,13 @@
 - `scripts/alpha_scan.py`：只读本地行情仓，输出 Alpha 候选池。
 - `scripts/alpha_evaluate.py`：只读本地行情仓，输出 forward returns、IC / RankIC、分组收益、换手和样本切分。
 - `scripts/strategy_registry.py`：保存候选 strategy proposal、人工 approval、单 active strategy 指针和 append-only 状态事件。
+- `scripts/alpha_daily_report.py`：盘后串联 Alpha scan / evaluate，输出 summary-only 报告和候选 proposal。
 
 当前缺口：
 
 - Alpha 扫描和因子评估已有 MVP，但尚未持久化到 strategy registry，也没有接入盘后日报。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
-- 策略版本 registry 与审批记录已有 MVP，但自动盯盘 worker 尚未读取 active strategy。
+- 策略版本 registry、审批记录和 Alpha 日报已有 MVP，但自动盯盘 worker 尚未读取 active strategy。
 - 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
 
@@ -344,6 +345,8 @@ uv run python scripts/strategy_registry.py current --pretty
 
 ### P6：盘后自我迭代报告
 
+状态：done，2026-05-09
+
 目标：
 
 - 每天收盘后自动汇总行情、盯盘、模拟执行、Alpha 评估和候选策略变化。
@@ -377,6 +380,7 @@ uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
 - 默认 summary-only。
 - 明细必须 `--include-details`。
 - 报告必须明确 `proposal_not_applied`。
+- 已通过 `uv run pytest tests/test_alpha_daily_report_cli.py -q`。
 
 ### P7：Qlib 集成实验
 

@@ -73,6 +73,8 @@
 - `src/repositories/strategy_registry_repository.py`：SQLite strategy registry，保存 proposal、strategy version、approval、activation history、version event 以及 alpha candidate / evaluation 记录。
 - `src/services/strategy_registry_service.py`：策略版本治理业务逻辑，保证未审批不能 active、active 同时只能有一个、状态变更进入事件表。
 - `src/services/strategy_registry_cli.py`：内部策略 registry CLI 参数解析与纯 JSON 输出。
+- `src/services/alpha_daily_report_service.py`：盘后 summary-only Alpha 自迭代报告，串联 scan / evaluate 并生成候选 proposal。
+- `src/services/alpha_daily_report_cli.py`：内部 Alpha 日报 CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -135,12 +137,33 @@ uv run python scripts/strategy_registry.py current --pretty
 - `alpha_candidates` 和 `alpha_evaluations` 表作为 append-only research 记录入口，供后续日报和 registry 汇总使用。
 - 该 CLI 不触发 broker、不下单、不调用 Futu `SIMULATE`、不交易解锁，也不让 Agent 自动 approve / activate。
 
+## P6 Alpha Daily Report CLI
+
+内部入口：
+
+```bash
+uv run python scripts/alpha_daily_report.py --market cn --date 2026-05-09 --factor momentum_20d --pretty
+uv run python scripts/alpha_daily_report.py --market cn --symbols 300827,300274 --factor momentum_5d --forward-windows 1,3 --include-details --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=alpha_daily_report`、`date`、`summary`、`watch`、`simulated_trading`、`factor_evaluation_drift`、`alpha_scan`、`alpha_evaluation`、`strategy_proposal`。
+- 默认 summary-only：`alpha_scan` 不含完整 `items`，`alpha_evaluation` 不含完整 `evaluation`；明细必须显式 `--include-details`。
+- `summary.proposal_not_applied=true` 必须固定存在，表示报告不会修改运行时策略。
+- 有候选且有评估样本时生成 `StrategyProposal`，默认 `approval_required=true`、`effective_status=candidate_only`。
+- 空股票池或无评估样本时 `strategy_proposal=null`，`human_action_required=false`。
+- 报告中的 `watch` 和 `simulated_trading` 在当前 MVP 中只输出状态占位，不读取或写入 trading ledger，不触发 broker。
+- `factor_evaluation_drift` 在当前单日报告 MVP 中固定为 `not_available`，后续接入历史 evaluation 后再计算跨日报漂移。
+- 该 CLI 不调用 Futu `SIMULATE`、不下单、不 approve、不 activate，只为下一步人工治理链生成候选材料。
+
 ## 验收
 
 - `uv run pytest tests/test_alpha_contracts.py -q`
 - `uv run pytest tests/test_alpha_scan_cli.py -q`
 - `uv run pytest tests/test_alpha_evaluate_cli.py -q`
 - `uv run pytest tests/test_strategy_registry_cli.py -q`
+- `uv run pytest tests/test_alpha_daily_report_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。
