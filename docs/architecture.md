@@ -16,6 +16,7 @@
   - `scripts/trading_strategy_review.py`
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
+  - `scripts/alpha_evaluate.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -59,6 +60,7 @@ src/
 - `scripts/trading_strategy_review.py` 只读 ledger summary 和 ledger snapshot replay 指标，输出候选 `strategy_proposal`；该 proposal 不自动写回策略配置，也不触发下单
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
+- `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -209,6 +211,11 @@ src/
   - 输出候选 `AlphaCandidate` 只代表研究候选，不是交易信号或策略生效配置
   - 数据不足必须进入 `data_quality` / `data_gaps`，不得为了排序伪造 score
   - 后续策略迭代必须继续走 `strategy_proposal`、回测门槛和人工批准
+- Alpha 因子评估 workflow 固定为只读验证链路：
+  - `alpha_evaluate.py` 只能读取本地行情仓和标准 contract，不读取或写入 trading ledger
+  - 输出 `AlphaEvaluation` 只代表历史样本统计，不是交易信号或策略生效配置
+  - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 等指标缺失时必须返回 `null` 并写入 `data_gaps`，不得伪造指标
+  - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
 
 ## 演进方向
 

@@ -68,6 +68,8 @@
 - `src/services/alpha_feature_service.py`：从本地 SQLite 日线仓提取首批因子，不访问 broker，不拉外部实时行情。
 - `src/services/alpha_scan_service.py`：将 universe 与 feature 转换为 `AlphaCandidate`，数据不足时只标记 `partial`，不伪造分数。
 - `src/services/alpha_scan_cli.py`：内部 CLI 参数解析与纯 JSON 输出。
+- `src/services/alpha_evaluation_service.py`：只读本地日线仓，计算因子前瞻收益、IC / RankIC、分组收益、换手和样本切分。
+- `src/services/alpha_evaluate_cli.py`：内部因子评估 CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -88,10 +90,31 @@ uv run python scripts/alpha_scan.py --market cn --symbols 300827,300274 --top 10
 - `items` 中每项必须符合 `AlphaCandidate.to_dict()` contract。
 - 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`。
 
+## P2 Alpha Evaluate CLI
+
+内部入口：
+
+```bash
+uv run python scripts/alpha_evaluate.py --market cn --factor momentum_20d --start 2026-01-01 --end 2026-05-08 --forward-windows 1,5,20 --pretty
+uv run python scripts/alpha_evaluate.py --market cn --symbols 300827,300274 --factor momentum_5d --forward-windows 1,3
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=alpha_evaluate`、`computed_at`、`request`、`summary`、`evaluation`。
+- `evaluation` 必须符合 `AlphaEvaluation.to_dict()` contract。
+- `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`rank_ic_by_window`、`ic_by_window`、`quantile_returns_by_window`、`quantile_spread`、`quantile_spread_by_window`、`cost_adjusted_quantile_spread`、`turnover`。
+- `sample_split` 必须包含 `train`、`validation`、`out_of_sample` 三段，即使样本为空也要显式输出。
+- `status=empty`：股票池为空，`summary.data_gaps=["empty_universe"]`。
+- `status=partial`：存在缺失因子、缺失 forward return 或样本不足，缺口必须进入 `data_gaps`，不得用 0 或伪造值补齐指标。
+- 当前 MVP 支持 `momentum_5d`、`momentum_20d`、`volatility_5d`、`volume_change_5d`、`turnover_rate`、`pe_ttm`、`pb`、`pct_chg`。
+- 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`，也不改变运行时策略。
+
 ## 验收
 
 - `uv run pytest tests/test_alpha_contracts.py -q`
 - `uv run pytest tests/test_alpha_scan_cli.py -q`
+- `uv run pytest tests/test_alpha_evaluate_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。

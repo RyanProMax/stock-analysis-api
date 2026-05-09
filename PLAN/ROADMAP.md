@@ -24,11 +24,13 @@
 - `scripts/trading_daily_summary.py`：只读 ledger 的 summary-only 盘后总结。
 - `scripts/trading_strategy_review.py`：只读 ledger，生成需要人工批准的 `strategy_proposal`。
 - `scripts/trading_strategy_backtest.py`：固定 threshold 策略历史 K 线 / 注入样本回测。
+- `scripts/alpha_scan.py`：只读本地行情仓，输出 Alpha 候选池。
+- `scripts/alpha_evaluate.py`：只读本地行情仓，输出 forward returns、IC / RankIC、分组收益、换手和样本切分。
 
 当前缺口：
 
-- 没有全市场 Alpha 扫描和候选池。
-- 没有标准因子评估框架，例如 IC / RankIC / 分组收益 / 换手 / 衰减 / 样本外验证。
+- Alpha 扫描和因子评估已有 MVP，但尚未持久化到 strategy registry，也没有接入盘后日报。
+- 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 没有策略版本 registry、审批记录和生效策略读取机制。
 - 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
@@ -195,6 +197,8 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 
 ### P2：因子评估与 Alpha 验证
 
+状态：done，2026-05-09
+
 目标：
 
 - 把候选 Alpha 变成可验证结果，而不是只看扫描分。
@@ -228,6 +232,7 @@ uv run python scripts/alpha_evaluate.py --market cn --factor momentum_20d --star
 - 样本内和样本外分开展示。
 - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 必须存在。
 - 数据缺口必须进入 `data_gaps`。
+- 已通过 `uv run pytest tests/test_alpha_evaluate_cli.py -q`。
 
 ### P3：快速回测引擎升级
 

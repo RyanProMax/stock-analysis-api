@@ -14,7 +14,7 @@
 - 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
 - 继续补齐高 ROI Futu/OpenD 只读 provider 能力，优先支持盘口、逐笔、分时、期权链、账户、资金、持仓、订单、成交和流水查询，保持禁止写入、订阅、交易解锁和真实交易
 - 已按用户要求统一路线图路径为 `PLAN/ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
-- 已落地 P1 Alpha 扫描 MVP，下一步推进 P2 因子评估与样本外验证；`alpha_scan.py` 保持只读候选输出，不写交易 ledger、不触发 broker
+- 已落地 P1 Alpha 扫描 MVP 和 P2 因子评估 MVP；`alpha_scan.py` / `alpha_evaluate.py` 保持只读 research 输出，不写交易 ledger、不触发 broker
 
 ## 最近完成项
 
@@ -64,6 +64,12 @@
   - 支持 `--market cn/us`、`--universe all/stock/etf/watchlist`、`--symbols`、`--top`、`--as-of`
   - 从本地 SQLite 日线仓提取首批趋势 / 动量 / 波动 / 成交额 / 估值因子，输出严格 JSON `AlphaCandidate`
   - 数据不足返回 `data_quality=partial` 与 `data_gaps`，不伪造 score
+- 已完成 P2 因子评估 MVP：
+  - 新增 `src/services/alpha_evaluation_service.py`、`src/services/alpha_evaluate_cli.py`
+  - 新增内部入口 `scripts/alpha_evaluate.py`
+  - 支持 `--factor`、`--start`、`--end`、`--forward-windows`、`--quantiles`、`--cost-bps`
+  - 从本地 SQLite 日线仓计算 forward returns、IC / RankIC、分组收益、成本调整 spread、换手和 train / validation / out_of_sample 样本切分
+  - 数据不足返回 `status=partial` 与 `data_gaps`，不伪造指标
 
 ## 当前状态
 
@@ -78,6 +84,7 @@
   - `scripts/trading_strategy_review.py`
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
+  - `scripts/alpha_evaluate.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -112,13 +119,19 @@
   - 空股票池返回 `status=empty`
   - 数据不足返回 `status=partial` 并保留候选缺口说明
   - `score/rank/reasons` 仅基于确定性本地因子计算
+- Alpha 因子评估 P2 MVP 已完成：
+  - `alpha_evaluate.py` 只读本地行情仓，当前不拉外部实时行情、不写 ledger、不触发 broker
+  - 空股票池返回 `status=empty`
+  - 数据不足返回 `status=partial` 并保留评估缺口说明
+  - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover`
+  - `sample_split` 固定包含 `train`、`validation`、`out_of_sample`
 
 ## 下一步计划
 
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `PLAN/ROADMAP.md` 继续推进 P2 因子评估 MVP：补 `alpha_evaluate.py`、forward returns、IC / RankIC、分组收益、换手和样本切分；保持只读输出，不写交易 ledger、不触发 broker
+- 按 `PLAN/ROADMAP.md` 继续推进 P4 策略 registry 与人工审批链，先让 `AlphaCandidate` / `AlphaEvaluation` / `StrategyProposal` 能进入 append-only 治理记录；保持默认只读或 dry-run，不写运行时 active 策略
 
 ## 已知风险与阻塞
 
@@ -130,4 +143,4 @@
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
-- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序，不代表已验证 Alpha；进入策略 proposal 前必须经过 P2 因子评估、样本外验证和回测门槛。
+- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。进入策略 proposal 后仍必须经过回测门槛、人工审批和策略版本治理。
