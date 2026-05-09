@@ -80,6 +80,8 @@
 - `src/services/watch_worker_cli.py`：内部盯盘 worker CLI 参数解析与纯 JSON 输出。
 - `src/services/strategy_judge_service.py`：独立 evaluator / judge gate，根据固定门槛输出 `passed` / `blocked` verdict。
 - `src/services/strategy_judge_cli.py`：内部评委 CLI 参数解析与纯 JSON 输出。
+- `src/services/alpha_research_loop_service.py`：离线 agent teams 编排，将 researcher / backtester / evaluator 三类职责串成自迭代尝试；默认不写 registry、不 approve、不 activate。
+- `src/services/alpha_research_loop_cli.py`：内部自迭代 research loop CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -162,6 +164,28 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 - 当前固定门槛包括 `min_rank_ic_mean`、`min_quantile_spread`、`max_turnover`、`min_observations`、`allow_data_gaps`。
 - registry 只能 append 记录 judge verdict；不能因为 verdict passed 自动 approve / activate。
 
+## Agent Teams Research Loop CLI
+
+内部入口：
+
+```bash
+uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=alpha_research_loop`、`computed_at`、`team`、`request`、`summary`、`attempts`、`selected`、`next_research_actions`。
+- `team` 必须明确 `researcher`、`backtester`、`evaluator` 三个角色和 ID。
+- 三个角色 ID 必须互不相同；否则返回失败，不继续生成 proposal。
+- 每个 attempt 只处理一个 factor，并串联：
+  - researcher：通过 `alpha_daily_report` 生成候选 `strategy_proposal`。
+  - backtester：复用 `alpha_evaluation` 指标作为独立评估材料。
+  - evaluator：调用 `strategy_judge` 输出 verdict。
+- `status=human_review_ready` 表示至少一个 attempt 通过 judge gate，`selected.strategy_proposal` 可交给人工审核。
+- `status=needs_iteration` 表示所有 attempt 均 blocked，必须输出 `next_research_actions`，不得伪装为通过。
+- 默认 summary-only；attempt 明细必须显式 `--include-attempt-details` 才输出。
+- 默认不写 registry、不 approve、不 activate、不触发 broker。
+
 ## P6 Alpha Daily Report CLI
 
 内部入口：
@@ -209,6 +233,7 @@ uv run python scripts/watch_worker_tick.py --state-key cn-alpha-watch --interval
 - `uv run pytest tests/test_alpha_daily_report_cli.py -q`
 - `uv run pytest tests/test_watch_worker_tick_cli.py -q`
 - `uv run pytest tests/test_strategy_judge_cli.py -q`
+- `uv run pytest tests/test_alpha_research_loop_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。

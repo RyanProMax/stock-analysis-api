@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-05-07
+更新时间：2026-05-09
 
 ## 系统边界
 
@@ -21,6 +21,7 @@
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
   - `scripts/strategy_judge.py`
+  - `scripts/alpha_research_loop.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -69,6 +70,7 @@ src/
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
 - `scripts/strategy_judge.py` 作为独立 evaluator / judge gate，仅输出 `passed` / `blocked` verdict；该入口不写策略状态、不 approve、不 activate
+- `scripts/alpha_research_loop.py` 作为离线 agent teams 编排入口，串联 alpha daily report 和 judge gate；默认只输出 JSON，不写 registry、不 approve、不 activate、不触发 broker
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -245,6 +247,12 @@ src/
   - evaluator 与 researcher 相同必须 blocked
   - verdict passed 只表示 `human_review_ready`，不等于 approval
   - registry 可 append 记录 verdict，但不得因为 verdict passed 自动 activate
+- alpha research loop workflow 固定为离线自迭代链路：
+  - `alpha_research_loop.py` 必须显式区分 researcher、backtester、evaluator 三类 role id
+  - 三类 role id 不得相同
+  - 每轮只处理一个 factor，先生成 proposal 和 evaluation，再交给 judge gate
+  - 全部 blocked 时返回 `needs_iteration` 和下一步研究动作，不能伪装为可审核
+  - 通过 judge gate 时只输出 `human_review_ready` 材料，仍不得自动 approve 或 activate
 
 ## 演进方向
 

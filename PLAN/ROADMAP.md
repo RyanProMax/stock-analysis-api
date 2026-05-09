@@ -30,12 +30,13 @@
 - `scripts/alpha_daily_report.py`：盘后串联 Alpha scan / evaluate，输出 summary-only 报告和候选 proposal。
 - `scripts/watch_worker_tick.py`：读取已审批 active strategy，按时间窗和间隔生成只读 watch summary。
 - `scripts/strategy_judge.py`：由独立 evaluator 根据固定门槛输出 passed / blocked verdict；passed 只代表可进入人工审核，不自动审批或生效。
+- `scripts/alpha_research_loop.py`：离线串联 researcher / backtester / evaluator 三类角色，按 factor 多轮尝试，输出 `human_review_ready` 或 `needs_iteration`。
 
 当前缺口：
 
 - Alpha 扫描、因子评估和盘后日报已有 MVP，但候选、评估和 verdict 尚未形成完整的跨日 registry 查询面和历史漂移分析。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
-- 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker 和 evaluator / judge gate 已有 MVP，但 researcher / backtester / evaluator 的团队调度编排尚未实现。
+- 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP，但跨日 registry 查询面、失败归因持久化和真实多 Agent 运行时尚未实现。
 - 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
 
@@ -385,6 +386,38 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 - registry 只 append verdict，不创建 approval、不 activate。
 - 已通过 `uv run pytest tests/test_strategy_judge_cli.py -q`。
 
+### P5.2：离线 Agent Teams Research Loop
+
+状态：done，2026-05-09
+
+目标：
+
+- 把 researcher / backtester / evaluator 的职责分开，形成可被 Agent 调度的离线自迭代 contract。
+- 在未达到 judge 门槛前自动尝试下一组 factor；达到门槛后只输出给人工审核。
+- 默认不写 registry、不 approve、不 activate、不触发 broker。
+
+新增 / 修改文件：
+
+- `src/services/alpha_research_loop_service.py`
+- `src/services/alpha_research_loop_cli.py`
+- `scripts/alpha_research_loop.py`
+- `tests/test_alpha_research_loop_cli.py`
+
+CLI：
+
+```bash
+uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --pretty
+```
+
+验收：
+
+- researcher / backtester / evaluator 三类 role id 必须互不相同。
+- 通过 judge gate 时返回 `status=human_review_ready`、候选 proposal 和 verdict。
+- 全部 attempt blocked 时返回 `status=needs_iteration` 与 `next_research_actions`。
+- 默认 summary-only，不输出完整 report 明细；明细必须显式 `--include-attempt-details`。
+- 不写 registry、不创建 approval、不 activate。
+- 已通过 `uv run pytest tests/test_alpha_research_loop_cli.py -q`。
+
 ### P6：盘后自我迭代报告
 
 状态：done，2026-05-09
@@ -490,6 +523,7 @@ uv run python scripts/alpha_scan.py --market cn --universe all --top 50 --pretty
 uv run python scripts/alpha_evaluate.py --market cn --start 2026-01-01 --end 2026-05-09 --forward-windows 1,5,20 --pretty
 uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
 uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
+uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --pretty
 uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 --pretty
 ```
 
@@ -534,7 +568,8 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 3. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
 4. `alpha_daily_report.py` 汇总并输出人工操作项。
 5. `strategy_judge.py` 由独立 evaluator 输出可审核 verdict。
-6. 所有输出严格 JSON，Feishu 只展示 summary-only。
+6. `alpha_research_loop.py` 串联多 factor 尝试，输出 `human_review_ready` 或 `needs_iteration`。
+7. 所有输出严格 JSON，Feishu 只展示 summary-only。
 
 ## 调研来源
 
