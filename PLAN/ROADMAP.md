@@ -29,12 +29,13 @@
 - `scripts/strategy_registry.py`：保存候选 strategy proposal、人工 approval、单 active strategy 指针和 append-only 状态事件。
 - `scripts/alpha_daily_report.py`：盘后串联 Alpha scan / evaluate，输出 summary-only 报告和候选 proposal。
 - `scripts/watch_worker_tick.py`：读取已审批 active strategy，按时间窗和间隔生成只读 watch summary。
+- `scripts/strategy_judge.py`：由独立 evaluator 根据固定门槛输出 passed / blocked verdict；passed 只代表可进入人工审核，不自动审批或生效。
 
 当前缺口：
 
-- Alpha 扫描和因子评估已有 MVP，但尚未持久化到 strategy registry，也没有接入盘后日报。
+- Alpha 扫描、因子评估和盘后日报已有 MVP，但候选、评估和 verdict 尚未形成完整的跨日 registry 查询面和历史漂移分析。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
-- 策略版本 registry、审批记录、Alpha 日报和自动盯盘 worker 已有 MVP，但 agent teams evaluator / judge gate 尚未实现。
+- 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker 和 evaluator / judge gate 已有 MVP，但 researcher / backtester / evaluator 的团队调度编排尚未实现。
 - 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
 
@@ -347,6 +348,43 @@ uv run python scripts/strategy_registry.py current --pretty
 - 不会真实下单。
 - 已通过 `uv run pytest tests/test_watch_worker_tick_cli.py -q`。
 
+### P5.1：独立 Evaluator / Judge Gate
+
+状态：done，2026-05-09
+
+目标：
+
+- 把“模型自研迭代”和“最终评估放行”拆成不同角色，避免同一个 Agent 既开发、回测又最终评估。
+- 在候选策略进入人工审核前，由独立 evaluator 按固定门槛输出结构化 verdict。
+- verdict 不得自动 approve / activate，passed 只代表 `human_review_ready=true`。
+
+新增 / 修改文件：
+
+- `src/services/strategy_judge_service.py`
+- `src/services/strategy_judge_cli.py`
+- `scripts/strategy_judge.py`
+- `src/model/strategy.py`
+- `src/repositories/strategy_registry_repository.py`
+- `src/services/strategy_registry_service.py`
+- `src/services/strategy_registry_cli.py`
+- `tests/test_strategy_judge_cli.py`
+
+CLI：
+
+```bash
+uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
+uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict.json --pretty
+```
+
+验收：
+
+- `evaluator_id == researcher_id` 必须 blocked。
+- 指标未达 `rank_ic_mean`、`quantile_spread`、`turnover`、`observations` 或存在 data gaps 时必须 blocked。
+- passed verdict 返回原 `strategy_proposal` 和 `human_review_ready=true`。
+- blocked verdict 不返回 `strategy_proposal`。
+- registry 只 append verdict，不创建 approval、不 activate。
+- 已通过 `uv run pytest tests/test_strategy_judge_cli.py -q`。
+
 ### P6：盘后自我迭代报告
 
 状态：done，2026-05-09
@@ -451,6 +489,7 @@ uv run python scripts/watch_worker_tick.py --market cn --state-key cn-alpha-watc
 uv run python scripts/alpha_scan.py --market cn --universe all --top 50 --pretty
 uv run python scripts/alpha_evaluate.py --market cn --start 2026-01-01 --end 2026-05-09 --forward-windows 1,5,20 --pretty
 uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
+uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
 uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 --pretty
 ```
 
@@ -494,7 +533,8 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 2. `alpha_evaluate.py` 输出 IC / RankIC / quantile spread。
 3. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
 4. `alpha_daily_report.py` 汇总并输出人工操作项。
-5. 所有输出严格 JSON，Feishu 只展示 summary-only。
+5. `strategy_judge.py` 由独立 evaluator 输出可审核 verdict。
+6. 所有输出严格 JSON，Feishu 只展示 summary-only。
 
 ## 调研来源
 

@@ -14,7 +14,7 @@
 - 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
 - 继续补齐高 ROI Futu/OpenD 只读 provider 能力，优先支持盘口、逐笔、分时、期权链、账户、资金、持仓、订单、成交和流水查询，保持禁止写入、订阅、交易解锁和真实交易
 - 已按用户要求统一路线图路径为 `PLAN/ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
-- 已落地 P1 Alpha 扫描 MVP、P2 因子评估 MVP、P4 策略 registry MVP、P6 Alpha 日报 MVP 和 P5 自动盯盘 worker MVP；Alpha 自挖掘 / 自迭代的离线 proposal 链路已能串起来，日内 worker 可读取 active strategy 做只读 watch summary，但策略生效仍必须人工 approve / activate
+- 已落地 P1 Alpha 扫描 MVP、P2 因子评估 MVP、P4 策略 registry MVP、P6 Alpha 日报 MVP、P5 自动盯盘 worker MVP 和独立 evaluator / judge gate MVP；Alpha 自挖掘 / 自迭代的离线 proposal 链路已能串起来，日内 worker 可读取 active strategy 做只读 watch summary，但策略生效仍必须人工 approve / activate
 - 已明确治理原则：模型在达到评估门槛前可以自动研究迭代；进入候选策略审核前应由独立 evaluator / judge 角色复核，避免同一个 Agent 既开发、回测又最终评估
 
 ## 最近完成项
@@ -89,6 +89,12 @@
   - 新增 `ops/com.ryan.stock-analysis-watch.plist` 调度示例
   - 支持 active window、interval、state key、active strategy 读取和 summary-only watch alerts
   - 当前 MVP 默认 `simulated_execution.status=disabled`，不调用 broker、不写订单
+- 已完成独立 evaluator / judge gate MVP：
+  - 新增 `src/services/strategy_judge_service.py`、`src/services/strategy_judge_cli.py`
+  - 新增内部入口 `scripts/strategy_judge.py`
+  - 新增 `StrategyJudgeVerdict` contract
+  - `strategy_registry.py record-verdict` 可 append 记录评委结论
+  - evaluator 与 researcher 相同会 blocked；verdict passed 只代表 `human_review_ready`，不会自动 approve / activate
 
 ## 当前状态
 
@@ -107,6 +113,7 @@
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
+  - `scripts/strategy_judge.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -162,13 +169,17 @@
   - outside window / not due 返回 `skipped`
   - report/provider 异常返回 `degraded`
   - 当前只生成 alpha watch summary 和候选 alerts，不触发模拟交易
+- 独立 judge gate MVP 已完成：
+  - `strategy_judge.py` 根据固定评估门槛输出 `passed` / `blocked`
+  - `evaluator_id == researcher_id` 会阻断，避免同一 Agent 自评
+  - `strategy_registry.py record-verdict` 只追加 verdict，不创建 approval，不 activate
 
 ## 下一步计划
 
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
-- 后续若要把 self-iteration 做成 agent teams，需要拆分 researcher / backtester / evaluator-judge 角色，并把 judge gate 的结构化 verdict 写入 registry；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
+- 后续若要把 self-iteration 做成 agent teams，需要补 researcher / backtester / evaluator-judge 的调度编排；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级和 evaluator / judge gate；保持默认只读或 dry-run，不允许真实交易
+- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级和 agent teams 编排；保持默认只读或 dry-run，不允许真实交易
 
 ## 已知风险与阻塞
 
@@ -180,4 +191,4 @@
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
-- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P6 `alpha_daily_report.py` 只生成候选 proposal，不写 registry、不生效策略；P5 worker 当前只读 active strategy 和生成 watch summary。策略进入 active 前仍必须经过 P4 人工审批记录；后续如果加入 agent teams，evaluator / judge 角色必须独立于 researcher / backtester。
+- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P6 `alpha_daily_report.py` 只生成候选 proposal，不写 registry、不生效策略；P5 worker 当前只读 active strategy 和生成 watch summary。Judge verdict passed 只代表可进入人工审核，不等于 approval；策略进入 active 前仍必须经过 P4 人工审批记录。

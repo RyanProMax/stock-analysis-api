@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..model.serialization import json_safe
-from ..model.strategy import StrategyProposal, StrategyVersion
+from ..model.strategy import StrategyJudgeVerdict, StrategyProposal, StrategyVersion
 from ..repositories.strategy_registry_repository import SqliteStrategyRegistry
 
 
@@ -109,6 +109,20 @@ class StrategyRegistryService:
                 "source": "strategy_registry",
                 "action": "record_alpha_evaluation",
                 "record": record,
+            }
+        )
+
+    def record_judge_verdict(self, verdict: dict[str, Any]) -> dict:
+        normalized = StrategyJudgeVerdict(**verdict).to_dict()
+        record = self.registry.record_judge_verdict(normalized)
+        return json_safe(
+            {
+                "status": "ok",
+                "source": "strategy_registry",
+                "action": "record_judge_verdict",
+                "record": record,
+                "current_strategy": self.registry.current_strategy(),
+                "events": self.registry.list_events(normalized.get("strategy_version")),
             }
         )
 

@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_versions = subparsers.add_parser("list", help="List registered strategy versions")
     list_versions.add_argument("--pretty", action="store_true")
+
+    record_verdict = subparsers.add_parser(
+        "record-verdict", help="Append an independent judge verdict"
+    )
+    record_verdict.add_argument("--verdict-json", required=True)
+    record_verdict.add_argument("--pretty", action="store_true")
     return parser
 
 
@@ -83,6 +89,8 @@ def main(
             payload = registry_service.current()
         elif args.command == "list":
             payload = registry_service.list_versions()
+        elif args.command == "record-verdict":
+            payload = registry_service.record_judge_verdict(_load_json(args.verdict_json))
         else:
             raise ValueError(f"unsupported command: {args.command}")
         _emit(payload, pretty, writer)

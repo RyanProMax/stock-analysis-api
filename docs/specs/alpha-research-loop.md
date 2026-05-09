@@ -78,6 +78,8 @@
 - `src/services/alpha_daily_report_cli.py`：内部 Alpha 日报 CLI 参数解析与纯 JSON 输出。
 - `src/services/watch_worker_service.py`：自动盯盘 tick，读取已审批 active strategy，生成 Alpha watch summary；当前 MVP 默认不触发模拟交易。
 - `src/services/watch_worker_cli.py`：内部盯盘 worker CLI 参数解析与纯 JSON 输出。
+- `src/services/strategy_judge_service.py`：独立 evaluator / judge gate，根据固定门槛输出 `passed` / `blocked` verdict。
+- `src/services/strategy_judge_cli.py`：内部评委 CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -138,7 +140,27 @@ uv run python scripts/strategy_registry.py current --pretty
 - `activate` 成功时只允许一个 `active`，已有 active 会被标记为 `retired`。
 - 状态变化必须写入 append-only `strategy_version_events`；激活历史必须写入 `strategy_activation_history`。
 - `alpha_candidates` 和 `alpha_evaluations` 表作为 append-only research 记录入口，供后续日报和 registry 汇总使用。
+- `record-verdict` 只追加独立 judge verdict，不创建 approval，不 activate。
 - 该 CLI 不触发 broker、不下单、不调用 Futu `SIMULATE`、不交易解锁，也不让 Agent 自动 approve / activate。
+
+## Judge Gate CLI
+
+内部入口：
+
+```bash
+uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
+uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict.json --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=strategy_judge`、`verdict`、`strategy_proposal`。
+- `status=passed` 时 `verdict.human_review_ready=true`，并回传原始 `strategy_proposal` 给人工审核或 registry propose。
+- `status=blocked` 时 `strategy_proposal=null`，`verdict.reasons` 必须说明阻断原因。
+- `verdict.proposal_not_applied=true` 必须固定存在，表示评委结论不会修改运行时策略。
+- `evaluator_id` 与 `researcher_id` 相同会阻断，原因固定为 `evaluator_must_be_independent`。
+- 当前固定门槛包括 `min_rank_ic_mean`、`min_quantile_spread`、`max_turnover`、`min_observations`、`allow_data_gaps`。
+- registry 只能 append 记录 judge verdict；不能因为 verdict passed 自动 approve / activate。
 
 ## P6 Alpha Daily Report CLI
 
@@ -186,6 +208,7 @@ uv run python scripts/watch_worker_tick.py --state-key cn-alpha-watch --interval
 - `uv run pytest tests/test_strategy_registry_cli.py -q`
 - `uv run pytest tests/test_alpha_daily_report_cli.py -q`
 - `uv run pytest tests/test_watch_worker_tick_cli.py -q`
+- `uv run pytest tests/test_strategy_judge_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。

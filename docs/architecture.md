@@ -20,6 +20,7 @@
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
+  - `scripts/strategy_judge.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -67,6 +68,7 @@ src/
 - `scripts/strategy_registry.py` 只管理候选策略、人工审批记录和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `activate` 必须已有人工 approval record
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
+- `scripts/strategy_judge.py` 作为独立 evaluator / judge gate，仅输出 `passed` / `blocked` verdict；该入口不写策略状态、不 approve、不 activate
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -238,6 +240,11 @@ src/
   - 只读取 registry 当前 active strategy，不自己 approve 或 activate
   - 当前 MVP 只生成 Alpha watch summary 和候选 alerts，不调用 broker，不写 trading orders
   - provider/report 失败必须返回 `degraded`，不能吞异常
+- evaluator / judge workflow 固定为独立评估链路：
+  - `strategy_judge.py` 只读取 proposal 和 evaluation，按固定门槛输出结构化 verdict
+  - evaluator 与 researcher 相同必须 blocked
+  - verdict passed 只表示 `human_review_ready`，不等于 approval
+  - registry 可 append 记录 verdict，但不得因为 verdict passed 自动 activate
 
 ## 演进方向
 

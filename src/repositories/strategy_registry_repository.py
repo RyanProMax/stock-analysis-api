@@ -103,6 +103,17 @@ class SqliteStrategyRegistry:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS strategy_judge_verdicts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    verdict_id TEXT NOT NULL,
+                    proposal_id TEXT NOT NULL,
+                    strategy_version TEXT NOT NULL,
+                    gate_status TEXT NOT NULL,
+                    evaluator_id TEXT NOT NULL,
+                    verdict_json TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS alpha_candidates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     candidate_id TEXT NOT NULL,
@@ -123,6 +134,10 @@ class SqliteStrategyRegistry:
                     ON strategy_approvals(strategy_version);
                 CREATE INDEX IF NOT EXISTS idx_strategy_events_version
                     ON strategy_version_events(strategy_version);
+                CREATE INDEX IF NOT EXISTS idx_strategy_judge_verdicts_version
+                    ON strategy_judge_verdicts(strategy_version);
+                CREATE INDEX IF NOT EXISTS idx_strategy_judge_verdicts_proposal
+                    ON strategy_judge_verdicts(proposal_id);
                 CREATE INDEX IF NOT EXISTS idx_alpha_candidates_candidate_id
                     ON alpha_candidates(candidate_id);
                 CREATE INDEX IF NOT EXISTS idx_alpha_evaluations_evaluation_id
@@ -399,6 +414,53 @@ class SqliteStrategyRegistry:
             )
         return {"evaluation_id": evaluation_id, "recorded_at": now, "payload": evaluation}
 
+    def record_judge_verdict(self, verdict: dict[str, Any]) -> dict[str, Any]:
+        verdict_id = str(verdict.get("verdict_id") or "").strip()
+        proposal_id = str(verdict.get("proposal_id") or "").strip()
+        strategy_version = str(verdict.get("strategy_version") or "").strip()
+        gate_status = str(verdict.get("gate_status") or "").strip()
+        evaluator_id = str(verdict.get("evaluator_id") or "").strip()
+        if not verdict_id:
+            raise ValueError("verdict_id is required")
+        if not proposal_id:
+            raise ValueError("proposal_id is required")
+        if not strategy_version:
+            raise ValueError("strategy_version is required")
+        if not gate_status:
+            raise ValueError("gate_status is required")
+        if not evaluator_id:
+            raise ValueError("evaluator_id is required")
+        now = _utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO strategy_judge_verdicts (
+                    verdict_id, proposal_id, strategy_version, gate_status,
+                    evaluator_id, verdict_json, recorded_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    verdict_id,
+                    proposal_id,
+                    strategy_version,
+                    gate_status,
+                    evaluator_id,
+                    _json_dumps(verdict),
+                    now,
+                ),
+            )
+            self._insert_event(
+                conn,
+                strategy_version=strategy_version,
+                event_type="judge_verdict_recorded",
+                from_status=None,
+                to_status=gate_status,
+                payload={"verdict_id": verdict_id, "proposal_id": proposal_id},
+                created_at=now,
+            )
+        return {"verdict_id": verdict_id, "recorded_at": now, "verdict": verdict}
+
     def list_activation_history(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -418,6 +480,19 @@ class SqliteStrategyRegistry:
                 params,
             ).fetchall()
         return [self._event_from_row(row) for row in rows]
+
+    def list_judge_verdicts(self, strategy_version: str | None = None) -> list[dict[str, Any]]:
+        params: tuple[Any, ...] = ()
+        where = ""
+        if strategy_version:
+            where = "WHERE strategy_version = ?"
+            params = (strategy_version,)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM strategy_judge_verdicts {where} ORDER BY id ASC",
+                params,
+            ).fetchall()
+        return [self._judge_verdict_from_row(row) for row in rows]
 
     def _insert_event(
         self,
@@ -497,4 +572,16 @@ class SqliteStrategyRegistry:
             "to_status": row["to_status"],
             "payload": _json_loads(row["payload_json"]),
             "created_at": row["created_at"],
+        }
+
+    def _judge_verdict_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "verdict_id": row["verdict_id"],
+            "proposal_id": row["proposal_id"],
+            "strategy_version": row["strategy_version"],
+            "gate_status": row["gate_status"],
+            "evaluator_id": row["evaluator_id"],
+            "verdict": _json_loads(row["verdict_json"]),
+            "recorded_at": row["recorded_at"],
         }
