@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-07
+更新时间：2026-05-09
 
 ## 当前目标
 
@@ -13,7 +13,7 @@
 - 启动模拟盘自动交易一期：把 Futu/OpenD 作为 API 内部正式 data provider / broker adapter 接入，先建立确定性 `run_once` 执行闭环
 - 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
 - 继续补齐高 ROI Futu/OpenD 只读 provider 能力，优先支持盘口、逐笔、分时、期权链、账户、资金、持仓、订单、成交和流水查询，保持禁止写入、订阅、交易解锁和真实交易
-- 已按用户要求新增根目录 `ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
+- 已按用户要求统一路线图路径为 `PLAN/ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
 
 ## 最近完成项
 
@@ -55,7 +55,8 @@
 - 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
 - 已扩展 `scripts/futu_market_data.py` Futu/OpenD 只读查询能力，新增 `order-book`、`ticker`、`rt-data`、`option-expirations`、`option-chain`、`account`、`positions`、`orders`、`deals`、`cash-flow` 子命令。
 - 已补充 Futu 只读 CLI contract 与安全回归测试，覆盖新增命令 stdout JSON、Futu `SIMULATE` 账户类只读查询，以及 CLI 不暴露写入类子命令。
-- 已新增 `ROADMAP.md`，基于 Qlib、vectorbt、Alphalens 方法论、NautilusTrader、LEAN、Backtrader、OpenBB 和 vn.py 等成熟开源项目调研，沉淀自动盯盘与 Alpha 自我迭代的阶段路线。
+- 已新增 `PLAN/ROADMAP.md`，基于 Qlib、vectorbt、Alphalens 方法论、NautilusTrader、LEAN、Backtrader、OpenBB 和 vn.py 等成熟开源项目调研，沉淀自动盯盘与 Alpha 自我迭代的阶段路线。
+- 已完成 `PLAN/ROADMAP.md` P0：新增 `docs/specs/alpha-research-loop.md`、`src/model/alpha.py`、`src/model/strategy.py` 与共享 `src/model/serialization.py`，锁定 Alpha 候选、因子评估、策略 proposal、策略版本治理和 JSON 安全序列化 contract。
 
 ## 当前状态
 
@@ -93,13 +94,18 @@
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
+- Alpha 研究闭环 P0 contract 已完成：
+  - `AlphaCandidate`：候选信号、因子值、分数、排名、原因和数据质量。
+  - `AlphaEvaluation`：必须包含 train / validation / out_of_sample 样本切分，并承载 IC / RankIC / 分组收益 / 换手等指标。
+  - `StrategyProposal`：默认 `approval_required=true` 且 `effective_status=candidate_only`，Agent 不能直接改运行时策略。
+  - `StrategyVersion`：只允许 draft / candidate / approved / active / retired / rejected，approved / active 必须记录批准人。
 
 ## 下一步计划
 
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `ROADMAP.md` 优先推进第一轮最小闭环：`alpha_scan.py`、`alpha_evaluate.py`、`strategy_registry.py`、`alpha_daily_report.py`，并保持所有策略 proposal 必须人工批准后才可生效
+- 按 `PLAN/ROADMAP.md` 继续推进 P1 Alpha 扫描 MVP：`alpha_scan.py`、universe service、feature service 和 scan service；保持只读输出候选，不写交易 ledger、不触发 broker
 
 ## 已知风险与阻塞
 

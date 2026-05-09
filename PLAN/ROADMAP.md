@@ -91,6 +91,8 @@ Agent Loop
 
 ### P0：先锁安全边界和数据契约
 
+状态：done，2026-05-09
+
 目标：
 
 - 确认所有新增能力默认只读或 dry-run。
@@ -101,6 +103,7 @@ Agent Loop
 
 - `docs/specs/alpha-research-loop.md`
 - `docs/plan.md`
+- `src/model/serialization.py`
 - `src/model/alpha.py`
 - `src/model/strategy.py`
 - `tests/test_alpha_contracts.py`
