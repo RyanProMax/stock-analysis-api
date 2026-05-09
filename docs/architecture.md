@@ -17,6 +17,7 @@
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
   - `scripts/alpha_evaluate.py`
+  - `scripts/strategy_registry.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -61,6 +62,7 @@ src/
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
+- `scripts/strategy_registry.py` 只管理候选策略、人工审批记录和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `activate` 必须已有人工 approval record
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -216,6 +218,12 @@ src/
   - 输出 `AlphaEvaluation` 只代表历史样本统计，不是交易信号或策略生效配置
   - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 等指标缺失时必须返回 `null` 并写入 `data_gaps`，不得伪造指标
   - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
+- 策略 registry workflow 固定为人工治理链路：
+  - `strategy_registry.py propose` 只能写入候选 proposal 和 candidate strategy version，不能 active
+  - `strategy_registry.py approve` 必须显式记录 `approved_by`
+  - `strategy_registry.py activate` 必须先查到 approval record，且激活时保证单 active
+  - strategy version 当前态可以更新，但每次状态变化必须追加到 `strategy_version_events`
+  - strategy registry 不属于日内交易链路，不调用 broker，不写 trading ledger，不绕过人工批准
 
 ## 演进方向
 

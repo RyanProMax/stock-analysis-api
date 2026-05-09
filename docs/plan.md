@@ -14,7 +14,7 @@
 - 迁移 `stock-analysis-skill` `/hkipo` 与 `/research` 已用到的 Futu/OpenD 只读能力到 API 内部 CLI，逐步删除 skill 对 `futuapi` 脚本的运行依赖
 - 继续补齐高 ROI Futu/OpenD 只读 provider 能力，优先支持盘口、逐笔、分时、期权链、账户、资金、持仓、订单、成交和流水查询，保持禁止写入、订阅、交易解锁和真实交易
 - 已按用户要求统一路线图路径为 `PLAN/ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
-- 已落地 P1 Alpha 扫描 MVP 和 P2 因子评估 MVP；`alpha_scan.py` / `alpha_evaluate.py` 保持只读 research 输出，不写交易 ledger、不触发 broker
+- 已落地 P1 Alpha 扫描 MVP、P2 因子评估 MVP 和 P4 策略 registry MVP；`alpha_scan.py` / `alpha_evaluate.py` 保持只读 research 输出，`strategy_registry.py` 只做人工治理记录，不触发 broker
 
 ## 最近完成项
 
@@ -70,6 +70,12 @@
   - 支持 `--factor`、`--start`、`--end`、`--forward-windows`、`--quantiles`、`--cost-bps`
   - 从本地 SQLite 日线仓计算 forward returns、IC / RankIC、分组收益、成本调整 spread、换手和 train / validation / out_of_sample 样本切分
   - 数据不足返回 `status=partial` 与 `data_gaps`，不伪造指标
+- 已完成 P4 策略 registry MVP：
+  - 新增 `src/repositories/strategy_registry_repository.py`、`src/services/strategy_registry_service.py`、`src/services/strategy_registry_cli.py`
+  - 新增内部入口 `scripts/strategy_registry.py`
+  - 支持 `propose`、`approve`、`activate`、`current`、`list`
+  - `propose` 只保存 candidate，不 active；`activate` 必须已有 approval record
+  - 激活时保证单 active，旧 active 自动 retired；所有状态变化写入 append-only `strategy_version_events`
 
 ## 当前状态
 
@@ -85,6 +91,7 @@
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
   - `scripts/alpha_evaluate.py`
+  - `scripts/strategy_registry.py`
 - `scripts/stock_analyze.py` 当前支持代码直传与中文股票名解析，股票名解析只属于内部 CLI contract，不新增公共 HTTP API。
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
@@ -125,13 +132,18 @@
   - 数据不足返回 `status=partial` 并保留评估缺口说明
   - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover`
   - `sample_split` 固定包含 `train`、`validation`、`out_of_sample`
+- 策略 registry P4 MVP 已完成：
+  - `strategy_registry.py` 写独立 SQLite registry，不写 trading ledger、不触发 broker
+  - `strategy_versions` 保存当前策略版本状态；`strategy_version_events` 保存 append-only 状态事件
+  - `strategy_approvals` 保存人工审批记录；`strategy_activation_history` 保存激活历史
+  - 未审批策略不能 active；同一时间只能有一个 active strategy
 
 ## 下一步计划
 
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
-- 如需从候选 `strategy_proposal` 进入策略版本管理，再补 schema 校验、人工批准记录和运行时策略配置读取机制
+- 后续如需让自动盯盘读取 active strategy，再补只读 active strategy reader 与 worker 集成；读取只允许消费已 active 且有 approval record 的版本
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `PLAN/ROADMAP.md` 继续推进 P4 策略 registry 与人工审批链，先让 `AlphaCandidate` / `AlphaEvaluation` / `StrategyProposal` 能进入 append-only 治理记录；保持默认只读或 dry-run，不写运行时 active 策略
+- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级或 P5 自动盯盘 worker；保持默认只读或 dry-run，不允许真实交易
 
 ## 已知风险与阻塞
 
@@ -143,4 +155,4 @@
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
-- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。进入策略 proposal 后仍必须经过回测门槛、人工审批和策略版本治理。
+- P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P4 registry 只负责治理状态，不验证回测质量；策略进入 active 前仍必须保留人工审批记录，后续 worker 读取 active strategy 时也必须保持只读。

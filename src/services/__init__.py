@@ -25,6 +25,7 @@ _EXPORT_MODULES = {
     "realtime_quote_polling_service": "realtime_quote_polling_service",
     "AlphaScanService": "alpha_scan_service",
     "AlphaEvaluationService": "alpha_evaluation_service",
+    "StrategyRegistryService": "strategy_registry_service",
 }
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "realtime_quote_polling_service",
     "AlphaScanService",
     "AlphaEvaluationService",
+    "StrategyRegistryService",
 ]
 
 

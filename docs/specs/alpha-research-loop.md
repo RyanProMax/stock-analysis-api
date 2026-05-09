@@ -70,6 +70,9 @@
 - `src/services/alpha_scan_cli.py`：内部 CLI 参数解析与纯 JSON 输出。
 - `src/services/alpha_evaluation_service.py`：只读本地日线仓，计算因子前瞻收益、IC / RankIC、分组收益、换手和样本切分。
 - `src/services/alpha_evaluate_cli.py`：内部因子评估 CLI 参数解析与纯 JSON 输出。
+- `src/repositories/strategy_registry_repository.py`：SQLite strategy registry，保存 proposal、strategy version、approval、activation history、version event 以及 alpha candidate / evaluation 记录。
+- `src/services/strategy_registry_service.py`：策略版本治理业务逻辑，保证未审批不能 active、active 同时只能有一个、状态变更进入事件表。
+- `src/services/strategy_registry_cli.py`：内部策略 registry CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -110,11 +113,34 @@ uv run python scripts/alpha_evaluate.py --market cn --symbols 300827,300274 --fa
 - 当前 MVP 支持 `momentum_5d`、`momentum_20d`、`volatility_5d`、`volume_change_5d`、`turnover_rate`、`pe_ttm`、`pb`、`pct_chg`。
 - 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`，也不改变运行时策略。
 
+## P4 Strategy Registry CLI
+
+内部入口：
+
+```bash
+uv run python scripts/strategy_registry.py propose --proposal-json proposal.json --pretty
+uv run python scripts/strategy_registry.py approve --strategy-version alpha_topn_v1.20260509 --approved-by ryan --pretty
+uv run python scripts/strategy_registry.py activate --strategy-version alpha_topn_v1.20260509 --pretty
+uv run python scripts/strategy_registry.py current --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=strategy_registry`、`action`，并按命令返回 `proposal`、`strategy_version`、`current_strategy`、`events`、`activation` 等结构化字段。
+- `propose` 只接受 `approval_required=true` 且 `effective_status=candidate_only` 的 `StrategyProposal`；保存后 strategy status 为 `candidate`，不会 active，也不会写运行时策略配置。
+- `approve` 必须显式传 `--approved-by`；审批记录写入 `strategy_approvals`。
+- `activate` 必须先存在 approval record；否则返回 `status=failed`，不会产生 active strategy。
+- `activate` 成功时只允许一个 `active`，已有 active 会被标记为 `retired`。
+- 状态变化必须写入 append-only `strategy_version_events`；激活历史必须写入 `strategy_activation_history`。
+- `alpha_candidates` 和 `alpha_evaluations` 表作为 append-only research 记录入口，供后续日报和 registry 汇总使用。
+- 该 CLI 不触发 broker、不下单、不调用 Futu `SIMULATE`、不交易解锁，也不让 Agent 自动 approve / activate。
+
 ## 验收
 
 - `uv run pytest tests/test_alpha_contracts.py -q`
 - `uv run pytest tests/test_alpha_scan_cli.py -q`
 - `uv run pytest tests/test_alpha_evaluate_cli.py -q`
+- `uv run pytest tests/test_strategy_registry_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。
