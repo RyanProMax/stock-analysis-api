@@ -64,12 +64,34 @@
 - `src/model/alpha.py`：Alpha 候选与评估 contract。
 - `src/model/strategy.py`：策略 proposal 与版本治理 contract。
 - `src/model/serialization.py`：跨 contract 复用的 JSON 安全序列化。
-- `src/services/*`：后续承载 universe、feature、scan、evaluate、registry 等业务逻辑。
+- `src/services/alpha_universe_service.py`：只读构建 Alpha 扫描股票池，支持 `all` / `stock` / `etf` / 显式 `symbols`，`watchlist` 在未提供 symbols 时返回空集合。
+- `src/services/alpha_feature_service.py`：从本地 SQLite 日线仓提取首批因子，不访问 broker，不拉外部实时行情。
+- `src/services/alpha_scan_service.py`：将 universe 与 feature 转换为 `AlphaCandidate`，数据不足时只标记 `partial`，不伪造分数。
+- `src/services/alpha_scan_cli.py`：内部 CLI 参数解析与纯 JSON 输出。
+- `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
+
+## P1 Alpha Scan CLI
+
+内部入口：
+
+```bash
+uv run python scripts/alpha_scan.py --market cn --universe all --top 20 --pretty
+uv run python scripts/alpha_scan.py --market cn --symbols 300827,300274 --top 10
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=alpha_scan`、`computed_at`、`request`、`summary`、`items`。
+- `status=empty`：股票池为空，`items=[]`。
+- `status=partial`：至少一个候选缺少足够日线；该候选 `score=null`、`data_quality=partial`、`data_gaps` 说明缺口。
+- `items` 中每项必须符合 `AlphaCandidate.to_dict()` contract。
+- 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`。
 
 ## 验收
 
 - `uv run pytest tests/test_alpha_contracts.py -q`
+- `uv run pytest tests/test_alpha_scan_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。

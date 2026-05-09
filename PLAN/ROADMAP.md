@@ -149,6 +149,8 @@ Agent Loop
 
 ### P1：Alpha 扫描 MVP
 
+状态：done，2026-05-09
+
 目标：
 
 - 从本地行情仓和现有因子计算中生成每日 Alpha 候选池。
@@ -189,6 +191,7 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 - 空 universe 返回 `status=empty`，不报 500。
 - 数据不足标记 `data_quality=partial`，不伪造分数。
 - 不写交易 ledger，不触发 broker。
+- 已通过 `uv run pytest tests/test_alpha_scan_cli.py -q`。
 
 ### P2：因子评估与 Alpha 验证
 

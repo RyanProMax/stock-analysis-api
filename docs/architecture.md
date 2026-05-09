@@ -15,6 +15,7 @@
   - `scripts/trading_daily_summary.py`
   - `scripts/trading_strategy_review.py`
   - `scripts/trading_strategy_backtest.py`
+  - `scripts/alpha_scan.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -57,6 +58,7 @@ src/
 - `scripts/trading_daily_summary.py` 只读 SQLite trading ledger，默认 summary-only 汇总当日 run 数、snapshot 首末变化、risk decision / dry-run order 计数和风控原因分布；明细仅在显式 `--include-details` 时输出，不参与实时交易链路
 - `scripts/trading_strategy_review.py` 只读 ledger summary 和 ledger snapshot replay 指标，输出候选 `strategy_proposal`；该 proposal 不自动写回策略配置，也不触发下单
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
+- `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -202,6 +204,11 @@ src/
   - 调度入口必须使用 SQLite 锁或等价互斥，防止并发 worker 在同一窗口重复通过预检
   - 内部 `trading_run_once.py` 默认使用 dry-run broker；真实 Futu `SIMULATE` broker adapter 只能通过 `--broker futu-simulate` 显式启用，并继续禁止 `unlock_trade`
   - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
+- Alpha 扫描 workflow 固定为只读 research 链路：
+  - `alpha_scan.py` 只能读取本地行情仓和标准 contract，不读取或写入 trading ledger
+  - 输出候选 `AlphaCandidate` 只代表研究候选，不是交易信号或策略生效配置
+  - 数据不足必须进入 `data_quality` / `data_gaps`，不得为了排序伪造 score
+  - 后续策略迭代必须继续走 `strategy_proposal`、回测门槛和人工批准
 
 ## 演进方向
 
