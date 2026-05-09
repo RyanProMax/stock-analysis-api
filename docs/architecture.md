@@ -19,6 +19,7 @@
   - `scripts/alpha_evaluate.py`
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
+  - `scripts/watch_worker_tick.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -65,6 +66,7 @@ src/
 - `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/strategy_registry.py` 只管理候选策略、人工审批记录和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `activate` 必须已有人工 approval record
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
+- `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -231,6 +233,11 @@ src/
   - 明细必须显式 `--include-details`
   - 报告必须显式输出 `proposal_not_applied=true`
   - 报告可以生成候选 `StrategyProposal`，但不能写 registry、不能 approve、不能 activate
+- 自动盯盘 worker workflow 固定为只读调度链路：
+  - `watch_worker_tick.py` 先检查 active window 和 interval，未到点直接 `skipped`
+  - 只读取 registry 当前 active strategy，不自己 approve 或 activate
+  - 当前 MVP 只生成 Alpha watch summary 和候选 alerts，不调用 broker，不写 trading orders
+  - provider/report 失败必须返回 `degraded`，不能吞异常
 
 ## 演进方向
 

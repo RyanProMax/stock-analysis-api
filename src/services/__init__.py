@@ -27,6 +27,7 @@ _EXPORT_MODULES = {
     "AlphaEvaluationService": "alpha_evaluation_service",
     "StrategyRegistryService": "strategy_registry_service",
     "AlphaDailyReportService": "alpha_daily_report_service",
+    "WatchWorkerService": "watch_worker_service",
 }
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "AlphaEvaluationService",
     "StrategyRegistryService",
     "AlphaDailyReportService",
+    "WatchWorkerService",
 ]
 
 

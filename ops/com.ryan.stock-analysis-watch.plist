@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ryan.stock-analysis-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ryan/.local/bin/uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>scripts/watch_worker_tick.py</string>
+        <string>--state-key</string>
+        <string>cn-alpha-watch</string>
+        <string>--interval-seconds</string>
+        <string>300</string>
+        <string>--active-window</string>
+        <string>09:30-11:30,13:00-15:00</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ryan/projects/stock-analysis-api</string>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ryan/projects/stock-analysis-api/.cache/logs/watch-worker.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ryan/projects/stock-analysis-api/.cache/logs/watch-worker.stderr.log</string>
+</dict>
+</plist>

@@ -28,12 +28,13 @@
 - `scripts/alpha_evaluate.py`：只读本地行情仓，输出 forward returns、IC / RankIC、分组收益、换手和样本切分。
 - `scripts/strategy_registry.py`：保存候选 strategy proposal、人工 approval、单 active strategy 指针和 append-only 状态事件。
 - `scripts/alpha_daily_report.py`：盘后串联 Alpha scan / evaluate，输出 summary-only 报告和候选 proposal。
+- `scripts/watch_worker_tick.py`：读取已审批 active strategy，按时间窗和间隔生成只读 watch summary。
 
 当前缺口：
 
 - Alpha 扫描和因子评估已有 MVP，但尚未持久化到 strategy registry，也没有接入盘后日报。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
-- 策略版本 registry、审批记录和 Alpha 日报已有 MVP，但自动盯盘 worker 尚未读取 active strategy。
+- 策略版本 registry、审批记录、Alpha 日报和自动盯盘 worker 已有 MVP，但 agent teams evaluator / judge gate 尚未实现。
 - 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
 
@@ -313,6 +314,8 @@ uv run python scripts/strategy_registry.py current --pretty
 
 ### P5：自动盯盘 Worker
 
+状态：done，2026-05-09
+
 目标：
 
 - 把现有 tick CLI 组合成稳定运行的自动盯盘流程。
@@ -342,6 +345,7 @@ uv run python scripts/strategy_registry.py current --pretty
 - not due 返回 `skipped`。
 - provider 不可用返回 degraded，不吞异常。
 - 不会真实下单。
+- 已通过 `uv run pytest tests/test_watch_worker_tick_cli.py -q`。
 
 ### P6：盘后自我迭代报告
 
@@ -472,6 +476,15 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 7. P6 daily self-iteration report。
 8. P7 Qlib experiment。
 9. P8 event-driven engine PoC。
+
+## Agent Teams 治理原则
+
+- Researcher Agent：负责提出因子、候选池和策略调整方向，可以在未达标前自动迭代研究。
+- Backtester Agent：负责独立回测、成本 / 滑点 / 样本外验证和失败归因，不改策略状态。
+- Evaluator / Judge Agent：负责基于固定门槛输出结构化 verdict，不能参与策略开发和参数选择。
+- Human Reviewer：只审核 evaluator 通过后的候选 strategy proposal，不参与每一轮草稿研究。
+- 系统不允许同一个 Agent 同时完成开发、回测和最终评估，避免结果偏宽松和反馈回路失真。
+- 自动 approve / activate 默认关闭；如未来只在 `SIMULATE` 环境开放，也必须有显式配置、judge gate、冷却期、回滚和最大变更幅度限制。
 
 ## 第一轮最小可交付
 

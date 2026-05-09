@@ -10,6 +10,7 @@
 
 - 公共接口仍只通过 HTTP REST 暴露；新增 research 能力先走内部 CLI。
 - Agent 不进入日内下单路径，只能在盘后或离线阶段生成结构化建议。
+- Alpha 自迭代在达到评估门槛前可以自动循环研究；进入候选策略审核前必须由独立 evaluator / judge 角色复核，不能由同一个 Agent 同时完成开发、回测和最终评估。
 - 默认只读或 dry-run；Futu broker 仅允许显式 opt-in 的 `SIMULATE`。
 - 禁止真实交易、交易解锁、订阅推送、OpenD 写入配置和任何绕过 broker adapter 的交易调用。
 - 所有 JSON contract 必须可被 `json.dumps(..., allow_nan=False)` 序列化。
@@ -75,6 +76,8 @@
 - `src/services/strategy_registry_cli.py`：内部策略 registry CLI 参数解析与纯 JSON 输出。
 - `src/services/alpha_daily_report_service.py`：盘后 summary-only Alpha 自迭代报告，串联 scan / evaluate 并生成候选 proposal。
 - `src/services/alpha_daily_report_cli.py`：内部 Alpha 日报 CLI 参数解析与纯 JSON 输出。
+- `src/services/watch_worker_service.py`：自动盯盘 tick，读取已审批 active strategy，生成 Alpha watch summary；当前 MVP 默认不触发模拟交易。
+- `src/services/watch_worker_cli.py`：内部盯盘 worker CLI 参数解析与纯 JSON 输出。
 - `src/services/*`：后续继续承载 evaluate、registry 等业务逻辑。
 - `scripts/*`：只做 CLI 参数解析和 service 调用，不沉淀正式业务逻辑。
 
@@ -157,6 +160,24 @@ uv run python scripts/alpha_daily_report.py --market cn --symbols 300827,300274 
 - `factor_evaluation_drift` 在当前单日报告 MVP 中固定为 `not_available`，后续接入历史 evaluation 后再计算跨日报漂移。
 - 该 CLI 不调用 Futu `SIMULATE`、不下单、不 approve、不 activate，只为下一步人工治理链生成候选材料。
 
+## P5 Watch Worker CLI
+
+内部入口：
+
+```bash
+uv run python scripts/watch_worker_tick.py --state-key cn-alpha-watch --interval-seconds 300 --active-window 09:30-11:30,13:00-15:00 --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=watch_worker_tick`、`schedule`，运行时包含 `active_strategy`、`summary`、`watch_alerts`、`simulated_execution`。
+- `outside_active_window` 和 `not_due` 返回 `status=skipped`，不读取行情，不执行报告。
+- 没有 active strategy 返回 `status=skipped / reason=no_active_strategy`。
+- active strategy 必须来自 `strategy_registry.py activate` 后的 registry current strategy。
+- 当前 MVP 只做只读 Alpha watch summary，`simulated_execution.status=disabled`，不调用 broker，不写 trading ledger order。
+- Alpha report 失败时返回 `status=degraded / reason=report_failed`，不吞异常。
+- launchd 示例配置在 `ops/com.ryan.stock-analysis-watch.plist`，默认 300 秒 tick。
+
 ## 验收
 
 - `uv run pytest tests/test_alpha_contracts.py -q`
@@ -164,6 +185,7 @@ uv run python scripts/alpha_daily_report.py --market cn --symbols 300827,300274 
 - `uv run pytest tests/test_alpha_evaluate_cli.py -q`
 - `uv run pytest tests/test_strategy_registry_cli.py -q`
 - `uv run pytest tests/test_alpha_daily_report_cli.py -q`
+- `uv run pytest tests/test_watch_worker_tick_cli.py -q`
 - contract 输出不包含 `NaN` / `Infinity`。
 - proposal 默认需要人工批准。
 - P1 开始前不得新增交易写入能力。
