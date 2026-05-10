@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end")
     parser.add_argument("--forward-windows", default="1,5,20")
     parser.add_argument("--quantiles", type=int, default=5)
-    parser.add_argument("--cost-bps", type=float, default=10.0)
+    parser.add_argument("--cost-bps", type=float)
     parser.add_argument("--pretty", action="store_true")
     return parser
 

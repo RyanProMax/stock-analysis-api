@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--forward-windows", default="1,5,20")
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--quantiles", type=int, default=5)
-    parser.add_argument("--cost-bps", type=float, default=10.0)
+    parser.add_argument("--cost-bps", type=float)
     parser.add_argument("--researcher-id", default="researcher-agent")
     parser.add_argument("--backtester-id", default="backtester-agent")
     parser.add_argument("--evaluator-id", default="judge-agent")
@@ -35,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-quantile-spread", type=float, default=0.0)
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--min-observations", type=int, default=20)
+    parser.add_argument("--min-challenger-rank-ic-delta", type=float, default=0.0)
+    parser.add_argument("--min-challenger-quantile-spread-delta", type=float, default=0.0)
     parser.add_argument("--allow-data-gaps", action="store_true")
     parser.add_argument("--include-attempt-details", action="store_true")
     parser.add_argument("--record-to-registry", action="store_true")
@@ -82,7 +84,11 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    registry = SqliteStrategyRegistry(args.registry_db) if args.record_to_registry else None
+    registry = (
+        SqliteStrategyRegistry(args.registry_db)
+        if args.record_to_registry or args.registry_db
+        else None
+    )
     loop_service = service or AlphaResearchLoopService(strategy_registry=registry)
     try:
         payload = loop_service.run(
@@ -104,6 +110,8 @@ def main(
             min_quantile_spread=args.min_quantile_spread,
             max_turnover=args.max_turnover,
             min_observations=args.min_observations,
+            min_challenger_rank_ic_delta=args.min_challenger_rank_ic_delta,
+            min_challenger_quantile_spread_delta=args.min_challenger_quantile_spread_delta,
             allow_data_gaps=args.allow_data_gaps,
             include_attempt_details=args.include_attempt_details,
             record_to_registry=args.record_to_registry,

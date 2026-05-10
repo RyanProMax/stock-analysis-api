@@ -231,3 +231,55 @@ def test_alpha_evaluate_accepts_hk_market_from_local_daily_warehouse(tmp_path):
     assert payload["evaluation"]["candidate_id"] == "factor:momentum_5d"
     assert "rank_ic_mean" in payload["evaluation"]["metrics"]
     json.dumps(payload, allow_nan=False)
+
+
+def test_alpha_evaluate_uses_market_spec_cost_model_when_cost_bps_is_omitted(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "US.AAPL", "name": "Apple", "market": "美股", "exchange": "NASDAQ"},
+            {"symbol": "US.NVDA", "name": "NVIDIA", "market": "美股", "exchange": "NASDAQ"},
+        ],
+        market="us",
+    )
+    repository.upsert_daily_bars(
+        "US.AAPL",
+        _daily_rows([180, 181, 182, 183, 185, 187, 188, 190, 191, 193, 195, 198]),
+        "US_FutuOpenD",
+        market="us",
+        ts_code="US.AAPL",
+    )
+    repository.upsert_daily_bars(
+        "US.NVDA",
+        _daily_rows([900, 905, 910, 920, 940, 960, 980, 990, 1010, 1030, 1060, 1090]),
+        "US_FutuOpenD",
+        market="us",
+        ts_code="US.NVDA",
+    )
+    service = AlphaEvaluationService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "us",
+        "--symbols",
+        "US.AAPL,US.NVDA",
+        "--factor",
+        "momentum_5d",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1",
+        "--quantiles",
+        "2",
+    )
+
+    assert exit_code == 0
+    cost_model = payload["evaluation"]["cost_model"]
+    assert cost_model["type"] == "market_spec_bps"
+    assert cost_model["market"] == "us"
+    assert payload["request"]["cost_bps"] == cost_model["round_trip_bps"]
+    assert payload["evaluation"]["metrics"]["cost_adjusted_quantile_spread"] is not None
+    json.dumps(payload, allow_nan=False)

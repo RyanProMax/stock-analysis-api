@@ -116,6 +116,57 @@ def _service(
     )
 
 
+def _active_proposal(strategy_version: str) -> dict:
+    return {
+        "proposal_id": f"proposal-{strategy_version}",
+        "strategy_version": strategy_version,
+        "generated_at": "2026-05-01T08:00:00+00:00",
+        "source": "alpha_daily_report",
+        "proposed_changes": [
+            {
+                "type": "register_alpha_topn_candidate",
+                "parameters": {"market": "cn", "factor": "momentum_5d", "top_n": 2},
+                "risk_limits": {"requires_human_approval": True},
+            }
+        ],
+        "evidence": {"rank_ic_mean": 0.08, "quantile_spread": 0.02},
+        "approval_required": True,
+        "effective_status": "candidate_only",
+    }
+
+
+def _active_verdict(strategy_version: str) -> dict:
+    proposal_id = f"proposal-{strategy_version}"
+    return {
+        "verdict_id": f"judge-{proposal_id}-eval-active",
+        "proposal_id": proposal_id,
+        "strategy_version": strategy_version,
+        "evaluator_id": "judge-agent",
+        "generated_at": "2026-05-01T08:30:00+00:00",
+        "gate_status": "passed",
+        "researcher_id": "researcher-agent",
+        "evaluation_id": "eval-active",
+        "thresholds": {"min_rank_ic_mean": 0.03},
+        "metrics": {
+            "rank_ic_mean": 0.08,
+            "quantile_spread": 0.02,
+            "turnover": 0.2,
+            "observations": 60,
+        },
+        "reasons": [],
+        "human_review_ready": True,
+        "proposal_not_applied": True,
+    }
+
+
+def _activate_champion(registry: SqliteStrategyRegistry, strategy_version: str) -> None:
+    service = StrategyRegistryService(registry=registry)
+    assert service.propose(_active_proposal(strategy_version))["status"] == "ok"
+    assert service.record_judge_verdict(_active_verdict(strategy_version))["status"] == "ok"
+    assert service.approve(strategy_version=strategy_version, approved_by="ryan")["status"] == "ok"
+    assert service.activate(strategy_version=strategy_version)["status"] == "ok"
+
+
 def _hk_service(tmp_path) -> AlphaResearchLoopService:
     repository = _repository(tmp_path)
     _seed_hk_market(repository)
@@ -271,6 +322,54 @@ def test_alpha_research_loop_needs_iteration_when_all_attempts_blocked(tmp_path)
         "rank_ic_mean_below_threshold" in attempt["judge_reasons"]
         for attempt in payload["attempts"]
     )
+
+
+def test_alpha_research_loop_compares_candidates_against_active_champion(tmp_path):
+    registry = SqliteStrategyRegistry(tmp_path / "strategy_registry.sqlite")
+    _activate_champion(registry, "alpha_topn_momentum_5d.20260501")
+
+    exit_code, payload = _run_cli(
+        _service(tmp_path, registry=registry),
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factors",
+        "momentum_5d",
+        "--date",
+        "2026-05-12",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--researcher-id",
+        "researcher-agent",
+        "--backtester-id",
+        "backtester-agent",
+        "--evaluator-id",
+        "judge-agent",
+        "--min-rank-ic-mean",
+        "-1",
+        "--min-quantile-spread",
+        "-1",
+        "--min-observations",
+        "1",
+        "--min-challenger-rank-ic-delta",
+        "999",
+        "--allow-data-gaps",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "needs_iteration"
+    assert payload["selected"] is None
+    assert payload["attempts"][0]["verdict"]["metrics"]["champion"]["strategy_version"] == (
+        "alpha_topn_momentum_5d.20260501"
+    )
+    assert "challenger_rank_ic_not_improved" in payload["attempts"][0]["judge_reasons"]
+    assert "revise_factor_definition_or_universe" in payload["next_research_actions"]
+    assert registry.current_strategy()["strategy_version"] == "alpha_topn_momentum_5d.20260501"
 
 
 def test_alpha_research_loop_rejects_non_independent_roles(tmp_path):

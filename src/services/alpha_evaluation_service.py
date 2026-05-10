@@ -7,6 +7,7 @@ from typing import Optional, Sequence
 import pandas as pd
 
 from ..model.alpha import AlphaEvaluation
+from ..model.market import get_market_spec
 from ..model.serialization import json_safe
 from ..repositories import MarketDataRepository, market_data_repository
 from .alpha_universe_service import AlphaUniverseService
@@ -44,7 +45,7 @@ class AlphaEvaluationService:
         end: str | None = None,
         forward_windows: Sequence[int] | None = None,
         quantiles: int = 5,
-        cost_bps: float = 10.0,
+        cost_bps: float | None = None,
     ) -> dict:
         normalized_market = str(market or "cn").strip().lower()
         normalized_universe = str(universe or "all").strip().lower()
@@ -55,7 +56,10 @@ class AlphaEvaluationService:
             raise ValueError(f"unsupported factor: {normalized_factor}")
         windows = self._normalize_forward_windows(forward_windows)
         normalized_quantiles = max(int(quantiles or 5), 2)
-        normalized_cost_bps = float(cost_bps or 0.0)
+        normalized_cost_bps, cost_model = self._resolve_cost_model(
+            market=normalized_market,
+            cost_bps=cost_bps,
+        )
 
         built_universe = self.universe_service.build_universe(
             market=normalized_market,
@@ -74,6 +78,7 @@ class AlphaEvaluationService:
                 as_of=end or self._today(),
                 windows=windows,
                 cost_bps=normalized_cost_bps,
+                cost_model=cost_model,
                 status="empty",
                 data_gaps=["empty_universe"],
             )
@@ -119,7 +124,7 @@ class AlphaEvaluationService:
             forward_windows=list(windows),
             metrics=metrics,
             sample_split=sample_split,
-            cost_model={"type": "fixed_bps", "bps": normalized_cost_bps},
+            cost_model=cost_model,
             data_gaps=data_gaps,
             status=status,
         ).to_dict()
@@ -402,6 +407,7 @@ class AlphaEvaluationService:
         as_of: str,
         windows: tuple[int, ...],
         cost_bps: float,
+        cost_model: dict,
         status: str,
         data_gaps: list[str],
     ) -> dict:
@@ -423,7 +429,7 @@ class AlphaEvaluationService:
                 "turnover": None,
             },
             sample_split=self._sample_split(pd.DataFrame(columns=["date"])),
-            cost_model={"type": "fixed_bps", "bps": cost_bps},
+            cost_model=cost_model,
             data_gaps=data_gaps,
             status=status,
         ).to_dict()
@@ -476,6 +482,18 @@ class AlphaEvaluationService:
         if not normalized:
             raise ValueError("forward_windows must not be empty")
         return normalized
+
+    def _resolve_cost_model(
+        self,
+        *,
+        market: str,
+        cost_bps: float | None,
+    ) -> tuple[float, dict]:
+        if cost_bps is not None:
+            normalized = float(cost_bps)
+            return normalized, {"type": "fixed_bps", "bps": normalized}
+        spec = get_market_spec(market)
+        return spec.round_trip_cost_bps, spec.to_cost_model()
 
     def _dedupe_gaps(self, gaps: list[str]) -> list[str]:
         seen: set[str] = set()

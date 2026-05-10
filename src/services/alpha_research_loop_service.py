@@ -33,7 +33,7 @@ class AlphaResearchLoopService:
         forward_windows: Sequence[int] | None = None,
         top: int = 20,
         quantiles: int = 5,
-        cost_bps: float = 10.0,
+        cost_bps: float | None = None,
         researcher_id: str = "researcher-agent",
         backtester_id: str = "backtester-agent",
         evaluator_id: str = "judge-agent",
@@ -41,6 +41,8 @@ class AlphaResearchLoopService:
         min_quantile_spread: float = 0.0,
         max_turnover: float = 1.0,
         min_observations: int = 20,
+        min_challenger_rank_ic_delta: float = 0.0,
+        min_challenger_quantile_spread_delta: float = 0.0,
         allow_data_gaps: bool = False,
         include_attempt_details: bool = False,
         record_to_registry: bool = False,
@@ -78,6 +80,8 @@ class AlphaResearchLoopService:
                 min_quantile_spread=min_quantile_spread,
                 max_turnover=max_turnover,
                 min_observations=min_observations,
+                min_challenger_rank_ic_delta=min_challenger_rank_ic_delta,
+                min_challenger_quantile_spread_delta=min_challenger_quantile_spread_delta,
                 allow_data_gaps=allow_data_gaps,
                 include_attempt_details=include_attempt_details,
             )
@@ -126,7 +130,7 @@ class AlphaResearchLoopService:
                 "forward_windows": list(forward_windows or []),
                 "top": int(top),
                 "quantiles": int(quantiles),
-                "cost_bps": float(cost_bps),
+                "cost_bps": float(cost_bps) if cost_bps is not None else None,
             },
             "summary": {
                 "iterations": len(attempts),
@@ -160,6 +164,8 @@ class AlphaResearchLoopService:
         min_quantile_spread: float,
         max_turnover: float,
         min_observations: int,
+        min_challenger_rank_ic_delta: float,
+        min_challenger_quantile_spread_delta: float,
         allow_data_gaps: bool,
         include_attempt_details: bool,
     ) -> dict:
@@ -188,12 +194,15 @@ class AlphaResearchLoopService:
         judge_result = self.judge_service.judge(
             proposal_payload=proposal,
             evaluation_payload={"alpha_evaluation": evaluation},
+            champion_payload=self._champion_payload(),
             evaluator_id=role_ids["evaluator_id"],
             researcher_id=role_ids["researcher_id"],
             min_rank_ic_mean=min_rank_ic_mean,
             min_quantile_spread=min_quantile_spread,
             max_turnover=max_turnover,
             min_observations=min_observations,
+            min_challenger_rank_ic_delta=min_challenger_rank_ic_delta,
+            min_challenger_quantile_spread_delta=min_challenger_quantile_spread_delta,
             allow_data_gaps=allow_data_gaps,
         )
         verdict = judge_result["verdict"]
@@ -217,6 +226,18 @@ class AlphaResearchLoopService:
             attempt["judge_result"] = judge_result
             attempt["strategy_proposal"] = judge_result.get("strategy_proposal")
         return attempt
+
+    def _champion_payload(self) -> dict | None:
+        if self.strategy_registry is None:
+            return None
+        active = self.strategy_registry.current_strategy()
+        if not active:
+            return None
+        return self.strategy_registry.latest_judge_verdict(
+            active["strategy_version"],
+            gate_status="passed",
+            proposal_id=active.get("source_proposal_id"),
+        )
 
     def _roles(
         self, *, researcher_id: str, backtester_id: str, evaluator_id: str
@@ -247,6 +268,8 @@ class AlphaResearchLoopService:
         if (
             "rank_ic_mean_below_threshold" in reasons
             or "quantile_spread_below_threshold" in reasons
+            or "challenger_rank_ic_not_improved" in reasons
+            or "challenger_quantile_spread_not_improved" in reasons
         ):
             actions.append("revise_factor_definition_or_universe")
         if "turnover_above_threshold" in reasons:

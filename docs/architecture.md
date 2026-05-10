@@ -141,6 +141,8 @@ src/
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - `hk_daily` / `us_daily` 的第一阶段补库口径优先服务显式 symbols；HK 使用 Futu 原生代码如 `HK.00700`，US 可使用裸 ticker 或 `US.AAPL`
 - Futu 日 K 写入本地仓时只作为只读 EOD 数据源，不订阅、不交易解锁、不调用账户写入或订单能力
+- `src/model/market.py` 是市场规则的最小 contract owner；CN / HK / US 的币种、时区、常规时段、默认 lot / tick 和估算 round-trip 成本必须先进入 `MarketSpec`，Alpha / backtest 只消费 contract，不在业务逻辑里散落市场判断
+- `MarketSpec` 当前只用于评估和回测成本假设，不代表完整交易日历、逐标的港股 lot size、真实成交约束或券商实际费率；显式 `--cost-bps` 始终可覆盖默认估算
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
 - `cn_daily` 只保存真实存在的日线事实，不为停牌日期补 synthetic row
 - `cn_daily.is_suspended` 只表示“这条已有日线 row 命中了停复牌事件”，不是持续状态，也不能解释整段无 row 的停牌区间
@@ -230,6 +232,7 @@ src/
   - 输出 `AlphaEvaluation` 只代表历史样本统计，不是交易信号或策略生效配置
   - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 等指标缺失时必须返回 `null` 并写入 `data_gaps`，不得伪造指标
   - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
+  - 未显式传 `--cost-bps` 时必须使用 `MarketSpec` 默认 round-trip 成本；显式传参时保持 fixed bps override，用于敏感性分析
 - 策略 registry workflow 固定为人工治理链路：
   - `strategy_registry.py propose` 只能写入候选 proposal 和 candidate strategy version，不能 active
   - `strategy_registry.py approve` 必须显式记录 `approved_by`，且目标必须仍是 `candidate` 并已有 passed judge verdict
@@ -250,6 +253,7 @@ src/
 - evaluator / judge workflow 固定为独立评估链路：
   - `strategy_judge.py` 只读取 proposal 和 evaluation，按固定门槛输出结构化 verdict
   - evaluator 与 researcher 相同必须 blocked
+  - 可选 champion/challenger 对比：当提供 active champion verdict 时，challenger 除了满足绝对阈值，还必须相对 champion 达到配置的 RankIC / quantile spread 增量
   - verdict passed 只表示 `human_review_ready`，不等于 approval
   - registry 可 append 记录 verdict，但不得因为 verdict passed 自动 activate
 - alpha research loop workflow 固定为离线自迭代链路：
@@ -257,6 +261,7 @@ src/
   - 三类 role id 不得相同
   - 每轮只处理一个 factor，先生成 proposal 和 evaluation，再交给 judge gate
   - 全部 blocked 时返回 `needs_iteration` 和下一步研究动作，不能伪装为可审核
+  - 持有 strategy registry 且存在 active strategy 时，必须把 active strategy 对应的 passed judge verdict 作为 champion 传入 evaluator；CLI 传 `--registry-db` 即可只读使用 champion，不要求写 registry
   - 通过 judge gate 时只输出 `human_review_ready` 材料，仍不得自动 approve 或 activate
   - 默认不写 registry；显式记录时只能 append research run 与 verdict，不创建 approval 或 active strategy
 

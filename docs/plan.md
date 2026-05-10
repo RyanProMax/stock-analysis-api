@@ -17,6 +17,7 @@
 - 已落地 P1 Alpha 扫描 MVP、P2 因子评估 MVP、P4 策略 registry MVP、P6 Alpha 日报 MVP、P5 自动盯盘 worker MVP、独立 evaluator / judge gate MVP 和离线 agent teams research loop MVP；Alpha 自挖掘 / 自迭代的离线 proposal 链路已能串起来，日内 worker 可读取 active strategy 做只读 watch summary，但策略生效仍必须人工 approve / activate
 - 已明确治理原则：模型在达到评估门槛前可以自动研究迭代；进入候选策略审核前应由独立 evaluator / judge 角色复核，避免同一个 Agent 既开发、回测又最终评估
 - 当前优先级调整：Tushare 过期期间优先跑通 Futu 驱动的港股 / 美股 Alpha 研究链路，先支持显式 symbols 的 Futu 日 K 入库与本地 Alpha scan/evaluate/report/research loop
+- 本轮继续补齐 MarketSpec 与策略评估机制：把 CN / HK / US 的最小市场规则独立成 contract，并让 judge 支持 active champion vs challenger 增量评估
 
 ## 最近完成项
 
@@ -109,6 +110,12 @@
   - `approve` 现在要求目标仍是 `candidate` 且已有同 strategy version 的 passed judge verdict
   - `activate` 现在只允许 `approved -> active`，拒绝重复激活 active 或重新激活 retired
   - research loop summary-only verdict 保留 `evaluation_id`，避免评估证据丢失
+- 已补齐 MarketSpec 与策略评估机制第一阶段：
+  - 新增 `src/model/market.py`，统一 CN / HK / US 的币种、时区、常规交易时段、默认 lot / tick 和估算 round-trip 成本
+  - `alpha_evaluate.py` / `alpha_daily_report.py` / `alpha_research_loop.py` 未显式传 `--cost-bps` 时使用 MarketSpec 默认成本，显式传参时保留 fixed bps override
+  - `strategy_judge.py` 支持可选 `--champion-json` 和 challenger 增量门槛
+  - `alpha_research_loop.py` 持有 registry 且存在 active strategy 时，会自动读取 active strategy 对应的 passed judge verdict 作为 champion
+  - 新增测试覆盖 MarketSpec contract、默认成本模型、judge champion/challenger 阻断和 active champion research loop
 
 ## 当前状态
 
@@ -169,6 +176,7 @@
   - 数据不足返回 `status=partial` 并保留评估缺口说明
   - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover`
   - `sample_split` 固定包含 `train`、`validation`、`out_of_sample`
+  - 未显式传 `--cost-bps` 时使用 MarketSpec 默认 round-trip 成本；显式传参时保持 fixed bps override
 - 策略 registry P4 MVP 已完成：
   - `strategy_registry.py` 写独立 SQLite registry，不写 trading ledger、不触发 broker
   - `strategy_versions` 保存当前策略版本状态；`strategy_version_events` 保存 append-only 状态事件
@@ -187,6 +195,7 @@
 - 独立 judge gate MVP 已完成：
   - `strategy_judge.py` 根据固定评估门槛输出 `passed` / `blocked`
   - `evaluator_id == researcher_id` 会阻断，避免同一 Agent 自评
+  - 提供 champion verdict 时，challenger 必须满足配置的 RankIC / quantile spread 增量，否则 blocked
   - `strategy_registry.py record-verdict` 只追加 verdict，不创建 approval，不 activate
 - 离线 agent teams research loop MVP 已完成：
   - `alpha_research_loop.py` 默认 summary-only 串联候选生成、因子评估和 judge gate
@@ -194,6 +203,7 @@
   - `status=human_review_ready` 只代表可交给人审；`status=needs_iteration` 表示继续研究，不写入生效策略
   - 显式 `--record-to-registry` 会记录 research loop run 和 verdict；`strategy_registry.py research-history` 可查询历史 run、阻断原因和 factor drift
   - 人工审批必须已有 passed judge verdict；策略激活必须保持 `candidate -> approved -> active` 状态机
+  - 持有 registry 且存在 active strategy 时，会把 active strategy 对应 passed judge verdict 作为 champion 传给 evaluator；CLI 传 `--registry-db` 即可只读使用 champion，不要求写 registry
 - 已完成港股 / 美股 Futu EOD warehouse 第一阶段：
   - `sync-market-data --market hk/us --scope symbol` 可通过 Futu daily kline 写入本地仓
   - 新增 `hk_symbols` / `hk_daily`，HK symbol 保留 `HK.00700` 这类 Futu 原生前缀
@@ -201,10 +211,14 @@
   - `hk` 市场第一阶段只支持显式 symbols，不做全市场 universe
   - 显式 US/HK symbol resolve 不再触发 Tushare 目录刷新；US/HK 日线优先使用 Futu OpenD
   - 已用真实 OpenD 验证 HK.00700 / HK.09988 / HK.03690 与 US.AAPL / US.NVDA / US.MSFT 入库，并跑通 HK/US alpha scan 与 research loop
+- `MarketSpec` 当前已提供评估 / 回测最小规则：
+  - CN：CNY / Asia-Shanghai / SSE-SZSE session / 100 股 lot / 0.01 tick / 估算成本
+  - HK：HKD / Asia-Hong_Kong / HKEX session / 默认 100 股 lot / 0.01 tick / 估算成本；真实 lot size 后续需要逐标的覆盖
+  - US：USD / America-New_York / NYSE-NASDAQ regular session / 1 股 lot / 0.01 tick / 估算成本
 
 ## 下一步计划
 
-- 下一步补充港股 / 美股全市场 universe、MarketSpec、交易成本 / lot size / session / corporate action 规则和更严格 champion/challenger 对比
+- 下一步补充港股 / 美股全市场 universe、逐标的 HK lot size / tick ladder、交易日历、公司行动 / 分红复权和更真实组合级回测
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
@@ -221,3 +235,4 @@
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
 - P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P6 `alpha_daily_report.py` 只生成候选 proposal，不写 registry、不生效策略；P5 worker 当前只读 active strategy 和生成 watch summary。`alpha_research_loop.py` 只做离线编排，不等于真实多 Agent 运行时。Judge verdict passed 只代表可进入人工审核，不等于 approval；策略进入 active 前仍必须经过 P4 人工审批记录。
+- MarketSpec 当前成本仍是估算默认值，不等于券商真实费率、完整滑点模型或交易所完整规则；生产回测前需要补逐标的 HK lot size、tick ladder、费用明细、交易日历和 corporate action。

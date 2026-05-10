@@ -36,7 +36,7 @@ class AlphaDailyReportService:
         forward_windows: Sequence[int] | None = None,
         top: int = 20,
         quantiles: int = 5,
-        cost_bps: float = 10.0,
+        cost_bps: float | None = None,
         strategy_version: str | None = None,
         include_details: bool = False,
     ) -> dict:

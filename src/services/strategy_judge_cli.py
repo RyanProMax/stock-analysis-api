@@ -15,12 +15,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--proposal-json", required=True)
     parser.add_argument("--evaluation-json", required=True)
+    parser.add_argument("--champion-json")
     parser.add_argument("--evaluator-id", required=True)
     parser.add_argument("--researcher-id")
     parser.add_argument("--min-rank-ic-mean", type=float, default=0.03)
     parser.add_argument("--min-quantile-spread", type=float, default=0.0)
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--min-observations", type=int, default=20)
+    parser.add_argument("--min-challenger-rank-ic-delta", type=float, default=0.0)
+    parser.add_argument("--min-challenger-quantile-spread-delta", type=float, default=0.0)
     parser.add_argument("--allow-data-gaps", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
@@ -60,12 +63,15 @@ def main(
         payload = judge.judge(
             proposal_payload=_load_json(args.proposal_json),
             evaluation_payload=_load_json(args.evaluation_json),
+            champion_payload=_load_json(args.champion_json) if args.champion_json else None,
             evaluator_id=args.evaluator_id,
             researcher_id=args.researcher_id,
             min_rank_ic_mean=args.min_rank_ic_mean,
             min_quantile_spread=args.min_quantile_spread,
             max_turnover=args.max_turnover,
             min_observations=args.min_observations,
+            min_challenger_rank_ic_delta=args.min_challenger_rank_ic_delta,
+            min_challenger_quantile_spread_delta=args.min_challenger_quantile_spread_delta,
             allow_data_gaps=args.allow_data_gaps,
         )
         _emit(payload, args.pretty, writer)

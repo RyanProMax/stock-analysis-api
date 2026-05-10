@@ -1,6 +1,6 @@
 # Alpha Research Loop
 
-更新时间：2026-05-09
+更新时间：2026-05-10
 
 ## 目标
 
@@ -38,8 +38,20 @@
 - `forward_windows`：前瞻窗口，例如 1D / 5D / 20D。
 - `metrics`：IC、RankIC、分组收益、换手、命中率、回撤等指标。
 - `sample_split`：必须包含 `train`、`validation`、`out_of_sample`。
-- `cost_model`：交易成本假设。
+- `cost_model`：交易成本假设。显式传 `--cost-bps` 时使用固定 bps；未传时使用 `MarketSpec` 的市场默认估算成本。
 - `status` / `data_gaps`：评估状态和数据缺口。
+
+### MarketSpec
+
+用于表达策略评估和后续回测所需的最小市场规则，不参与下单。
+
+- `market` / `exchange` / `currency` / `timezone`：市场基础身份。
+- `regular_sessions`：常规交易时段，仅用于调度和报告语义，不代表完整交易日历。
+- `lot_size` / `price_tick`：默认交易单位和价格最小变动；港股真实 lot size 可能逐标的不同，当前只作为评估默认假设。
+- `entry_fee_bps` / `exit_fee_bps` / `entry_slippage_bps` / `exit_slippage_bps`：用于因子评估的 round-trip 成本估算。
+- `constraints`：标记估算成本、逐标的规则未完全覆盖等限制。
+
+`MarketSpec` 的设计原则是先把市场差异收敛到独立 contract，Alpha / backtest 消费 contract，不在评估逻辑里散落市场判断。
 
 ### StrategyProposal
 
@@ -64,6 +76,7 @@
 
 - `src/model/alpha.py`：Alpha 候选与评估 contract。
 - `src/model/strategy.py`：策略 proposal 与版本治理 contract。
+- `src/model/market.py`：CN / HK / US 最小 `MarketSpec`，包含交易时段、币种、lot / tick 和默认评估成本模型。
 - `src/model/serialization.py`：跨 contract 复用的 JSON 安全序列化。
 - `src/services/alpha_universe_service.py`：只读构建 Alpha 扫描股票池，支持 `all` / `stock` / `etf` / 显式 `symbols`，`watchlist` 在未提供 symbols 时返回空集合。
 - `src/services/alpha_feature_service.py`：从本地 SQLite 日线仓提取首批因子，不访问 broker，不拉外部实时行情。
@@ -120,6 +133,8 @@ uv run python scripts/alpha_evaluate.py --market cn --symbols 300827,300274 --fa
 - `status=empty`：股票池为空，`summary.data_gaps=["empty_universe"]`。
 - `status=partial`：存在缺失因子、缺失 forward return 或样本不足，缺口必须进入 `data_gaps`，不得用 0 或伪造值补齐指标。
 - 当前 MVP 支持 `momentum_5d`、`momentum_20d`、`volatility_5d`、`volume_change_5d`、`turnover_rate`、`pe_ttm`、`pb`、`pct_chg`。
+- 未显式传 `--cost-bps` 时，`cost_model.type=market_spec_bps`，按市场默认 `MarketSpec.round_trip_bps` 计算 `cost_adjusted_quantile_spread`。
+- 显式传 `--cost-bps` 时，保持 `cost_model.type=fixed_bps`，用于回归、敏感性分析或人工指定成本假设。
 - 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`，也不改变运行时策略。
 
 ## P4 Strategy Registry CLI
@@ -154,6 +169,7 @@ uv run python scripts/strategy_registry.py current --pretty
 
 ```bash
 uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
+uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --champion-json active-verdict.json --min-challenger-rank-ic-delta 0.01 --min-challenger-quantile-spread-delta 0.005 --evaluator-id judge-agent --researcher-id researcher-agent --pretty
 uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict.json --pretty
 ```
 
@@ -165,6 +181,8 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 - `verdict.proposal_not_applied=true` 必须固定存在，表示评委结论不会修改运行时策略。
 - `evaluator_id` 与 `researcher_id` 相同会阻断，原因固定为 `evaluator_must_be_independent`。
 - 当前固定门槛包括 `min_rank_ic_mean`、`min_quantile_spread`、`max_turnover`、`min_observations`、`allow_data_gaps`。
+- 可选 `champion-json` 用于 champion/challenger 对比；提供后 challenger 必须满足 `min_challenger_rank_ic_delta` 和 `min_challenger_quantile_spread_delta`，否则阻断原因分别为 `challenger_rank_ic_not_improved` / `challenger_quantile_spread_not_improved`。
+- `champion-json` 可传 registry 中 active strategy 对应的 passed judge verdict；没有 active champion 时只执行绝对阈值。
 - registry 只能 append 记录 judge verdict；不能因为 verdict passed 自动 approve / activate。
 
 ## Agent Teams Research Loop CLI
@@ -191,6 +209,7 @@ uv run python scripts/strategy_registry.py --registry-db .cache/strategy_registr
 - 默认 summary-only；attempt 明细必须显式 `--include-attempt-details` 才输出。
 - 默认不写 registry、不 approve、不 activate、不触发 broker。
 - 只有显式 `--record-to-registry` 时才追加记录 research loop run 和 judge verdict；该记录动作仍不得 propose / approve / activate。
+- 当 service 持有 strategy registry 且存在 active strategy 时，research loop 会读取 active strategy 对应的 passed judge verdict 作为 champion，交给 judge 做相对增量评估；CLI 显式传 `--registry-db` 即可读取 champion，不要求同时 `--record-to-registry`。
 - 已记录的 research loop run 必须保留 `run_id`、attempts、judge verdict、proposal_not_applied 和 approval_required。
 
 ## P6 Alpha Daily Report CLI

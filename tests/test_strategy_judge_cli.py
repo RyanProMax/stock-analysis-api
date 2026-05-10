@@ -71,6 +71,29 @@ def _evaluation(
     }
 
 
+def _champion_verdict() -> dict:
+    return {
+        "verdict_id": "judge-proposal-active-eval-active",
+        "proposal_id": "proposal-active",
+        "strategy_version": "alpha_topn_momentum_5d.20260501",
+        "evaluator_id": "judge-agent",
+        "generated_at": "2026-05-01T08:00:00+00:00",
+        "gate_status": "passed",
+        "researcher_id": "researcher-agent",
+        "evaluation_id": "eval-active",
+        "thresholds": {"min_rank_ic_mean": 0.03},
+        "metrics": {
+            "rank_ic_mean": 0.08,
+            "quantile_spread": 0.025,
+            "turnover": 0.2,
+            "observations": 60,
+        },
+        "reasons": [],
+        "human_review_ready": True,
+        "proposal_not_applied": True,
+    }
+
+
 def _write_json(tmp_path, name: str, payload: dict):
     path = tmp_path / name
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -165,6 +188,90 @@ def test_strategy_judge_blocks_failed_metrics_and_same_agent_evaluation(tmp_path
     assert "quantile_spread_below_threshold" in verdict["reasons"]
     assert "insufficient_observations" in verdict["reasons"]
     assert "data_gaps_present" in verdict["reasons"]
+    json.dumps(payload, allow_nan=False)
+
+
+def test_strategy_judge_blocks_challenger_that_does_not_improve_on_champion(tmp_path):
+    proposal_path = _write_json(tmp_path, "proposal.json", _proposal())
+    evaluation_path = _write_json(
+        tmp_path,
+        "evaluation.json",
+        _evaluation(rank_ic_mean=0.081, quantile_spread=0.026, observations=80),
+    )
+    champion_path = _write_json(tmp_path, "champion.json", _champion_verdict())
+
+    exit_code, payload = _run_judge(
+        "--proposal-json",
+        str(proposal_path),
+        "--evaluation-json",
+        str(evaluation_path),
+        "--champion-json",
+        str(champion_path),
+        "--evaluator-id",
+        "judge-agent",
+        "--researcher-id",
+        "researcher-agent",
+        "--min-rank-ic-mean",
+        "0.03",
+        "--min-quantile-spread",
+        "0.0",
+        "--min-challenger-rank-ic-delta",
+        "0.01",
+        "--min-challenger-quantile-spread-delta",
+        "0.005",
+        "--min-observations",
+        "20",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "blocked"
+    verdict = payload["verdict"]
+    assert "challenger_rank_ic_not_improved" in verdict["reasons"]
+    assert "challenger_quantile_spread_not_improved" in verdict["reasons"]
+    assert verdict["metrics"]["champion"]["strategy_version"] == "alpha_topn_momentum_5d.20260501"
+    assert verdict["metrics"]["improvement"]["rank_ic_mean_delta"] == 0.001
+    assert verdict["metrics"]["improvement"]["quantile_spread_delta"] == 0.001
+    assert payload["strategy_proposal"] is None
+    json.dumps(payload, allow_nan=False)
+
+
+def test_strategy_judge_passes_challenger_when_it_beats_active_champion(tmp_path):
+    proposal_path = _write_json(tmp_path, "proposal.json", _proposal())
+    evaluation_path = _write_json(
+        tmp_path,
+        "evaluation.json",
+        _evaluation(rank_ic_mean=0.10, quantile_spread=0.04, observations=80),
+    )
+    champion_path = _write_json(tmp_path, "champion.json", _champion_verdict())
+
+    exit_code, payload = _run_judge(
+        "--proposal-json",
+        str(proposal_path),
+        "--evaluation-json",
+        str(evaluation_path),
+        "--champion-json",
+        str(champion_path),
+        "--evaluator-id",
+        "judge-agent",
+        "--researcher-id",
+        "researcher-agent",
+        "--min-rank-ic-mean",
+        "0.03",
+        "--min-quantile-spread",
+        "0.0",
+        "--min-challenger-rank-ic-delta",
+        "0.01",
+        "--min-challenger-quantile-spread-delta",
+        "0.005",
+        "--min-observations",
+        "20",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "passed"
+    assert payload["verdict"]["metrics"]["champion"]["rank_ic_mean"] == 0.08
+    assert payload["verdict"]["metrics"]["improvement"]["rank_ic_mean_delta"] == 0.02
+    assert payload["strategy_proposal"]["proposal_id"] == _proposal()["proposal_id"]
     json.dumps(payload, allow_nan=False)
 
 

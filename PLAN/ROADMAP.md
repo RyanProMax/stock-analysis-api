@@ -98,7 +98,7 @@ Agent Loop
 
 ### P0：先锁安全边界和数据契约
 
-状态：done，2026-05-09
+状态：done，2026-05-10
 
 目标：
 
@@ -213,8 +213,10 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 
 - `src/services/alpha_evaluation_service.py`
 - `src/services/alpha_evaluate_cli.py`
+- `src/model/market.py`
 - `scripts/alpha_evaluate.py`
 - `tests/test_alpha_evaluate_cli.py`
+- `tests/test_market_spec.py`
 
 功能：
 
@@ -224,7 +226,8 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 - turnover / holding decay。
 - group neutral 可选。
 - train / validation / out-of-sample split。
-- cost-aware return，至少支持固定 bps 成本。
+- cost-aware return：显式 `--cost-bps` 使用固定 bps；未显式传参时使用 `MarketSpec` 的 CN / HK / US 默认 round-trip 成本。
+- `MarketSpec` 独立维护市场币种、时区、常规交易时段、默认 lot / tick 和估算成本，避免在 Alpha 评估逻辑里散落市场判断。
 
 CLI：
 
@@ -237,6 +240,7 @@ uv run python scripts/alpha_evaluate.py --market cn --factor momentum_20d --star
 - 样本内和样本外分开展示。
 - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 必须存在。
 - 数据缺口必须进入 `data_gaps`。
+- HK / US 未传 `--cost-bps` 时输出 `cost_model.type=market_spec_bps`。
 - 已通过 `uv run pytest tests/test_alpha_evaluate_cli.py -q`。
 
 ### P3：快速回测引擎升级
@@ -275,7 +279,7 @@ uv run python scripts/strategy_backtest.py --market cn --strategy alpha_topn_v1 
 
 ### P4：策略版本 Registry 和人工审批链
 
-状态：done，2026-05-09
+状态：done，2026-05-10
 
 目标：
 
@@ -357,6 +361,7 @@ uv run python scripts/strategy_registry.py current --pretty
 
 - 把“模型自研迭代”和“最终评估放行”拆成不同角色，避免同一个 Agent 既开发、回测又最终评估。
 - 在候选策略进入人工审核前，由独立 evaluator 按固定门槛输出结构化 verdict。
+- 可选读取 active champion verdict 做 champion/challenger 相对增量评估，避免只过绝对阈值就进入人工审核。
 - verdict 不得自动 approve / activate，passed 只代表 `human_review_ready=true`。
 
 新增 / 修改文件：
@@ -374,6 +379,7 @@ CLI：
 
 ```bash
 uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
+uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --champion-json active-verdict.json --min-challenger-rank-ic-delta 0.01 --min-challenger-quantile-spread-delta 0.005 --evaluator-id judge-agent --researcher-id researcher-agent --pretty
 uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict.json --pretty
 ```
 
@@ -383,17 +389,19 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 - 指标未达 `rank_ic_mean`、`quantile_spread`、`turnover`、`observations` 或存在 data gaps 时必须 blocked。
 - passed verdict 返回原 `strategy_proposal` 和 `human_review_ready=true`。
 - blocked verdict 不返回 `strategy_proposal`。
+- 提供 champion verdict 时，challenger 未达到配置的 RankIC / spread 增量必须 blocked。
 - registry 只 append verdict，不创建 approval、不 activate。
 - 已通过 `uv run pytest tests/test_strategy_judge_cli.py -q`。
 
 ### P5.2：离线 Agent Teams Research Loop
 
-状态：done，2026-05-09
+状态：done，2026-05-10
 
 目标：
 
 - 把 researcher / backtester / evaluator 的职责分开，形成可被 Agent 调度的离线自迭代 contract。
 - 在未达到 judge 门槛前自动尝试下一组 factor；达到门槛后只输出给人工审核。
+- 持有 registry 且存在 active strategy 时，自动把 active strategy 对应的 passed judge verdict 作为 champion 交给 evaluator；CLI 传 `--registry-db` 即可只读使用 champion，不要求写 registry。
 - 默认不写 registry、不 approve、不 activate、不触发 broker。
 
 新增 / 修改文件：
@@ -414,6 +422,7 @@ uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,m
 - researcher / backtester / evaluator 三类 role id 必须互不相同。
 - 通过 judge gate 时返回 `status=human_review_ready`、候选 proposal 和 verdict。
 - 全部 attempt blocked 时返回 `status=needs_iteration` 与 `next_research_actions`。
+- 有 active champion 时，challenger 未相对改善会进入 `needs_iteration`，不会替代当前 active strategy。
 - 默认 summary-only，不输出完整 report 明细；明细必须显式 `--include-attempt-details`。
 - 默认不写 registry；显式 `--record-to-registry` 时只追加 research loop run 和 judge verdict，不创建 approval、不 activate。
 - `strategy_registry.py research-history` 可汇总历史 run、阻断原因和同 factor 指标漂移。

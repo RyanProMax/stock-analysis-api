@@ -23,7 +23,8 @@ Status: first explicit-symbol MVP completed on 2026-05-10.
 - `ts_code` 对 HK 使用同一 Futu code。
 - Futu kline 的 `time_key` 标准化为 `date` / `trade_date`。
 - Futu kline 的 `turnover` 标准化为 `amount`，避免和 `turnover_rate` 混淆。
-- Futu source 只沉淀 OHLCV 和必要 source metadata；财务、lot size、tick size 等市场细节后续单独补 MarketSpec。
+- Futu source 只沉淀 OHLCV 和必要 source metadata；市场细节由 `src/model/market.py` 的 `MarketSpec` 独立表达，不写入 Futu 日线 source。
+- HK / US Alpha 评估未显式传 `--cost-bps` 时，使用 `MarketSpec` 的市场默认 round-trip 成本模型；显式传参时保留 fixed bps override。
 
 ## Acceptance
 

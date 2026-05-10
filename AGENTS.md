@@ -74,6 +74,8 @@ src/
 - 统一同步入口为 `uv run sync-market-data`
 - A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
 - 港股 / 美股显式 symbol 日线补库可使用 Futu OpenD 只读 K 线，HK 保留 `HK.00700` 这类原生前缀，避免和 A 股代码冲突
+- CN / HK / US 市场规则统一由 `src/model/market.py` 的 `MarketSpec` 表达；Alpha / backtest 未显式传成本时使用 `MarketSpec` 默认 round-trip 成本模型，显式 `--cost-bps` 可覆盖
+- 策略评估支持可选 champion/challenger 对比；有 active strategy 时，research loop 应把 active strategy 对应的 passed judge verdict 作为 champion 传给 evaluator
 - `cn_symbols` 只保留当前上市 A 股股票 + ETF 最新快照，不保留历史状态
 - `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 统一为 `ETF`
 - `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚交易日，是本地覆盖摘要，不是上市区间、交易所日历或 source truth
