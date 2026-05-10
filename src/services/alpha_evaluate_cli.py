@@ -12,7 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Evaluate local alpha factors with forward returns"
     )
-    parser.add_argument("--market", default="cn", choices=["cn", "us"])
+    parser.add_argument("--market", default="cn", choices=["cn", "us", "hk"])
     parser.add_argument(
         "--universe",
         default="all",

@@ -189,6 +189,22 @@ class MarketDataRepository:
                     extra TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS hk_symbols (
+                    symbol TEXT PRIMARY KEY,
+                    ts_code TEXT,
+                    name TEXT,
+                    area TEXT,
+                    industry TEXT,
+                    market TEXT,
+                    exchange TEXT,
+                    cnspell TEXT,
+                    list_date TEXT,
+                    daily_start_date TEXT,
+                    daily_end_date TEXT,
+                    updated_at TEXT NOT NULL,
+                    extra TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS cn_daily (
                     symbol TEXT NOT NULL,
                     ts_code TEXT,
@@ -265,11 +281,52 @@ class MarketDataRepository:
                     PRIMARY KEY (symbol, trade_date)
                 );
 
+                CREATE TABLE IF NOT EXISTS hk_daily (
+                    symbol TEXT NOT NULL,
+                    ts_code TEXT,
+                    trade_date TEXT NOT NULL,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    pre_close REAL,
+                    change REAL,
+                    pct_chg REAL,
+                    vol REAL,
+                    amount REAL,
+                    turnover_rate REAL,
+                    turnover_rate_f REAL,
+                    volume_ratio REAL,
+                    pe REAL,
+                    pe_ttm REAL,
+                    pb REAL,
+                    ps REAL,
+                    ps_ttm REAL,
+                    dv_ratio REAL,
+                    dv_ttm REAL,
+                    float_share REAL,
+                    free_share REAL,
+                    total_share REAL,
+                    circ_mv REAL,
+                    total_mv REAL,
+                    adj_factor REAL,
+                    is_suspended INTEGER,
+                    up_limit REAL,
+                    down_limit REAL,
+                    source TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    extra TEXT,
+                    PRIMARY KEY (symbol, trade_date)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_cn_daily_symbol_date
                 ON cn_daily(symbol, trade_date DESC);
 
                 CREATE INDEX IF NOT EXISTS idx_us_daily_symbol_date
                 ON us_daily(symbol, trade_date DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_hk_daily_symbol_date
+                ON hk_daily(symbol, trade_date DESC);
 
                 CREATE TABLE IF NOT EXISTS sync_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -326,6 +383,15 @@ class MarketDataRepository:
             )
             self._ensure_columns(
                 conn,
+                "hk_symbols",
+                {
+                    "cnspell": "TEXT",
+                    "daily_start_date": "TEXT",
+                    "daily_end_date": "TEXT",
+                },
+            )
+            self._ensure_columns(
+                conn,
                 "cn_daily",
                 {
                     "turnover_rate": "REAL",
@@ -348,6 +414,27 @@ class MarketDataRepository:
             self._ensure_columns(
                 conn,
                 "us_daily",
+                {
+                    "turnover_rate": "REAL",
+                    "turnover_rate_f": "REAL",
+                    "volume_ratio": "REAL",
+                    "pe": "REAL",
+                    "pe_ttm": "REAL",
+                    "pb": "REAL",
+                    "ps": "REAL",
+                    "ps_ttm": "REAL",
+                    "dv_ratio": "REAL",
+                    "dv_ttm": "REAL",
+                    "float_share": "REAL",
+                    "free_share": "REAL",
+                    "total_share": "REAL",
+                    "circ_mv": "REAL",
+                    "total_mv": "REAL",
+                },
+            )
+            self._ensure_columns(
+                conn,
+                "hk_daily",
                 {
                     "turnover_rate": "REAL",
                     "turnover_rate_f": "REAL",
@@ -398,7 +485,7 @@ class MarketDataRepository:
     def upsert_symbols(self, rows: Iterable[Dict[str, Any]], market: Optional[str] = None) -> int:
         normalized_market = self._normalize_market(market) if market else None
         updated_at = self._now_iso()
-        payload_by_market: dict[str, list[tuple[Any, ...]]] = {"cn": [], "us": []}
+        payload_by_market: dict[str, list[tuple[Any, ...]]] = {"cn": [], "us": [], "hk": []}
 
         for row in rows:
             symbol = str(row.get("symbol") or "").strip().upper()
@@ -413,7 +500,7 @@ class MarketDataRepository:
                     row.get("name"),
                     row.get("area"),
                     row.get("industry"),
-                    row.get("market") or ("A股" if row_market == "cn" else "美股"),
+                    row.get("market") or self._default_market_label(row_market),
                     row.get("exchange") or self._infer_exchange(row.get("ts_code"), row_market),
                     row.get("cnspell"),
                     row.get("list_date"),
@@ -789,7 +876,7 @@ class MarketDataRepository:
             )
 
     def backfill_symbol_daily_coverage(self, market: Optional[str] = None) -> None:
-        markets = [self._normalize_market(market)] if market else ["cn", "us"]
+        markets = [self._normalize_market(market)] if market else ["cn", "us", "hk"]
         with self.connect() as conn:
             for normalized_market in markets:
                 conn.execute(f"""
@@ -847,6 +934,10 @@ class MarketDataRepository:
                     SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
                            daily_start_date, daily_end_date, updated_at, extra
                     FROM us_symbols
+                    UNION ALL
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
+                    FROM hk_symbols
                 ) ORDER BY symbol ASC{limit_clause}
             """
             params = [] if limit is None or limit < 0 else [limit]
@@ -889,6 +980,10 @@ class MarketDataRepository:
                     SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
                            daily_start_date, daily_end_date, updated_at, extra
                     FROM us_symbols
+                    UNION ALL
+                    SELECT symbol, ts_code, name, area, industry, market, exchange, cnspell, list_date,
+                           daily_start_date, daily_end_date, updated_at, extra
+                    FROM hk_symbols
                 )
                 {where_clause}
                 ORDER BY symbol ASC
@@ -1293,9 +1388,12 @@ class MarketDataRepository:
     @staticmethod
     def _normalize_market(value: Any) -> str:
         text = str(value or "").strip().lower()
+        upper = str(value or "").strip().upper()
+        if text in {"hk", "港股", "hkex", "hkg"} or upper.startswith("HK."):
+            return "hk"
         if text in {"cn", "a股", "主板", "创业板", "科创板", "北交所", "sse", "szse", "bse"}:
             return "cn"
-        if text in {"us", "美股", "nasdaq", "nyse", "amex"}:
+        if text in {"us", "美股", "nasdaq", "nyse", "amex"} or upper.startswith("US."):
             return "us"
         if (
             any(ch.isalpha() for ch in str(value or ""))
@@ -1306,16 +1404,30 @@ class MarketDataRepository:
 
     @staticmethod
     def _symbols_table(market: str) -> str:
-        return "cn_symbols" if market == "cn" else "us_symbols"
+        if market == "cn":
+            return "cn_symbols"
+        if market == "hk":
+            return "hk_symbols"
+        return "us_symbols"
 
     @staticmethod
     def _daily_table(market: str) -> str:
-        return "cn_daily" if market == "cn" else "us_daily"
+        if market == "cn":
+            return "cn_daily"
+        if market == "hk":
+            return "hk_daily"
+        return "us_daily"
 
     @staticmethod
     def _default_ts_code(symbol: str, market: str) -> str:
+        if market == "hk":
+            normalized = str(symbol or "").strip().upper()
+            if normalized.startswith("HK."):
+                return normalized
+            return f"HK.{normalized.zfill(5) if normalized.isdigit() else normalized}"
         if market == "us":
-            return f"{symbol}.US"
+            normalized = str(symbol or "").strip().upper()
+            return normalized if normalized.startswith("US.") else f"{normalized}.US"
         if symbol.startswith(("4", "8", "92")):
             return f"{symbol}.BJ"
         if symbol.startswith("6"):
@@ -1325,6 +1437,8 @@ class MarketDataRepository:
     @classmethod
     def _infer_exchange(cls, ts_code: Any, market: str) -> Optional[str]:
         text = str(ts_code or "").upper()
+        if text.startswith("HK.") or market == "hk":
+            return "HKEX"
         if text.endswith(".BJ"):
             return "BSE"
         if text.endswith(".SH"):
@@ -1334,6 +1448,14 @@ class MarketDataRepository:
         if text.endswith(".US") or market == "us":
             return "NASDAQ"
         return None
+
+    @staticmethod
+    def _default_market_label(market: str) -> str:
+        if market == "cn":
+            return "A股"
+        if market == "hk":
+            return "港股"
+        return "美股"
 
     @classmethod
     def _encode_extra(

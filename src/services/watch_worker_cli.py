@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--active-window", default=DEFAULT_ACTIVE_WINDOW)
     parser.add_argument("--now")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--market", choices=["cn", "us"])
+    parser.add_argument("--market", choices=["cn", "us", "hk"])
     parser.add_argument("--universe", choices=["all", "stock", "etf", "watchlist"])
     parser.add_argument("--symbols")
     parser.add_argument("--factor")

@@ -124,3 +124,45 @@ def test_alpha_scan_marks_insufficient_history_as_partial_without_score(tmp_path
     assert payload["items"][0]["data_quality"] == "partial"
     assert "insufficient_daily_history" in payload["items"][0]["data_gaps"]
     json.dumps(payload, allow_nan=False)
+
+
+def test_alpha_scan_accepts_hk_symbols_from_local_daily_warehouse(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "HK.00700", "name": "Tencent", "market": "港股", "exchange": "HKEX"},
+            {"symbol": "HK.09988", "name": "Alibaba", "market": "港股", "exchange": "HKEX"},
+        ],
+        market="hk",
+    )
+    repository.upsert_daily_bars(
+        "HK.00700",
+        _daily_rows([300, 305, 310, 320, 335, 350, 365, 380, 395, 410]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.00700",
+    )
+    repository.upsert_daily_bars(
+        "HK.09988",
+        _daily_rows([100, 101, 100, 99, 98, 98, 97, 96, 96, 95]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.09988",
+    )
+    service = AlphaScanService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "hk",
+        "--symbols",
+        "HK.00700,HK.09988",
+        "--top",
+        "2",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["request"]["market"] == "hk"
+    assert [item["symbol"] for item in payload["items"]] == ["HK.00700", "HK.09988"]
+    assert payload["items"][0]["score"] > payload["items"][1]["score"]

@@ -12,6 +12,7 @@ import pandas as pd
 from ..data_provider.base import BaseStockDataSource
 from ..data_provider.sources.akshare import AkShareDataSource
 from ..data_provider.sources.efinance import EfinanceDataSource
+from ..data_provider.sources.futu import FutuDailyDataSource
 from ..data_provider.sources.tushare import TushareDataSource
 from ..data_provider.sources.yfinance import YfinanceDataSource
 from ..repositories import MarketDataRepository, market_data_repository
@@ -27,6 +28,7 @@ class DailyDataWriteService:
         symbol_catalog: Optional[SymbolCatalogService] = None,
         cn_daily_sources: Optional[Iterable[Any]] = None,
         us_daily_sources: Optional[Iterable[Any]] = None,
+        hk_daily_sources: Optional[Iterable[Any]] = None,
     ):
         self.repository = repository or market_data_repository
         self.symbol_catalog = symbol_catalog or symbol_catalog_service
@@ -41,9 +43,15 @@ class DailyDataWriteService:
         self.us_daily_sources = list(
             us_daily_sources
             or [
-                TushareDataSource.get_instance(),
+                FutuDailyDataSource.get_instance(),
                 YfinanceDataSource.get_instance(),
                 AkShareDataSource.get_instance(),
+            ]
+        )
+        self.hk_daily_sources = list(
+            hk_daily_sources
+            or [
+                FutuDailyDataSource.get_instance(),
             ]
         )
 
@@ -61,6 +69,8 @@ class DailyDataWriteService:
         self._validate_window(days=days, years=years, start_date=start_date)
         if scope == "symbol" and not symbol:
             raise ValueError("`scope=symbol` 时必须提供 `--symbol`")
+        if normalized_market == "hk" and scope == "all":
+            raise ValueError("hk all universe is not supported yet; use scope=symbol")
 
         effective_start_date = start_date or self._compute_start_date(days=days, years=years)
         requested_end_date = datetime.now(timezone.utc).date().strftime("%Y-%m-%d")
@@ -74,7 +84,7 @@ class DailyDataWriteService:
 
         if scope == "all":
             live_snapshot = self.symbol_catalog.fetch_live_market_snapshot(normalized_market)
-            universe_source = f"{normalized_market.upper()}_TushareListedSnapshot"
+            universe_source = f"{normalized_market.upper()}_LiveSnapshot"
             current_snapshot = self.repository.list_symbols(market=normalized_market)
             live_symbols = {str(row.get("symbol") or "").strip().upper() for row in live_snapshot}
             current_symbols = {
@@ -409,11 +419,11 @@ class DailyDataWriteService:
 
         selected_df: Optional[pd.DataFrame] = None
         selected_source = ""
-        sources = self.cn_daily_sources if normalized_market == "cn" else self.us_daily_sources
+        sources = self._daily_sources(normalized_market)
         effective_start_date = start_date or self._compute_start_date(days=days, years=years)
 
         for source in sources:
-            market_label = "A股" if normalized_market == "cn" else "美股"
+            market_label = self._market_label(normalized_market)
             if not hasattr(source, "is_available") or not source.is_available(market_label):
                 continue
 
@@ -459,7 +469,14 @@ class DailyDataWriteService:
                 start_date=start_date,
             )
 
-        daily_df = source.get_daily_data(symbol)
+        try:
+            daily_df = source.get_daily_data(
+                symbol,
+                market=market,
+                start_date=start_date,
+            )
+        except TypeError:
+            daily_df = source.get_daily_data(symbol)
         if daily_df is None or daily_df.empty:
             return None
         df = daily_df.copy()
@@ -867,7 +884,25 @@ class DailyDataWriteService:
 
     @staticmethod
     def _normalize_market(market: str) -> str:
-        return "us" if str(market).strip().lower() == "us" else "cn"
+        text = str(market).strip().lower()
+        if text in {"hk", "港股", "hkex"}:
+            return "hk"
+        return "us" if text == "us" else "cn"
+
+    def _daily_sources(self, market: str) -> list[Any]:
+        if market == "cn":
+            return self.cn_daily_sources
+        if market == "hk":
+            return self.hk_daily_sources
+        return self.us_daily_sources
+
+    @staticmethod
+    def _market_label(market: str) -> str:
+        if market == "cn":
+            return "A股"
+        if market == "hk":
+            return "港股"
+        return "美股"
 
     def _resolve_trade_window(
         self,

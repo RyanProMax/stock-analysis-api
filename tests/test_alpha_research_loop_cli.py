@@ -71,6 +71,38 @@ def _seed_market(repository: MarketDataRepository) -> None:
     )
 
 
+def _seed_hk_market(repository: MarketDataRepository) -> None:
+    repository.upsert_symbols(
+        [
+            {"symbol": "HK.00700", "name": "Tencent", "market": "港股", "exchange": "HKEX"},
+            {"symbol": "HK.09988", "name": "Alibaba", "market": "港股", "exchange": "HKEX"},
+            {"symbol": "HK.03690", "name": "Meituan", "market": "港股", "exchange": "HKEX"},
+        ],
+        market="hk",
+    )
+    repository.upsert_daily_bars(
+        "HK.00700",
+        _daily_rows([300, 305, 310, 320, 335, 350, 365, 380, 395, 410, 430, 450]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.00700",
+    )
+    repository.upsert_daily_bars(
+        "HK.09988",
+        _daily_rows([100, 101, 100, 99, 98, 98, 97, 96, 96, 95, 94, 93]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.09988",
+    )
+    repository.upsert_daily_bars(
+        "HK.03690",
+        _daily_rows([120, 121, 122, 121, 123, 124, 126, 125, 127, 129, 130, 131]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.03690",
+    )
+
+
 def _service(
     tmp_path,
     *,
@@ -82,6 +114,12 @@ def _service(
         report_service=AlphaDailyReportService(repository=repository),
         strategy_registry=registry,
     )
+
+
+def _hk_service(tmp_path) -> AlphaResearchLoopService:
+    repository = _repository(tmp_path)
+    _seed_hk_market(repository)
+    return AlphaResearchLoopService(report_service=AlphaDailyReportService(repository=repository))
 
 
 def _run_cli(service: AlphaResearchLoopService, *args: str) -> tuple[int, dict]:
@@ -142,6 +180,54 @@ def test_alpha_research_loop_returns_human_review_ready_without_applying_strateg
     assert payload["attempts"][0]["roles"]["evaluator_id"] == "judge-agent"
     assert "report" not in payload["attempts"][0]
     assert "strategy_proposal" not in payload["attempts"][0]
+    json.dumps(payload, allow_nan=False)
+
+
+def test_alpha_research_loop_accepts_hk_market_without_broker_side_effects(tmp_path):
+    exit_code, payload = _run_cli(
+        _hk_service(tmp_path),
+        "--market",
+        "hk",
+        "--symbols",
+        "HK.00700,HK.09988,HK.03690",
+        "--factors",
+        "momentum_5d,momentum_20d",
+        "--date",
+        "2026-05-12",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--top",
+        "2",
+        "--researcher-id",
+        "researcher-agent",
+        "--backtester-id",
+        "backtester-agent",
+        "--evaluator-id",
+        "judge-agent",
+        "--min-rank-ic-mean",
+        "-1",
+        "--min-quantile-spread",
+        "-1",
+        "--min-observations",
+        "1",
+        "--allow-data-gaps",
+    )
+
+    assert exit_code == 0
+    assert payload["request"]["market"] == "hk"
+    assert payload["status"] in {"human_review_ready", "needs_iteration"}
+    assert payload["summary"]["proposal_not_applied"] is True
+    assert payload["summary"]["approval_required"] is True
+    assert payload["recorded"] is None
+    if payload["selected"] is not None:
+        assert (
+            payload["selected"]["strategy_proposal"]["proposed_changes"][0]["parameters"]["market"]
+            == "hk"
+        )
     json.dumps(payload, allow_nan=False)
 
 

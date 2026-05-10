@@ -172,3 +172,62 @@ def test_alpha_evaluate_empty_universe_returns_empty_status(tmp_path):
     assert payload["summary"]["data_gaps"] == ["empty_universe"]
     assert payload["evaluation"]["status"] == "empty"
     json.dumps(payload, allow_nan=False)
+
+
+def test_alpha_evaluate_accepts_hk_market_from_local_daily_warehouse(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "HK.00700", "name": "Tencent", "market": "港股", "exchange": "HKEX"},
+            {"symbol": "HK.09988", "name": "Alibaba", "market": "港股", "exchange": "HKEX"},
+            {"symbol": "HK.03690", "name": "Meituan", "market": "港股", "exchange": "HKEX"},
+        ],
+        market="hk",
+    )
+    repository.upsert_daily_bars(
+        "HK.00700",
+        _daily_rows([300, 305, 310, 320, 335, 350, 365, 380, 395, 410, 430, 450]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.00700",
+    )
+    repository.upsert_daily_bars(
+        "HK.09988",
+        _daily_rows([100, 101, 100, 99, 98, 98, 97, 96, 96, 95, 94, 93]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.09988",
+    )
+    repository.upsert_daily_bars(
+        "HK.03690",
+        _daily_rows([120, 121, 122, 121, 123, 124, 126, 125, 127, 129, 130, 131]),
+        "HK_FutuOpenD",
+        market="hk",
+        ts_code="HK.03690",
+    )
+    service = AlphaEvaluationService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "hk",
+        "--symbols",
+        "HK.00700,HK.09988,HK.03690",
+        "--factor",
+        "momentum_5d",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-10",
+        "--forward-windows",
+        "1,3",
+        "--quantiles",
+        "2",
+    )
+
+    assert exit_code == 0
+    assert payload["request"]["market"] == "hk"
+    assert payload["summary"]["symbols"] == 3
+    assert payload["evaluation"]["candidate_id"] == "factor:momentum_5d"
+    assert "rank_ic_mean" in payload["evaluation"]["metrics"]
+    json.dumps(payload, allow_nan=False)

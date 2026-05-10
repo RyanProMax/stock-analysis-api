@@ -11,6 +11,7 @@ from src.services.futu_market_data_cli import (
     _build_parser,
     main as futu_market_data_cli_main,
 )
+from src.data_provider.sources.futu import FutuDailyDataSource
 
 
 def _strict_json_loads(raw: str) -> dict:
@@ -21,6 +22,9 @@ def _strict_json_loads(raw: str) -> dict:
 
 
 class FakeFutuGateway:
+    def __init__(self, *, expected_rehab: str = "none"):
+        self.expected_rehab = expected_rehab
+
     def get_global_state(self):
         return {"qot_logined": True, "server_ver": "10.4.6408"}
 
@@ -51,7 +55,7 @@ class FakeFutuGateway:
         assert ktype == "1d"
         assert start == "2026-05-12"
         assert end == "2026-05-12"
-        assert rehab == "none"
+        assert rehab == self.expected_rehab
         return [
             {
                 "time_key": "2026-05-12",
@@ -273,6 +277,24 @@ def test_history_kline_cli_contract():
     assert payload["status"] == "ok"
     assert payload["code"] == "HK.01234"
     assert payload["data"][0]["close"] == 11.5
+
+
+def test_futu_daily_data_source_maps_kline_to_warehouse_daily_columns():
+    source = FutuDailyDataSource(gateway=FakeFutuGateway(expected_rehab="forward"))
+
+    df = source.get_daily_data(
+        "HK.01234",
+        market="hk",
+        start_date="2026-05-12",
+        end_date="2026-05-12",
+    )
+
+    assert list(df["date"]) == ["2026-05-12"]
+    assert list(df["open"]) == [10]
+    assert list(df["close"]) == [11.5]
+    assert list(df["volume"]) == [1000]
+    assert list(df["amount"]) == [11500]
+    assert list(df["ts_code"]) == ["HK.01234"]
 
 
 def test_snapshot_cli_contract():

@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-09
+更新时间：2026-05-10
 
 ## 当前目标
 
@@ -16,6 +16,7 @@
 - 已按用户要求统一路线图路径为 `PLAN/ROADMAP.md`，规划自动盯盘、Alpha 挖掘、因子评估、策略版本治理、人工审批和自我迭代路线；后续实施仍需同步维护本文档作为当前状态入口
 - 已落地 P1 Alpha 扫描 MVP、P2 因子评估 MVP、P4 策略 registry MVP、P6 Alpha 日报 MVP、P5 自动盯盘 worker MVP、独立 evaluator / judge gate MVP 和离线 agent teams research loop MVP；Alpha 自挖掘 / 自迭代的离线 proposal 链路已能串起来，日内 worker 可读取 active strategy 做只读 watch summary，但策略生效仍必须人工 approve / activate
 - 已明确治理原则：模型在达到评估门槛前可以自动研究迭代；进入候选策略审核前应由独立 evaluator / judge 角色复核，避免同一个 Agent 既开发、回测又最终评估
+- 当前优先级调整：Tushare 过期期间优先跑通 Futu 驱动的港股 / 美股 Alpha 研究链路，先支持显式 symbols 的 Futu 日 K 入库与本地 Alpha scan/evaluate/report/research loop
 
 ## 最近完成项
 
@@ -193,9 +194,17 @@
   - `status=human_review_ready` 只代表可交给人审；`status=needs_iteration` 表示继续研究，不写入生效策略
   - 显式 `--record-to-registry` 会记录 research loop run 和 verdict；`strategy_registry.py research-history` 可查询历史 run、阻断原因和 factor drift
   - 人工审批必须已有 passed judge verdict；策略激活必须保持 `candidate -> approved -> active` 状态机
+- 已完成港股 / 美股 Futu EOD warehouse 第一阶段：
+  - `sync-market-data --market hk/us --scope symbol` 可通过 Futu daily kline 写入本地仓
+  - 新增 `hk_symbols` / `hk_daily`，HK symbol 保留 `HK.00700` 这类 Futu 原生前缀
+  - `alpha_scan.py`、`alpha_evaluate.py`、`alpha_daily_report.py`、`alpha_research_loop.py` 和 `watch_worker_tick.py` 已接受 `--market hk`
+  - `hk` 市场第一阶段只支持显式 symbols，不做全市场 universe
+  - 显式 US/HK symbol resolve 不再触发 Tushare 目录刷新；US/HK 日线优先使用 Futu OpenD
+  - 已用真实 OpenD 验证 HK.00700 / HK.09988 / HK.03690 与 US.AAPL / US.NVDA / US.MSFT 入库，并跑通 HK/US alpha scan 与 research loop
 
 ## 下一步计划
 
+- 下一步补充港股 / 美股全市场 universe、MarketSpec、交易成本 / lot size / session / corporate action 规则和更严格 champion/challenger 对比
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型

@@ -70,7 +70,31 @@ class FakeCatalog:
         return [dict(row) for row in self.symbol_rows]
 
     def resolve_symbol(self, symbol: str, market: str | None = None):
+        for row in self.symbol_rows:
+            if str(row.get("symbol") or "").strip().upper() == str(symbol).strip().upper():
+                return dict(row)
         return dict(self.symbol_row)
+
+
+class FakeFutuDailySource:
+    SOURCE_NAME = "FutuOpenD"
+
+    def __init__(self, df: pd.DataFrame | None):
+        self._df = df
+        self.calls: list[dict] = []
+
+    def is_available(self, market: str) -> bool:
+        return market in {"港股", "美股"}
+
+    def get_daily_data(
+        self,
+        symbol: str,
+        *,
+        market: str | None = None,
+        start_date: str | None = None,
+    ):
+        self.calls.append({"symbol": symbol, "market": market, "start_date": start_date})
+        return self._df.copy() if self._df is not None else None
 
 
 class FakeListSource:
@@ -218,6 +242,42 @@ class TestMarketDataRepository:
         assert len(all_rows) == 2
         assert us_rows[0]["symbol"] == "NVDA"
         assert cn_rows[0]["symbol"] == "300827"
+
+    def test_upsert_and_load_hk_daily_bars_with_futu_code(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        storage.upsert_symbols(
+            [
+                {
+                    "symbol": "HK.00700",
+                    "ts_code": "HK.00700",
+                    "name": "Tencent",
+                    "market": "港股",
+                    "exchange": "HKEX",
+                }
+            ],
+            market="hk",
+        )
+
+        inserted = storage.upsert_daily_bars(
+            "HK.00700",
+            _daily_df(),
+            "HK_FutuOpenD",
+            market="hk",
+            ts_code="HK.00700",
+        )
+        loaded = storage.load_daily_bars("HK.00700", market="hk")
+        hk_rows = storage.search_symbols("00700", market="hk")
+        all_rows = storage.list_symbols()
+
+        assert inserted == 6
+        assert len(loaded) == 6
+        assert loaded.iloc[-1]["close"] is not None
+        assert hk_rows[0]["symbol"] == "HK.00700"
+        assert any(row["symbol"] == "HK.00700" for row in all_rows)
+        assert (
+            storage.get_latest_trade_date("HK.00700", market="hk")
+            == str(loaded.iloc[-1]["date"])[:10]
+        )
 
     def test_replace_symbols_preserves_daily_coverage_summary(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
@@ -396,6 +456,91 @@ class TestDailyDataWriteService:
         assert row["success_count"] == 1
         assert row["failure_count"] == 0
         assert row["rows_written"] == 6
+
+    def test_sync_symbol_daily_uses_futu_for_hk_symbol_scope(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        futu_source = FakeFutuDailySource(_daily_df(periods=8))
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                {
+                    "symbol": "HK.00700",
+                    "ts_code": "HK.00700",
+                    "name": "Tencent",
+                    "market": "港股",
+                    "exchange": "HKEX",
+                }
+            ),
+            cn_daily_sources=[],
+            us_daily_sources=[],
+            hk_daily_sources=[futu_source],
+        )
+
+        result = service.sync_market_data(
+            market="hk",
+            scope="symbol",
+            symbol="HK.00700",
+            start_date="2026-01-01",
+        )
+        loaded = storage.load_daily_bars("HK.00700", market="hk")
+
+        assert result["status"] == "completed"
+        assert result["market"] == "hk"
+        assert result["success_count"] == 1
+        assert result["rows_written"] == 8
+        assert len(loaded) == 8
+        assert futu_source.calls == [
+            {"symbol": "HK.00700", "market": "hk", "start_date": "2026-01-01"}
+        ]
+
+    def test_sync_market_data_rejects_hk_all_until_universe_exists(self, tmp_path):
+        service = DailyDataWriteService(
+            repository=MarketDataRepository(str(tmp_path / "market.sqlite")),
+            symbol_catalog=FakeCatalog([]),
+            cn_daily_sources=[],
+            us_daily_sources=[],
+            hk_daily_sources=[FakeFutuDailySource(_daily_df(periods=8))],
+        )
+
+        try:
+            service.sync_market_data(market="hk", scope="all", start_date="2026-01-01")
+        except ValueError as exc:
+            assert "hk all universe is not supported" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("expected hk all universe to be rejected")
+
+    def test_sync_symbol_daily_uses_futu_first_for_us_symbol_scope(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        futu_source = FakeFutuDailySource(_daily_df(periods=8))
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                {
+                    "symbol": "AAPL",
+                    "ts_code": "AAPL.US",
+                    "name": "Apple",
+                    "market": "美股",
+                    "exchange": "NASDAQ",
+                }
+            ),
+            cn_daily_sources=[],
+            us_daily_sources=[futu_source],
+            hk_daily_sources=[],
+        )
+
+        result = service.sync_market_data(
+            market="us",
+            scope="symbol",
+            symbol="AAPL",
+            start_date="2026-01-01",
+        )
+        loaded = storage.load_daily_bars("AAPL", market="us")
+
+        assert result["status"] == "completed"
+        assert result["market"] == "us"
+        assert result["success_count"] == 1
+        assert len(loaded) == 8
+        assert futu_source.calls == [{"symbol": "AAPL", "market": "us", "start_date": "2026-01-01"}]
 
     def test_sync_market_data_updates_progress_by_symbol(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
@@ -678,6 +823,40 @@ class TestSyncCli:
         assert captured["start_date"] is None
         assert callable(captured["progress_callback"])
 
+    def test_sync_market_data_cli_accepts_hk_symbol_scope(self, monkeypatch):
+        captured = {}
+
+        def fake_sync_market_data(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "src.main.daily_data_write_service.sync_market_data",
+            fake_sync_market_data,
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "sync-market-data",
+                "--market",
+                "hk",
+                "--scope",
+                "symbol",
+                "--symbol",
+                "HK.00700",
+                "--start-date",
+                "2026-01-01",
+            ],
+        )
+
+        sync_market_data()
+
+        assert captured["market"] == "hk"
+        assert captured["scope"] == "symbol"
+        assert captured["symbol"] == "HK.00700"
+        assert captured["start_date"] == "2026-01-01"
+
 
 class TestSymbolCatalogService:
     def test_prefers_sqlite_symbol_store_for_a_shares(self, tmp_path):
@@ -724,6 +903,41 @@ class TestSymbolCatalogService:
         assert len(results) == 1
         assert results[0]["symbol"] == "NVDA"
         assert storage.search_symbols("NVDA", market="us")[0]["name"] == "NVIDIA"
+
+    def test_resolve_symbol_creates_hk_fallback_without_tushare(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        service = SymbolCatalogService(repository=storage, cn_sources=[], us_sources=[])
+
+        row = service.resolve_symbol("HK.00700", market="hk")
+
+        assert row is not None
+        assert row["symbol"] == "HK.00700"
+        assert row["ts_code"] == "HK.00700"
+        assert row["market"] == "港股"
+        assert storage.get_symbol_record("HK.00700", market="hk")["exchange"] == "HKEX"
+
+    def test_resolve_symbol_creates_us_fallback_without_catalog_refresh(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+
+        class FailingUsSource:
+            def is_available(self, market: str) -> bool:
+                return True
+
+            def get_us_stocks(self):  # pragma: no cover - must not be called
+                raise AssertionError("explicit US symbol should not refresh catalog")
+
+        service = SymbolCatalogService(
+            repository=storage,
+            cn_sources=[],
+            us_sources=[FailingUsSource()],
+        )
+
+        row = service.resolve_symbol("US.AAPL", market="us")
+
+        assert row is not None
+        assert row["symbol"] == "US.AAPL"
+        assert row["ts_code"] == "US.AAPL"
+        assert row["market"] == "美股"
 
     def test_refresh_market_snapshot_merges_cn_equities_and_etfs(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))

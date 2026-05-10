@@ -13,7 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run an offline alpha research loop with separated agent roles"
     )
-    parser.add_argument("--market", default="cn", choices=["cn", "us"])
+    parser.add_argument("--market", default="cn", choices=["cn", "us", "hk"])
     parser.add_argument(
         "--universe",
         default="all",

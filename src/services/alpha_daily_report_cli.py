@@ -10,7 +10,7 @@ from .alpha_daily_report_service import AlphaDailyReportService
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a summary-only alpha daily report")
-    parser.add_argument("--market", default="cn", choices=["cn", "us"])
+    parser.add_argument("--market", default="cn", choices=["cn", "us", "hk"])
     parser.add_argument(
         "--universe",
         default="all",

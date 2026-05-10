@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import math
 import os
+import contextlib
+import io
+import warnings
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Iterable
+
+import pandas as pd
 
 from ...model.trading import MarketSnapshot, OrderRequest
 
@@ -391,6 +396,86 @@ class FutuOpenDGateway:
             return records
         finally:
             ctx.close()
+
+
+class FutuDailyDataSource:
+    SOURCE_NAME = "FutuOpenD"
+    priority = 0
+    _instance: "FutuDailyDataSource | None" = None
+
+    def __init__(self, *, gateway: FutuOpenDGateway | None = None) -> None:
+        self.gateway = gateway or FutuOpenDGateway()
+
+    @classmethod
+    def get_instance(cls) -> "FutuDailyDataSource":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def is_available(self, market: str) -> bool:
+        return str(market or "").strip() in {"港股", "美股", "hk", "us", "HK", "US"}
+
+    def get_daily_data(
+        self,
+        symbol: str,
+        *,
+        market: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        futu_code = self._to_futu_code(symbol, market=market)
+        with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            records = self.gateway.request_history_kline(
+                futu_code,
+                ktype="1d",
+                start=start_date,
+                end=end_date,
+                max_count=1000,
+                rehab="forward",
+                session="NONE",
+                max_page=None,
+            )
+        if not records:
+            return pd.DataFrame()
+        rows = []
+        for record in records:
+            trade_date = record.get("time_key") or record.get("date") or record.get("time")
+            rows.append(
+                {
+                    "date": str(trade_date or "")[:10],
+                    "ts_code": futu_code,
+                    "open": record.get("open"),
+                    "high": record.get("high"),
+                    "low": record.get("low"),
+                    "close": record.get("close"),
+                    "volume": record.get("volume"),
+                    "amount": record.get("turnover"),
+                    "extra": {
+                        "futu_code": record.get("code") or futu_code,
+                    },
+                }
+            )
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+        return df
+
+    def _to_futu_code(self, symbol: str, *, market: str | None = None) -> str:
+        normalized = str(symbol or "").strip().upper()
+        if "." in normalized:
+            return normalize_futu_code(normalized)
+        normalized_market = str(market or "").strip().lower()
+        if normalized_market == "hk":
+            return normalize_futu_code(
+                f"HK.{normalized.zfill(5) if normalized.isdigit() else normalized}"
+            )
+        if normalized_market == "us":
+            return normalize_futu_code(f"US.{normalized}")
+        raise ValueError(f"Futu daily data requires market-prefixed code: {symbol}")
 
 
 class FutuOpenDTradeGateway:

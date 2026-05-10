@@ -130,6 +130,8 @@ src/
   - `cn_daily`
   - `us_symbols`
   - `us_daily`
+  - `hk_symbols`
+  - `hk_daily`
   - `sync_runs`
 - `cn_symbols` 只保存当前上市 A 股股票 + ETF 最新快照，不建模历史状态
 - `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 固定为 `ETF`
@@ -137,6 +139,8 @@ src/
 - 覆盖摘要用于同步前置剪枝和快速状态判断，但不能替代对 `cn_daily` 的精确校验
 - A 股 current universe 固定以 `Tushare stock_basic(exchange='', list_status='L') + etf_basic(list_status='L')` 为准
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
+- `hk_daily` / `us_daily` 的第一阶段补库口径优先服务显式 symbols；HK 使用 Futu 原生代码如 `HK.00700`，US 可使用裸 ticker 或 `US.AAPL`
+- Futu 日 K 写入本地仓时只作为只读 EOD 数据源，不订阅、不交易解锁、不调用账户写入或订单能力
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
 - `cn_daily` 只保存真实存在的日线事实，不为停牌日期补 synthetic row
 - `cn_daily.is_suspended` 只表示“这条已有日线 row 命中了停复牌事件”，不是持续状态，也不能解释整段无 row 的停牌区间

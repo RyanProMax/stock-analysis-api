@@ -70,9 +70,10 @@ src/
 - SQLite 只保存数据源返回的必要持久信息，不保存分析报告缓存
 - 5-10 分钟短线 watch baseline 只保留进程内内存态，不落数据库
 - 公共 HTTP 接口不暴露 `refresh` 参数，统一先查 SQLite，缺失再拉外部源并回写
-- 本地行情仓主表按市场拆分为 `cn_symbols`、`cn_daily`、`us_symbols`、`us_daily`
+- 本地行情仓主表按市场拆分为 `cn_symbols`、`cn_daily`、`us_symbols`、`us_daily`、`hk_symbols`、`hk_daily`
 - 统一同步入口为 `uv run sync-market-data`
 - A 股优先以 `Tushare` 为主数据源，`TUSHARE_TOKEN` / `TUSHARE_HTTP_URL` 只能从环境变量读取
+- 港股 / 美股显式 symbol 日线补库可使用 Futu OpenD 只读 K 线，HK 保留 `HK.00700` 这类原生前缀，避免和 A 股代码冲突
 - `cn_symbols` 只保留当前上市 A 股股票 + ETF 最新快照，不保留历史状态
 - `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 统一为 `ETF`
 - `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚交易日，是本地覆盖摘要，不是上市区间、交易所日历或 source truth

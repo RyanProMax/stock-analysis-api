@@ -37,7 +37,6 @@ class SymbolCatalogService:
         self.us_sources = list(
             us_sources
             or [
-                TushareDataSource.get_instance(),
                 NasdaqDataSource.get_instance(),
             ]
         )
@@ -66,6 +65,8 @@ class SymbolCatalogService:
         if normalized_market == "us":
             refreshed = self.refresh_market_snapshot("us")
             return refreshed[:limit] if limit is not None and limit >= 0 else refreshed
+        if normalized_market == "hk":
+            return cached
 
         self.refresh_market_snapshot("cn")
         self.refresh_market_snapshot("us")
@@ -84,6 +85,8 @@ class SymbolCatalogService:
             return results
 
         if normalized_market:
+            if normalized_market == "hk":
+                return []
             self.refresh_market_snapshot(normalized_market)
         else:
             self.refresh_market_snapshot("cn")
@@ -157,9 +160,13 @@ class SymbolCatalogService:
                     )
             return row
 
-        matches = self.search_symbols(
-            normalized_symbol, "美股" if normalized_market == "us" else "A股"
-        )
+        if normalized_market in {"us", "hk"}:
+            fallback = self._fallback_symbol_row(normalized_symbol, normalized_market)
+            self.repository.upsert_symbols([fallback], market=normalized_market)
+            return self.repository.get_symbol_record(normalized_symbol, market=normalized_market)
+
+        market_label = {"cn": "A股", "us": "美股", "hk": "港股"}[normalized_market]
+        matches = self.search_symbols(normalized_symbol, market_label)
         for candidate in matches:
             if str(candidate.get("symbol") or "").strip().upper() == normalized_symbol:
                 return candidate
@@ -170,18 +177,21 @@ class SymbolCatalogService:
                 self.repository.upsert_symbols([tushare_row], market="cn")
                 return self.repository.get_symbol_record(normalized_symbol, market="cn")
 
-        fallback = {
-            "symbol": normalized_symbol,
-            "ts_code": self._default_ts_code(normalized_symbol, normalized_market),
-            "name": normalized_symbol,
-            "area": "美国" if normalized_market == "us" else None,
-            "industry": None,
-            "market": "美股" if normalized_market == "us" else "A股",
-            "exchange": "NASDAQ" if normalized_market == "us" else None,
-            "list_date": None,
-        }
+        fallback = self._fallback_symbol_row(normalized_symbol, normalized_market)
         self.repository.upsert_symbols([fallback], market=normalized_market)
         return self.repository.get_symbol_record(normalized_symbol, market=normalized_market)
+
+    def _fallback_symbol_row(self, symbol: str, market: str) -> Dict[str, Any]:
+        return {
+            "symbol": symbol,
+            "ts_code": self._default_ts_code(symbol, market),
+            "name": symbol,
+            "area": {"us": "美国", "hk": "香港"}.get(market),
+            "industry": None,
+            "market": {"cn": "A股", "us": "美股", "hk": "港股"}[market],
+            "exchange": {"us": "NASDAQ", "hk": "HKEX"}.get(market),
+            "list_date": None,
+        }
 
     def get_stock_info(self, symbol: str) -> Dict[str, Any]:
         normalized_symbol = str(symbol or "").strip().upper()
@@ -198,6 +208,14 @@ class SymbolCatalogService:
     def _fetch_market_snapshot(self, market: str) -> Dict[str, Any]:
         if market == "cn":
             return self._fetch_cn_market_snapshot()
+        if market == "hk":
+            return {
+                "success": False,
+                "rows": [],
+                "source": "",
+                "partial": False,
+                "reason": "hk_snapshot_not_supported",
+            }
 
         rows, source_name = self._fetch_rows_from_sources(
             self.us_sources,
@@ -303,14 +321,23 @@ class SymbolCatalogService:
     @staticmethod
     def _normalize_market(value: Any) -> str:
         text = str(value or "").strip().lower()
+        upper = str(value or "").strip().upper()
+        if text in {"hk", "港股", "hkex", "hkg"} or upper.startswith("HK."):
+            return "hk"
         if text in {"us", "美股", "nasdaq", "nyse", "amex"}:
             return "us"
         return "cn"
 
     @staticmethod
     def _default_ts_code(symbol: str, market: str) -> str:
+        if market == "hk":
+            normalized = str(symbol or "").strip().upper()
+            if normalized.startswith("HK."):
+                return normalized
+            return f"HK.{normalized.zfill(5) if normalized.isdigit() else normalized}"
         if market == "us":
-            return f"{symbol}.US"
+            normalized = str(symbol or "").strip().upper()
+            return normalized if normalized.startswith("US.") else f"{normalized}.US"
         if symbol.startswith(("4", "8", "92")):
             return f"{symbol}.BJ"
         return f"{symbol}.SH" if symbol.startswith("6") else f"{symbol}.SZ"

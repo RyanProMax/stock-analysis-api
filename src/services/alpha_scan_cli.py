@@ -10,7 +10,7 @@ from .alpha_scan_service import AlphaScanService
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scan local market data for alpha candidates")
-    parser.add_argument("--market", default="cn", choices=["cn", "us"])
+    parser.add_argument("--market", default="cn", choices=["cn", "us", "hk"])
     parser.add_argument(
         "--universe",
         default="all",
