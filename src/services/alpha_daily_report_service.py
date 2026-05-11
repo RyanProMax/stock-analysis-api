@@ -6,6 +6,7 @@ from typing import Optional, Sequence
 from ..model.serialization import json_safe
 from ..model.strategy import StrategyProposal
 from ..repositories import MarketDataRepository, market_data_repository
+from .alpha_backtest_service import AlphaBacktestService
 from .alpha_evaluation_service import AlphaEvaluationService
 from .alpha_scan_service import AlphaScanService
 
@@ -16,12 +17,14 @@ class AlphaDailyReportService:
         repository: Optional[MarketDataRepository] = None,
         scan_service: Optional[AlphaScanService] = None,
         evaluation_service: Optional[AlphaEvaluationService] = None,
+        backtest_service: Optional[AlphaBacktestService] = None,
     ) -> None:
         self.repository = repository or market_data_repository
         self.scan_service = scan_service or AlphaScanService(repository=self.repository)
         self.evaluation_service = evaluation_service or AlphaEvaluationService(
             repository=self.repository
         )
+        self.backtest_service = backtest_service or AlphaBacktestService(repository=self.repository)
 
     def report(
         self,
@@ -70,6 +73,18 @@ class AlphaDailyReportService:
             quantiles=quantiles,
             cost_bps=cost_bps,
         )
+        backtest = self.backtest_service.backtest(
+            market=normalized_market,
+            universe=normalized_universe,
+            symbols=evaluation_symbols,
+            factor=normalized_factor,
+            start=start,
+            end=end,
+            top_n=normalized_top,
+            holding_period=windows[0],
+            cost_bps=cost_bps,
+            include_details=include_details,
+        )
 
         status = self._report_status(scan, evaluation)
         proposal = self._build_proposal(
@@ -82,6 +97,7 @@ class AlphaDailyReportService:
             strategy_version=strategy_version,
             scan=scan,
             evaluation=evaluation,
+            backtest=backtest,
         )
         metrics = (evaluation.get("evaluation") or {}).get("metrics") or {}
         summary = {
@@ -96,6 +112,9 @@ class AlphaDailyReportService:
             "rank_ic_tstat": metrics.get("rank_ic_tstat"),
             "quantile_spread": metrics.get("quantile_spread"),
             "turnover": metrics.get("turnover"),
+            "backtest_total_return": (backtest.get("summary") or {}).get("total_return"),
+            "backtest_max_drawdown": (backtest.get("summary") or {}).get("max_drawdown"),
+            "backtest_periods": (backtest.get("summary") or {}).get("periods"),
             "human_action_required": proposal is not None,
             "proposal_not_applied": True,
         }
@@ -122,6 +141,7 @@ class AlphaDailyReportService:
                 evaluation,
                 include_details=include_details,
             ),
+            "alpha_backtest": self._backtest_section(backtest, include_details=include_details),
             "strategy_proposal": proposal,
         }
         return json_safe(payload)
@@ -138,6 +158,7 @@ class AlphaDailyReportService:
         strategy_version: str | None,
         scan: dict,
         evaluation: dict,
+        backtest: dict,
     ) -> dict | None:
         candidates = scan.get("items") or []
         observations = int((evaluation.get("summary") or {}).get("observations") or 0)
@@ -174,6 +195,7 @@ class AlphaDailyReportService:
                 "quantile_spread": metrics.get("quantile_spread"),
                 "turnover": metrics.get("turnover"),
                 "data_gaps": data_gaps,
+                "alpha_backtest_summary": backtest.get("summary") or {},
             },
         )
         return proposal.to_dict()
@@ -208,6 +230,16 @@ class AlphaDailyReportService:
             "metrics": result.get("metrics") or {},
             "sample_split": result.get("sample_split") or {},
             "data_gaps": result.get("data_gaps") or [],
+        }
+
+    def _backtest_section(self, backtest: dict, *, include_details: bool) -> dict:
+        if include_details:
+            return backtest
+        return {
+            "status": backtest.get("status"),
+            "summary": backtest.get("summary") or {},
+            "cost_model": backtest.get("cost_model") or {},
+            "constraints": backtest.get("constraints") or [],
         }
 
     def _report_status(self, scan: dict, evaluation: dict) -> str:

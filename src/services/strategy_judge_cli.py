@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-observations", type=int, default=20)
     parser.add_argument("--min-challenger-rank-ic-delta", type=float, default=0.0)
     parser.add_argument("--min-challenger-quantile-spread-delta", type=float, default=0.0)
+    parser.add_argument("--min-backtest-total-return", type=float, default=0.0)
+    parser.add_argument("--max-backtest-drawdown", type=float, default=-1.0)
+    parser.add_argument("--min-backtest-periods", type=int, default=1)
     parser.add_argument("--allow-data-gaps", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
@@ -72,6 +75,9 @@ def main(
             min_observations=args.min_observations,
             min_challenger_rank_ic_delta=args.min_challenger_rank_ic_delta,
             min_challenger_quantile_spread_delta=args.min_challenger_quantile_spread_delta,
+            min_backtest_total_return=args.min_backtest_total_return,
+            max_backtest_drawdown=args.max_backtest_drawdown,
+            min_backtest_periods=args.min_backtest_periods,
             allow_data_gaps=args.allow_data_gaps,
         )
         _emit(payload, args.pretty, writer)

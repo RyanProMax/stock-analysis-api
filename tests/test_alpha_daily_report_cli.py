@@ -107,11 +107,16 @@ def test_alpha_daily_report_is_summary_only_and_emits_candidate_proposal(tmp_pat
     assert payload["summary"]["top_candidate_symbols"]
     assert "items" not in payload["alpha_scan"]
     assert "evaluation" not in payload["alpha_evaluation"]
+    assert payload["alpha_backtest"]["status"] in {"ok", "partial"}
+    assert payload["alpha_backtest"]["summary"]["periods"] > 0
+    assert "periods" not in payload["alpha_backtest"]
     proposal = payload["strategy_proposal"]
     assert proposal["approval_required"] is True
     assert proposal["effective_status"] == "candidate_only"
     assert proposal["source"] == "alpha_daily_report"
     assert proposal["proposed_changes"][0]["type"] == "register_alpha_topn_candidate"
+    assert proposal["evidence"]["alpha_backtest_summary"]["periods"] > 0
+    assert "total_return" in proposal["evidence"]["alpha_backtest_summary"]
     assert "proposal_not_applied_to_runtime" in proposal["constraints"]
     json.dumps(payload, allow_nan=False)
 
@@ -143,6 +148,7 @@ def test_alpha_daily_report_include_details_is_explicit_opt_in(tmp_path):
     assert exit_code == 0
     assert "items" in payload["alpha_scan"]
     assert "evaluation" in payload["alpha_evaluation"]
+    assert "periods" in payload["alpha_backtest"]
     assert payload["alpha_evaluation"]["evaluation"]["candidate_id"] == "factor:momentum_5d"
 
 
@@ -166,4 +172,5 @@ def test_alpha_daily_report_empty_universe_has_no_strategy_proposal(tmp_path):
     assert payload["summary"]["proposal_not_applied"] is True
     assert payload["summary"]["human_action_required"] is False
     assert payload["strategy_proposal"] is None
+    assert payload["alpha_backtest"]["status"] == "empty"
     json.dumps(payload, allow_nan=False)

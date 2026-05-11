@@ -1,6 +1,6 @@
 # Alpha Research Loop
 
-更新时间：2026-05-10
+更新时间：2026-05-11
 
 ## 目标
 
@@ -53,6 +53,16 @@
 
 `MarketSpec` 的设计原则是先把市场差异收敛到独立 contract，Alpha / backtest 消费 contract，不在评估逻辑里散落市场判断。
 
+### AlphaBacktest
+
+用于表达候选策略的只读组合回测结果。
+
+- 输入只来自本地 SQLite 日线仓、显式 universe / symbols、factor、top N、holding period 和成本假设。
+- 输出 `summary` 固定包含 `periods`、`orders_total`、`gross_return_mean`、`net_return_mean`、`total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate`、`data_gaps`。
+- 默认 summary-only，不输出逐期 `periods`；只有显式 `--include-details` 才输出回测明细。
+- 固定约束包含 `backtest_not_applied_to_runtime`、`read_only_market_data`、`no_broker_or_order_side_effects`。
+- 当前实现是轻量 native backtest，不接 Qlib / Alpha158 / 外部因子库。
+
 ### StrategyProposal
 
 用于表达 Agent 或 research service 生成的策略调整建议。
@@ -84,6 +94,8 @@
 - `src/services/alpha_scan_cli.py`：内部 CLI 参数解析与纯 JSON 输出。
 - `src/services/alpha_evaluation_service.py`：只读本地日线仓，计算因子前瞻收益、IC / RankIC、分组收益、换手和样本切分。
 - `src/services/alpha_evaluate_cli.py`：内部因子评估 CLI 参数解析与纯 JSON 输出。
+- `src/services/alpha_backtest_service.py`：只读本地日线仓，做 long-only top-N equal-weight 组合回测，使用 `MarketSpec` 成本假设，不调用 broker。
+- `src/services/alpha_backtest_cli.py`：内部组合回测 CLI 参数解析与纯 JSON 输出。
 - `src/repositories/strategy_registry_repository.py`：SQLite strategy registry，保存 proposal、strategy version、approval、activation history、version event 以及 alpha candidate / evaluation 记录。
 - `src/services/strategy_registry_service.py`：策略版本治理业务逻辑，保证未审批不能 active、active 同时只能有一个、状态变更进入事件表。
 - `src/services/strategy_registry_cli.py`：内部策略 registry CLI 参数解析与纯 JSON 输出。
@@ -137,6 +149,24 @@ uv run python scripts/alpha_evaluate.py --market cn --symbols 300827,300274 --fa
 - 显式传 `--cost-bps` 时，保持 `cost_model.type=fixed_bps`，用于回归、敏感性分析或人工指定成本假设。
 - 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`，也不改变运行时策略。
 
+## P3 Alpha Backtest CLI
+
+内部入口：
+
+```bash
+uv run python scripts/alpha_backtest.py --market cn --symbols 300827,300274 --factor momentum_5d --start 2026-01-01 --end 2026-05-08 --top-n 5 --holding-period 1 --pretty
+uv run python scripts/alpha_backtest.py --market hk --symbols HK.00700,HK.09988 --factor momentum_5d --top-n 2 --include-details --pretty
+```
+
+输出 contract：
+
+- 顶层固定为 `status`、`source=alpha_backtest`、`computed_at`、`request`、`cost_model`、`summary`、`constraints`。
+- `summary` 固定包含组合级收益、回撤、夏普、换手、胜率和数据缺口。
+- `status=empty`：股票池为空或无可回测期，`summary.periods=0`。
+- `status=partial`：存在缺失因子、缺失 forward return 或样本不足，缺口必须进入 `data_gaps`。
+- 默认 summary-only；逐期持仓和收益必须显式 `--include-details` 才输出。
+- 该 CLI 只读本地行情仓，不写 registry、不写 trading ledger、不触发 broker、不调用 Futu `SIMULATE`。
+
 ## P4 Strategy Registry CLI
 
 内部入口：
@@ -181,6 +211,7 @@ uv run python scripts/strategy_registry.py record-verdict --verdict-json verdict
 - `verdict.proposal_not_applied=true` 必须固定存在，表示评委结论不会修改运行时策略。
 - `evaluator_id` 与 `researcher_id` 相同会阻断，原因固定为 `evaluator_must_be_independent`。
 - 当前固定门槛包括 `min_rank_ic_mean`、`min_quantile_spread`、`max_turnover`、`min_observations`、`allow_data_gaps`。
+- 回测证据门槛默认包括 `min_backtest_periods=1`、`min_backtest_total_return=0`、`max_backtest_drawdown=-1`；缺失回测、样本不足、收益不达标或回撤超阈值都会 blocked。
 - 可选 `champion-json` 用于 champion/challenger 对比；提供后 challenger 必须满足 `min_challenger_rank_ic_delta` 和 `min_challenger_quantile_spread_delta`，否则阻断原因分别为 `challenger_rank_ic_not_improved` / `challenger_quantile_spread_not_improved`。
 - `champion-json` 可传 registry 中 active strategy 对应的 passed judge verdict；没有 active champion 时只执行绝对阈值。
 - registry 只能 append 记录 judge verdict；不能因为 verdict passed 自动 approve / activate。
@@ -202,7 +233,7 @@ uv run python scripts/strategy_registry.py --registry-db .cache/strategy_registr
 - 三个角色 ID 必须互不相同；否则返回失败，不继续生成 proposal。
 - 每个 attempt 只处理一个 factor，并串联：
   - researcher：通过 `alpha_daily_report` 生成候选 `strategy_proposal`。
-  - backtester：复用 `alpha_evaluation` 指标作为独立评估材料。
+  - backtester：复用 `alpha_evaluation` 和 `alpha_backtest` 指标作为独立评估材料。
   - evaluator：调用 `strategy_judge` 输出 verdict。
 - `status=human_review_ready` 表示至少一个 attempt 通过 judge gate，`selected.strategy_proposal` 可交给人工审核。
 - `status=needs_iteration` 表示所有 attempt 均 blocked，必须输出 `next_research_actions`，不得伪装为通过。
@@ -223,10 +254,10 @@ uv run python scripts/alpha_daily_report.py --market cn --symbols 300827,300274 
 
 输出 contract：
 
-- 顶层固定为 `status`、`source=alpha_daily_report`、`date`、`summary`、`watch`、`simulated_trading`、`factor_evaluation_drift`、`alpha_scan`、`alpha_evaluation`、`strategy_proposal`。
-- 默认 summary-only：`alpha_scan` 不含完整 `items`，`alpha_evaluation` 不含完整 `evaluation`；明细必须显式 `--include-details`。
+- 顶层固定为 `status`、`source=alpha_daily_report`、`date`、`summary`、`watch`、`simulated_trading`、`factor_evaluation_drift`、`alpha_scan`、`alpha_evaluation`、`alpha_backtest`、`strategy_proposal`。
+- 默认 summary-only：`alpha_scan` 不含完整 `items`，`alpha_evaluation` 不含完整 `evaluation`，`alpha_backtest` 不含逐期 `periods`；明细必须显式 `--include-details`。
 - `summary.proposal_not_applied=true` 必须固定存在，表示报告不会修改运行时策略。
-- 有候选且有评估样本时生成 `StrategyProposal`，默认 `approval_required=true`、`effective_status=candidate_only`。
+- 有候选且有评估样本时生成 `StrategyProposal`，默认 `approval_required=true`、`effective_status=candidate_only`，并把 `alpha_backtest_summary` 写入 proposal evidence。
 - 空股票池或无评估样本时 `strategy_proposal=null`，`human_action_required=false`。
 - 报告中的 `watch` 和 `simulated_trading` 在当前 MVP 中只输出状态占位，不读取或写入 trading ledger，不触发 broker。
 - `factor_evaluation_drift` 在当前单日报告 MVP 中固定为 `not_available`，后续接入历史 evaluation 后再计算跨日报漂移。
@@ -255,6 +286,7 @@ uv run python scripts/watch_worker_tick.py --state-key cn-alpha-watch --interval
 - `uv run pytest tests/test_alpha_contracts.py -q`
 - `uv run pytest tests/test_alpha_scan_cli.py -q`
 - `uv run pytest tests/test_alpha_evaluate_cli.py -q`
+- `uv run pytest tests/test_alpha_backtest_cli.py -q`
 - `uv run pytest tests/test_strategy_registry_cli.py -q`
 - `uv run pytest tests/test_alpha_daily_report_cli.py -q`
 - `uv run pytest tests/test_watch_worker_tick_cli.py -q`

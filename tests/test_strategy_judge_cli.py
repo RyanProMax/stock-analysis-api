@@ -26,7 +26,14 @@ def _proposal() -> dict:
                 },
             }
         ],
-        "evidence": {"alpha_evaluation_id": "alpha-eval-2026-05-12-momentum_5d"},
+        "evidence": {
+            "alpha_evaluation_id": "alpha-eval-2026-05-12-momentum_5d",
+            "alpha_backtest_summary": {
+                "periods": 5,
+                "total_return": 0.04,
+                "max_drawdown": -0.01,
+            },
+        },
         "approval_required": True,
         "effective_status": "candidate_only",
     }
@@ -272,6 +279,43 @@ def test_strategy_judge_passes_challenger_when_it_beats_active_champion(tmp_path
     assert payload["verdict"]["metrics"]["champion"]["rank_ic_mean"] == 0.08
     assert payload["verdict"]["metrics"]["improvement"]["rank_ic_mean_delta"] == 0.02
     assert payload["strategy_proposal"]["proposal_id"] == _proposal()["proposal_id"]
+    json.dumps(payload, allow_nan=False)
+
+
+def test_strategy_judge_blocks_missing_or_failed_backtest_evidence(tmp_path):
+    proposal = _proposal()
+    proposal["evidence"]["alpha_backtest_summary"] = {
+        "periods": 3,
+        "total_return": -0.02,
+        "max_drawdown": -0.05,
+    }
+    proposal_path = _write_json(tmp_path, "proposal.json", proposal)
+    evaluation_path = _write_json(tmp_path, "evaluation.json", _evaluation())
+
+    exit_code, payload = _run_judge(
+        "--proposal-json",
+        str(proposal_path),
+        "--evaluation-json",
+        str(evaluation_path),
+        "--evaluator-id",
+        "judge-agent",
+        "--researcher-id",
+        "researcher-agent",
+        "--min-backtest-total-return",
+        "0",
+        "--max-backtest-drawdown",
+        "-0.03",
+        "--min-backtest-periods",
+        "5",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "blocked"
+    assert "backtest_total_return_below_threshold" in payload["verdict"]["reasons"]
+    assert "backtest_drawdown_above_threshold" in payload["verdict"]["reasons"]
+    assert "insufficient_backtest_periods" in payload["verdict"]["reasons"]
+    assert payload["verdict"]["metrics"]["backtest"]["total_return"] == -0.02
+    assert payload["strategy_proposal"] is None
     json.dumps(payload, allow_nan=False)
 
 

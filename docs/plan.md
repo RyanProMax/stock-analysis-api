@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-10
+更新时间：2026-05-11
 
 ## 当前目标
 
@@ -18,6 +18,7 @@
 - 已明确治理原则：模型在达到评估门槛前可以自动研究迭代；进入候选策略审核前应由独立 evaluator / judge 角色复核，避免同一个 Agent 既开发、回测又最终评估
 - 当前优先级调整：Tushare 过期期间优先跑通 Futu 驱动的港股 / 美股 Alpha 研究链路，先支持显式 symbols 的 Futu 日 K 入库与本地 Alpha scan/evaluate/report/research loop
 - 本轮继续补齐 MarketSpec 与策略评估机制：把 CN / HK / US 的最小市场规则独立成 contract，并让 judge 支持 active champion vs challenger 增量评估
+- 本轮补齐 Alpha 自迭代的组合级回测 evidence：Qlib 只作为框架组织思路参考，不接入其旧因子库；策略是否进入人工审核必须看 native backtest、模拟盘 ledger 和独立 judge gate
 
 ## 最近完成项
 
@@ -59,7 +60,7 @@
 - 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
 - 已扩展 `scripts/futu_market_data.py` Futu/OpenD 只读查询能力，新增 `order-book`、`ticker`、`rt-data`、`option-expirations`、`option-chain`、`account`、`positions`、`orders`、`deals`、`cash-flow` 子命令。
 - 已补充 Futu 只读 CLI contract 与安全回归测试，覆盖新增命令 stdout JSON、Futu `SIMULATE` 账户类只读查询，以及 CLI 不暴露写入类子命令。
-- 已新增 `PLAN/ROADMAP.md`，基于 Qlib、vectorbt、Alphalens 方法论、NautilusTrader、LEAN、Backtrader、OpenBB 和 vn.py 等成熟开源项目调研，沉淀自动盯盘与 Alpha 自我迭代的阶段路线。
+- 已新增 `PLAN/ROADMAP.md`，基于 vectorbt、Alphalens 方法论、NautilusTrader、LEAN、Backtrader、OpenBB 和 vn.py 等成熟开源项目调研，沉淀自动盯盘与 Alpha 自我迭代的阶段路线；Qlib 仅保留框架组织思路参考，不作为因子库或集成目标。
 - 已完成 `PLAN/ROADMAP.md` P0：新增 `docs/specs/alpha-research-loop.md`、`src/model/alpha.py`、`src/model/strategy.py` 与共享 `src/model/serialization.py`，锁定 Alpha 候选、因子评估、策略 proposal、策略版本治理和 JSON 安全序列化 contract。
 - 已完成 P1 Alpha 扫描 MVP：
   - 新增 `src/services/alpha_universe_service.py`、`src/services/alpha_feature_service.py`、`src/services/alpha_scan_service.py`、`src/services/alpha_scan_cli.py`
@@ -116,6 +117,14 @@
   - `strategy_judge.py` 支持可选 `--champion-json` 和 challenger 增量门槛
   - `alpha_research_loop.py` 持有 registry 且存在 active strategy 时，会自动读取 active strategy 对应的 passed judge verdict 作为 champion
   - 新增测试覆盖 MarketSpec contract、默认成本模型、judge champion/challenger 阻断和 active champion research loop
+- 已新增 Alpha 组合回测 MVP：
+  - 新增 `src/services/alpha_backtest_service.py`、`src/services/alpha_backtest_cli.py`
+  - 新增内部入口 `scripts/alpha_backtest.py`
+  - 只读本地 SQLite 日线仓，按 factor 做 long-only top-N equal-weight 回测
+  - 输出 `total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate` 和 `orders_total`
+  - 默认 summary-only，逐期明细必须显式 `--include-details`
+  - `alpha_daily_report.py` 已把 `alpha_backtest_summary` 写入 proposal evidence
+  - `strategy_judge.py` 已把回测证据纳入固定 gate，缺失或不达标会 blocked
 
 ## 当前状态
 
@@ -131,6 +140,7 @@
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
   - `scripts/alpha_evaluate.py`
+  - `scripts/alpha_backtest.py`
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
@@ -177,6 +187,12 @@
   - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover`
   - `sample_split` 固定包含 `train`、`validation`、`out_of_sample`
   - 未显式传 `--cost-bps` 时使用 MarketSpec 默认 round-trip 成本；显式传参时保持 fixed bps override
+- Alpha 组合回测 P3 native MVP 已完成：
+  - `alpha_backtest.py` 只读本地行情仓，当前不拉外部实时行情、不写 registry、不写 ledger、不触发 broker
+  - 当前组合模型为 long-only top-N equal-weight，按 `holding_period` 使用 forward return 估算再平衡收益
+  - 未显式传 `--cost-bps` 时使用 MarketSpec 默认 round-trip 成本，显式传参时保持 fixed bps override
+  - 默认只输出 summary；逐期持仓、收益和换手需要显式 `--include-details`
+  - 当前 Alpha 自迭代主链路不使用 Qlib / Alpha158 / 外部因子库
 - 策略 registry P4 MVP 已完成：
   - `strategy_registry.py` 写独立 SQLite registry，不写 trading ledger、不触发 broker
   - `strategy_versions` 保存当前策略版本状态；`strategy_version_events` 保存 append-only 状态事件
@@ -222,7 +238,7 @@
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
-- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级；保持默认只读或 dry-run，不允许真实交易
+- 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级；native MVP 已落地，后续补参数搜索、滑点 / 成交约束和模拟盘 ledger 对照；保持默认只读或 dry-run，不允许真实交易
 
 ## 已知风险与阻塞
 
@@ -236,3 +252,4 @@
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
 - P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P6 `alpha_daily_report.py` 只生成候选 proposal，不写 registry、不生效策略；P5 worker 当前只读 active strategy 和生成 watch summary。`alpha_research_loop.py` 只做离线编排，不等于真实多 Agent 运行时。Judge verdict passed 只代表可进入人工审核，不等于 approval；策略进入 active 前仍必须经过 P4 人工审批记录。
 - MarketSpec 当前成本仍是估算默认值，不等于券商真实费率、完整滑点模型或交易所完整规则；生产回测前需要补逐标的 HK lot size、tick ladder、费用明细、交易日历和 corporate action。
+- Alpha 组合回测当前仍是低频日线、等权 top-N、简单换手成本模型；尚未覆盖滑点、成交量容量、停牌 / 涨跌停、复权口径和模拟盘实盘差异，不能单独作为策略有效结论。

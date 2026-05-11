@@ -80,6 +80,7 @@ src/
 - `cn_symbols.market` 直接承担类型区分：股票保留原板块口径，ETF 统一为 `ETF`
 - `cn_symbols.daily_start_date` / `daily_end_date` 只表示本地 `cn_daily` 已落库的最早 / 最晚交易日，是本地覆盖摘要，不是上市区间、交易所日历或 source truth
 - `cn_daily` 的全市场补库口径为当前上市 A 股、自 `2026-01-01` 起的日线数据
+- Alpha 自迭代主链路不得依赖 Qlib / Alpha158 等旧因子库；可借鉴开源项目的数据层、任务分层和评估组织方式，但策略有效性只能由本地回测、模拟盘 ledger 和独立 judge gate 验证
 - 每日首次任意 HTTP 请求都会后台检查一次 `cn_symbols / us_symbols` 是否需要刷新；`cn/us` 按各自市场是否开市独立判断，且不阻塞当前请求
 - `sync_runs` 采用 append-only 历史模型，但每条记录都必须表达“本次运行结束后的全局数据状态”
 - `cn_daily` 应逐步吸收 Tushare `daily_basic` 的标准事实字段，不把核心市场事实长期塞进 `extra`

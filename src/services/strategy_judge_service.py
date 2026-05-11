@@ -23,11 +23,15 @@ class StrategyJudgeService:
         min_observations: int = 20,
         min_challenger_rank_ic_delta: float = 0.0,
         min_challenger_quantile_spread_delta: float = 0.0,
+        min_backtest_total_return: float = 0.0,
+        max_backtest_drawdown: float = -1.0,
+        min_backtest_periods: int = 1,
         allow_data_gaps: bool = False,
     ) -> dict:
         proposal = self._proposal(proposal_payload)
         evaluation = self._evaluation(evaluation_payload)
         champion = self._champion(champion_payload)
+        backtest = self._backtest_summary(proposal)
         summary = evaluation["summary"]
         metrics = evaluation["metrics"]
         thresholds = {
@@ -37,6 +41,9 @@ class StrategyJudgeService:
             "min_observations": int(min_observations),
             "min_challenger_rank_ic_delta": float(min_challenger_rank_ic_delta),
             "min_challenger_quantile_spread_delta": float(min_challenger_quantile_spread_delta),
+            "min_backtest_total_return": float(min_backtest_total_return),
+            "max_backtest_drawdown": float(max_backtest_drawdown),
+            "min_backtest_periods": int(min_backtest_periods),
             "allow_data_gaps": bool(allow_data_gaps),
         }
         reasons = self._reasons(
@@ -45,6 +52,7 @@ class StrategyJudgeService:
             metrics=metrics,
             summary=summary,
             champion=champion,
+            backtest=backtest,
             thresholds=thresholds,
         )
         gate_status = "blocked" if reasons else "passed"
@@ -58,6 +66,7 @@ class StrategyJudgeService:
         if champion:
             verdict_metrics["champion"] = champion
             verdict_metrics["improvement"] = self._improvement(metrics, champion)
+        verdict_metrics["backtest"] = backtest
         verdict = StrategyJudgeVerdict(
             verdict_id=self._verdict_id(proposal, evaluation),
             proposal_id=proposal["proposal_id"],
@@ -135,6 +144,20 @@ class StrategyJudgeService:
             "observations": self._int_or_none(metrics.get("observations")),
         }
 
+    def _backtest_summary(self, proposal: dict[str, Any]) -> dict[str, Any] | None:
+        evidence = proposal.get("evidence") if isinstance(proposal.get("evidence"), dict) else {}
+        summary = evidence.get("alpha_backtest_summary")
+        if not isinstance(summary, dict):
+            return None
+        return {
+            "periods": self._int_or_none(summary.get("periods")),
+            "total_return": self._float_or_none(summary.get("total_return")),
+            "max_drawdown": self._float_or_none(summary.get("max_drawdown")),
+            "sharpe": self._float_or_none(summary.get("sharpe")),
+            "turnover": self._float_or_none(summary.get("turnover")),
+            "orders_total": self._int_or_none(summary.get("orders_total")),
+        }
+
     def _reasons(
         self,
         *,
@@ -143,6 +166,7 @@ class StrategyJudgeService:
         metrics: dict[str, Any],
         summary: dict[str, Any],
         champion: dict[str, Any] | None,
+        backtest: dict[str, Any] | None,
         thresholds: dict[str, Any],
     ) -> list[str]:
         reasons: list[str] = []
@@ -175,6 +199,34 @@ class StrategyJudgeService:
                     thresholds=thresholds,
                 )
             )
+        reasons.extend(self._backtest_reasons(backtest=backtest, thresholds=thresholds))
+        return reasons
+
+    def _backtest_reasons(
+        self,
+        *,
+        backtest: dict[str, Any] | None,
+        thresholds: dict[str, Any],
+    ) -> list[str]:
+        reasons: list[str] = []
+        min_periods = int(thresholds["min_backtest_periods"])
+        if backtest is None:
+            if min_periods > 0:
+                reasons.append("backtest_summary_missing")
+            return reasons
+        periods = self._int_or_none(backtest.get("periods")) or 0
+        if periods < min_periods:
+            reasons.append("insufficient_backtest_periods")
+        total_return = self._float_or_none(backtest.get("total_return"))
+        if total_return is None:
+            reasons.append("backtest_total_return_missing")
+        elif total_return < float(thresholds["min_backtest_total_return"]):
+            reasons.append("backtest_total_return_below_threshold")
+        max_drawdown = self._float_or_none(backtest.get("max_drawdown"))
+        if max_drawdown is None:
+            reasons.append("backtest_drawdown_missing")
+        elif max_drawdown < float(thresholds["max_backtest_drawdown"]):
+            reasons.append("backtest_drawdown_above_threshold")
         return reasons
 
     def _champion_reasons(

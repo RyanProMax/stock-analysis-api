@@ -43,6 +43,9 @@ class AlphaResearchLoopService:
         min_observations: int = 20,
         min_challenger_rank_ic_delta: float = 0.0,
         min_challenger_quantile_spread_delta: float = 0.0,
+        min_backtest_total_return: float = 0.0,
+        max_backtest_drawdown: float = -1.0,
+        min_backtest_periods: int = 1,
         allow_data_gaps: bool = False,
         include_attempt_details: bool = False,
         record_to_registry: bool = False,
@@ -82,6 +85,9 @@ class AlphaResearchLoopService:
                 min_observations=min_observations,
                 min_challenger_rank_ic_delta=min_challenger_rank_ic_delta,
                 min_challenger_quantile_spread_delta=min_challenger_quantile_spread_delta,
+                min_backtest_total_return=min_backtest_total_return,
+                max_backtest_drawdown=max_backtest_drawdown,
+                min_backtest_periods=min_backtest_periods,
                 allow_data_gaps=allow_data_gaps,
                 include_attempt_details=include_attempt_details,
             )
@@ -166,6 +172,9 @@ class AlphaResearchLoopService:
         min_observations: int,
         min_challenger_rank_ic_delta: float,
         min_challenger_quantile_spread_delta: float,
+        min_backtest_total_return: float,
+        max_backtest_drawdown: float,
+        min_backtest_periods: int,
         allow_data_gaps: bool,
         include_attempt_details: bool,
     ) -> dict:
@@ -203,6 +212,9 @@ class AlphaResearchLoopService:
             min_observations=min_observations,
             min_challenger_rank_ic_delta=min_challenger_rank_ic_delta,
             min_challenger_quantile_spread_delta=min_challenger_quantile_spread_delta,
+            min_backtest_total_return=min_backtest_total_return,
+            max_backtest_drawdown=max_backtest_drawdown,
+            min_backtest_periods=min_backtest_periods,
             allow_data_gaps=allow_data_gaps,
         )
         verdict = judge_result["verdict"]
@@ -274,6 +286,18 @@ class AlphaResearchLoopService:
             actions.append("revise_factor_definition_or_universe")
         if "turnover_above_threshold" in reasons:
             actions.append("add_turnover_or_rebalance_constraints")
+        if (
+            "backtest_summary_missing" in reasons
+            or "insufficient_backtest_periods" in reasons
+            or "backtest_total_return_missing" in reasons
+            or "backtest_drawdown_missing" in reasons
+        ):
+            actions.append("run_or_fix_portfolio_backtest")
+        if (
+            "backtest_total_return_below_threshold" in reasons
+            or "backtest_drawdown_above_threshold" in reasons
+        ):
+            actions.append("revise_strategy_or_risk_constraints")
         if "strategy_proposal_missing" in reasons:
             actions.append("lower_candidate_filters_or_expand_universe")
         return actions

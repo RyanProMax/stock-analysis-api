@@ -1,6 +1,6 @@
 # 自动盯盘、Alpha 挖掘与自我迭代路线图
 
-更新时间：2026-05-09
+更新时间：2026-05-11
 
 ## 目标
 
@@ -26,6 +26,7 @@
 - `scripts/trading_strategy_backtest.py`：固定 threshold 策略历史 K 线 / 注入样本回测。
 - `scripts/alpha_scan.py`：只读本地行情仓，输出 Alpha 候选池。
 - `scripts/alpha_evaluate.py`：只读本地行情仓，输出 forward returns、IC / RankIC、分组收益、换手和样本切分。
+- `scripts/alpha_backtest.py`：只读本地行情仓，输出 native long-only top-N equal-weight 组合回测 summary。
 - `scripts/strategy_registry.py`：保存候选 strategy proposal、人工 approval、单 active strategy 指针和 append-only 状态事件。
 - `scripts/alpha_daily_report.py`：盘后串联 Alpha scan / evaluate，输出 summary-only 报告和候选 proposal。
 - `scripts/watch_worker_tick.py`：读取已审批 active strategy，按时间窗和间隔生成只读 watch summary。
@@ -34,28 +35,30 @@
 
 当前缺口：
 
-- Alpha 扫描、因子评估、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更严格的组合级回测和失败归因策略生成。
+- Alpha 扫描、因子评估、native 组合回测、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更严格的参数搜索、模拟盘对照和失败归因策略生成。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP；真实多 Agent 运行时和调度状态面尚未实现。
-- 回测仍是固定 threshold 策略，尚未覆盖组合构建、交易成本、滑点、成交约束和多因子组合。
+- 回测已有固定 threshold 策略与 native top-N 组合 MVP，尚未覆盖滑点、成交量容量、停牌 / 涨跌停、公司行动、复权口径和多因子组合参数搜索。
 - 调度入口已有 CLI，但还缺统一 worker、运行状态面、失败重试、日报推送和异常告警。
 
 ## 开源库选型
 
 ### 采用优先级
 
-1. `Qlib`：作为 Alpha 研究和因子 / 模型评估的主要参考与可选集成对象。Qlib 是 AI-oriented quantitative investment platform，覆盖 data、model、backtest、analysis，且官方 README 明确覆盖 alpha seeking、risk modeling、portfolio optimization、order execution。
-2. `vectorbt`：作为第一阶段参数扫描和信号回测引擎。它基于 pandas / NumPy / Numba 做向量化回测，适合快速跑大量参数组合。
+1. Native services：第一阶段优先复用本仓库 SQLite 日线仓、`MarketSpec`、Alpha contract、judge gate 和 registry，避免引入重型运行时或旧因子库。
+2. `vectorbt`：作为后续参数扫描和信号回测引擎备选。它基于 pandas / NumPy / Numba 做向量化回测，适合快速跑大量参数组合；接入前必须先有 adapter contract 和测试。
 3. `Alphalens` 方法论：作为因子评估指标参考。优先在本仓库实现核心指标，避免直接引入老旧依赖导致兼容性风险；指标包括 forward returns、IC、quantile returns、turnover、grouped analysis。
 4. `NautilusTrader` / `LEAN`：作为中长期事件驱动回测和 research-to-live parity 参考，不在 MVP 阶段直接接入。两者更适合复杂多资产、多 venue、组合级执行。
 5. `Backtrader` / `zipline-reloaded`：作为低频事件驱动回测备选，不作为第一选择；当前 API 的高 ROI 路线应优先复用已有 SQLite 仓、Futu provider 和 CLI contract。
 6. `OpenBB`：作为数据源整合和 provider extension 参考，不替代当前 Tushare / Futu 主链路。
 7. `vn.py / VeighNa`：作为国内量化交易框架参考。当前不接入其交易网关，避免绕开已有 Futu `SIMULATE` 和只读护栏。
+8. `Qlib`：只参考其 data / model / backtest / analysis 分层和实验组织思路，不接入 Qlib runtime、trainer、Alpha158 或旧因子定义；最终有效性只能由本仓库回测、模拟盘 ledger 和 judge gate 验证。
 
 ### 选型原则
 
 - 先引入方法和数据 contract，再引入重型运行时。
 - 第一阶段不得把自动交易主路径交给 Agent 或外部框架。
+- 不引入 Qlib / Alpha158 作为 Alpha 自迭代主链路的因子来源。
 - 任何库都必须通过本仓库 `src/model/` contract、`src/services/` service 和 `scripts/` CLI 适配，不直接污染公共 HTTP API。
 - 新增依赖前必须先有最小实验脚本和可重复测试；不能为了“成熟库”直接重构现有闭环。
 
@@ -72,7 +75,7 @@ Research Layer
   ├─ feature / factor builder
   ├─ alpha scanner
   ├─ factor evaluator
-  └─ backtest engine adapter: native first, vectorbt optional, Qlib optional
+  └─ backtest engine adapter: native first, vectorbt optional
 
 Strategy Governance
   ├─ alpha candidate store
@@ -245,37 +248,40 @@ uv run python scripts/alpha_evaluate.py --market cn --factor momentum_20d --star
 
 ### P3：快速回测引擎升级
 
+状态：partial，2026-05-11
+
 目标：
 
 - 在现有 `trading_strategy_backtest.py` 之外，增加组合级和参数网格回测能力。
-- 第一阶段优先自研轻量 + 可选 `vectorbt` adapter，不直接引入 LEAN / Nautilus。
+- 第一阶段优先自研轻量 + 可选 `vectorbt` adapter，不直接引入 Qlib / LEAN / Nautilus。
 
 新增 / 修改文件：
 
-- `src/services/backtest_engine.py`
-- `src/services/vectorbt_backtest_adapter.py`
-- `src/services/strategy_backtest_cli.py`
-- `scripts/strategy_backtest.py`
-- `tests/test_strategy_backtest_cli.py`
+- `src/services/alpha_backtest_service.py`
+- `src/services/alpha_backtest_cli.py`
+- `scripts/alpha_backtest.py`
+- `tests/test_alpha_backtest_cli.py`
+- 后续再评估是否新增 `src/services/vectorbt_backtest_adapter.py`
 
 功能：
 
-- 支持 signal matrix 输入。
-- 支持 long-only top N / equal weight / volatility capped。
-- 支持 rebalance frequency。
-- 支持交易成本、滑点、最大单标的权重、最大持仓数。
+- 已支持 long-only top N / equal weight native 回测。
+- 已支持 holding period、MarketSpec 成本和 fixed bps override。
+- 后续支持 signal matrix、volatility capped、rebalance frequency、滑点、最大单标的权重、最大持仓数。
 - 支持参数网格扫描。
 
 CLI：
 
 ```bash
-uv run python scripts/strategy_backtest.py --market cn --strategy alpha_topn_v1 --start 2026-01-01 --end 2026-05-08 --top-n 10 --rebalance 1d --cost-bps 10 --pretty
+uv run python scripts/alpha_backtest.py --market cn --factor momentum_5d --start 2026-01-01 --end 2026-05-08 --top-n 10 --holding-period 1 --pretty
+uv run python scripts/alpha_backtest.py --market hk --symbols HK.00700,HK.09988 --factor momentum_5d --top-n 2 --include-details --pretty
 ```
 
 验收：
 
 - 输出 `total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate`、`orders_total`。
 - 任何回测结果都不能直接变成 active 策略。
+- 已通过 `uv run pytest tests/test_alpha_backtest_cli.py -q`。
 
 ### P4：策略版本 Registry 和人工审批链
 
@@ -468,38 +474,38 @@ uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
 - 报告必须明确 `proposal_not_applied`。
 - 已通过 `uv run pytest tests/test_alpha_daily_report_cli.py -q`。
 
-### P7：Qlib 集成实验
+### P7：模拟盘验证闭环强化
 
 目标：
 
-- 将 Qlib 作为独立实验 adapter，不影响主路径。
-- 先验证数据转换和 Alpha158 / 模型评估能否复用，再决定是否纳入主流程。
+- 将 native backtest 的候选策略与 dry-run / Futu `SIMULATE` ledger 做对照，验证回测收益是否能在模拟盘执行中复现。
+- 建立 champion / challenger 的多轮持久化对比，避免只看单次回测结果。
 
 新增 / 修改文件：
 
-- `docs/specs/qlib-adapter-experiment.md`
-- `src/services/qlib_data_export_service.py`
-- `src/services/qlib_experiment_cli.py`
-- `scripts/qlib_experiment.py`
-- `tests/test_qlib_data_export.py`
+- `docs/specs/simulated-alpha-validation.md`
+- `src/services/alpha_simulation_validation_service.py`
+- `src/services/alpha_simulation_validation_cli.py`
+- `scripts/alpha_simulation_validate.py`
+- `tests/test_alpha_simulation_validation_cli.py`
 
-实验范围：
+范围：
 
-- SQLite daily -> Qlib compatible dataset。
-- Alpha158 或自定义 feature set。
-- 单模型训练 / 预测 / 回测。
-- 输出与本仓库 `AlphaEvaluation` 对齐。
+- 将 strategy proposal、alpha backtest summary、research-history 和 trading ledger 按 strategy version 关联。
+- 对比回测指标、模拟盘执行收益、成交约束、风控拒绝、滑点假设偏差。
+- 多轮次输出 champion / challenger 变化和失败归因。
 
 不做：
 
-- 不把 Qlib trainer 放入盘中执行链路。
-- 不让 Qlib 直接下单。
-- 不要求所有策略迁移到 Qlib。
+- 不自动 approve / activate。
+- 不真实下单，不交易解锁，不订阅推送。
+- 不把模拟盘短期结果包装成真实策略有效性结论。
 
 验收：
 
-- 实验失败不影响 `watch_worker_tick.py`。
-- 输出可映射到 `AlphaEvaluation`。
+- validation 输出严格 JSON，可进入 judge evidence。
+- 不影响 `watch_worker_tick.py`。
+- 人工审核只接收 evaluator 通过后的候选。
 
 ### P8：事件驱动回测评估
 
@@ -532,6 +538,7 @@ uv run python scripts/watch_worker_tick.py --market cn --state-key cn-alpha-watc
 ```bash
 uv run python scripts/alpha_scan.py --market cn --universe all --top 50 --pretty
 uv run python scripts/alpha_evaluate.py --market cn --start 2026-01-01 --end 2026-05-09 --forward-windows 1,5,20 --pretty
+uv run python scripts/alpha_backtest.py --market cn --factor momentum_5d --start 2026-01-01 --end 2026-05-09 --top-n 10 --pretty
 uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
 uv run python scripts/strategy_judge.py --proposal-json proposal.json --evaluation-json evaluation.json --evaluator-id judge-agent --researcher-id researcher-agent --pretty
 uv run python scripts/alpha_research_loop.py --market cn --factors momentum_5d,momentum_20d --researcher-id researcher-agent --backtester-id backtester-agent --evaluator-id judge-agent --record-to-registry --pretty
@@ -559,7 +566,7 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 5. P3 vectorbt/native backtest upgrade。
 6. P5 watch worker。
 7. P6 daily self-iteration report。
-8. P7 Qlib experiment。
+8. P7 simulation validation loop。
 9. P8 event-driven engine PoC。
 
 ## Agent Teams 治理原则
@@ -577,17 +584,16 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 
 1. `alpha_scan.py` 生成候选池。
 2. `alpha_evaluate.py` 输出 IC / RankIC / quantile spread。
-3. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
-4. `alpha_daily_report.py` 汇总并输出人工操作项。
-5. `strategy_judge.py` 由独立 evaluator 输出可审核 verdict。
-6. `alpha_research_loop.py` 串联多 factor 尝试，输出 `human_review_ready` 或 `needs_iteration`。
-7. `strategy_registry.py research-history` 汇总 run history、阻断原因和 factor drift。
-8. 所有输出严格 JSON，Feishu 只展示 summary-only。
+3. `alpha_backtest.py` 输出组合级收益、回撤、夏普、换手和胜率。
+4. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
+5. `alpha_daily_report.py` 汇总并输出人工操作项。
+6. `strategy_judge.py` 由独立 evaluator 基于 evaluation + backtest evidence 输出可审核 verdict。
+7. `alpha_research_loop.py` 串联多 factor 尝试，输出 `human_review_ready` 或 `needs_iteration`。
+8. `strategy_registry.py research-history` 汇总 run history、阻断原因和 factor drift。
+9. 所有输出严格 JSON，Feishu 只展示 summary-only。
 
 ## 调研来源
 
-- Qlib documentation: https://qlib.readthedocs.io/en/stable/
-- Qlib GitHub: https://github.com/microsoft/qlib
 - vectorbt documentation: https://vectorbt.dev/
 - Alphalens documentation: https://quantopian.github.io/alphalens/
 - NautilusTrader documentation: https://nautilustrader.io/docs/latest/concepts/overview

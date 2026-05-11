@@ -1,6 +1,6 @@
 # 架构约束
 
-更新时间：2026-05-09
+更新时间：2026-05-11
 
 ## 系统边界
 
@@ -17,6 +17,7 @@
   - `scripts/trading_strategy_backtest.py`
   - `scripts/alpha_scan.py`
   - `scripts/alpha_evaluate.py`
+  - `scripts/alpha_backtest.py`
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
@@ -66,6 +67,7 @@ src/
 - `scripts/trading_strategy_backtest.py` 只读历史 K 线或注入 K 线 JSON，离线回测固定 threshold 策略；该入口不读写 ledger，不触发 broker
 - `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
+- `scripts/alpha_backtest.py` 只读 SQLite 日线仓，做 native long-only top-N equal-weight 组合回测；默认 summary-only，不写 registry、不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/strategy_registry.py` 只管理候选策略、人工审批记录、research history 和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `approve` 必须已有 passed judge verdict，`activate` 必须已有人工 approval record
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
@@ -233,6 +235,12 @@ src/
   - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 等指标缺失时必须返回 `null` 并写入 `data_gaps`，不得伪造指标
   - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
   - 未显式传 `--cost-bps` 时必须使用 `MarketSpec` 默认 round-trip 成本；显式传参时保持 fixed bps override，用于敏感性分析
+- Alpha 组合回测 workflow 固定为只读验证链路：
+  - `alpha_backtest.py` 只能读取本地 SQLite 日线仓和 `MarketSpec` 成本 contract
+  - 当前实现为 native long-only top-N equal-weight MVP，不接入 Qlib / Alpha158 / 外部因子库
+  - 输出 `total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate`、`orders_total` 等组合指标
+  - 默认 summary-only；逐期持仓、收益和换手明细必须显式 `--include-details`
+  - 回测结果只能作为 judge evidence，不得自动写入 registry、trading ledger 或 active strategy
 - 策略 registry workflow 固定为人工治理链路：
   - `strategy_registry.py propose` 只能写入候选 proposal 和 candidate strategy version，不能 active
   - `strategy_registry.py approve` 必须显式记录 `approved_by`，且目标必须仍是 `candidate` 并已有 passed judge verdict
@@ -253,6 +261,7 @@ src/
 - evaluator / judge workflow 固定为独立评估链路：
   - `strategy_judge.py` 只读取 proposal 和 evaluation，按固定门槛输出结构化 verdict
   - evaluator 与 researcher 相同必须 blocked
+  - proposal 必须携带 `alpha_backtest_summary` 回测证据；缺失、样本不足、收益不达标或回撤超阈值时 blocked
   - 可选 champion/challenger 对比：当提供 active champion verdict 时，challenger 除了满足绝对阈值，还必须相对 champion 达到配置的 RankIC / quantile spread 增量
   - verdict passed 只表示 `human_review_ready`，不等于 approval
   - registry 可 append 记录 verdict，但不得因为 verdict passed 自动 activate
