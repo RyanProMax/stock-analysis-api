@@ -6,14 +6,15 @@
 
 Futu OpenD daily kline -> local SQLite daily warehouse -> alpha scan -> alpha evaluate -> alpha daily report -> alpha research loop。
 
-Status: first explicit-symbol MVP completed on 2026-05-10.
+Status: explicit symbol and explicit symbol-batch MVP completed on 2026-05-11.
 
 ## Scope
 
-- 第一阶段只支持显式 symbols，例如 `HK.00700,US.AAPL`。
+- 第一阶段只支持显式 symbols，例如 `HK.00700,US.AAPL`；补库入口支持单标的 `--symbol` 和逗号分隔批量 `--symbols`。
 - 不做港股 / 美股全市场 universe 抓取。
 - 不做实时交易、不订阅、不解锁、不写订单。
-- `sync-market-data --market hk/us --scope symbol` 可用 Futu 日 K 补本地仓。
+- `sync-market-data --market hk/us --scope symbol --symbol ...` 可用 Futu 日 K 补单标的本地仓。
+- `sync-market-data --market hk/us --scope symbol --symbols ...` 可用 Futu 日 K 批量补显式标的本地仓。
 - Alpha CLI 必须接受 `--market hk`；`cn/us` 既有语义不回退。
 
 ## Data Contract
@@ -30,6 +31,7 @@ Status: first explicit-symbol MVP completed on 2026-05-10.
 
 - repository 可 upsert / load / search HK symbols 和 HK daily bars。
 - `sync-market-data --market hk --scope symbol --symbol HK.00700` 可通过 Futu daily source 写入 HK daily。
+- `sync-market-data --market hk --scope symbol --symbols HK.00700,HK.09988` 可在同一 sync run 内写入多只 HK daily，并回写覆盖摘要。
 - `alpha_scan.py --market hk --symbols HK.00700` 能基于本地日线输出候选。
 - `alpha_evaluate.py --market hk --symbols HK.00700,HK.09988` 能输出因子评估。
 - `alpha_research_loop.py --market hk --symbols ...` 能进入 `human_review_ready` 或 `needs_iteration`，不触发 broker。

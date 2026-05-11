@@ -542,6 +542,55 @@ class TestDailyDataWriteService:
         assert len(loaded) == 8
         assert futu_source.calls == [{"symbol": "AAPL", "market": "us", "start_date": "2026-01-01"}]
 
+    def test_sync_symbol_scope_accepts_multiple_hk_symbols(self, tmp_path):
+        storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
+        futu_source = FakeFutuDailySource(_daily_df(periods=8))
+        service = DailyDataWriteService(
+            repository=storage,
+            symbol_catalog=FakeCatalog(
+                [
+                    {
+                        "symbol": "HK.00700",
+                        "ts_code": "HK.00700",
+                        "name": "Tencent",
+                        "market": "港股",
+                        "exchange": "HKEX",
+                    },
+                    {
+                        "symbol": "HK.09988",
+                        "ts_code": "HK.09988",
+                        "name": "Alibaba",
+                        "market": "港股",
+                        "exchange": "HKEX",
+                    },
+                ]
+            ),
+            cn_daily_sources=[],
+            us_daily_sources=[],
+            hk_daily_sources=[futu_source],
+        )
+
+        result = service.sync_market_data(
+            market="hk",
+            scope="symbol",
+            symbols="HK.00700,HK.09988",
+            start_date="2026-01-01",
+        )
+
+        assert result["status"] == "completed"
+        assert result["market"] == "hk"
+        assert result["symbol"] is None
+        assert result["symbols"] == ["HK.00700", "HK.09988"]
+        assert result["total_symbols"] == 2
+        assert result["success_count"] == 2
+        assert result["rows_written"] == 16
+        assert len(storage.load_daily_bars("HK.00700", market="hk")) == 8
+        assert len(storage.load_daily_bars("HK.09988", market="hk")) == 8
+        assert futu_source.calls == [
+            {"symbol": "HK.00700", "market": "hk", "start_date": "2026-01-01"},
+            {"symbol": "HK.09988", "market": "hk", "start_date": "2026-01-01"},
+        ]
+
     def test_sync_market_data_updates_progress_by_symbol(self, tmp_path):
         storage = MarketDataRepository(str(tmp_path / "market.sqlite"))
         service = DailyDataWriteService(
@@ -855,6 +904,41 @@ class TestSyncCli:
         assert captured["market"] == "hk"
         assert captured["scope"] == "symbol"
         assert captured["symbol"] == "HK.00700"
+        assert captured["start_date"] == "2026-01-01"
+
+    def test_sync_market_data_cli_accepts_symbol_batch(self, monkeypatch):
+        captured = {}
+
+        def fake_sync_market_data(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "src.main.daily_data_write_service.sync_market_data",
+            fake_sync_market_data,
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "sync-market-data",
+                "--market",
+                "us",
+                "--scope",
+                "symbol",
+                "--symbols",
+                "US.AAPL,US.MSFT",
+                "--start-date",
+                "2026-01-01",
+            ],
+        )
+
+        sync_market_data()
+
+        assert captured["market"] == "us"
+        assert captured["scope"] == "symbol"
+        assert captured["symbol"] is None
+        assert captured["symbols"] == "US.AAPL,US.MSFT"
         assert captured["start_date"] == "2026-01-01"
 
 

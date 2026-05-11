@@ -164,7 +164,7 @@ src/
 
 - 各复杂分析接口应逐步补齐 workflow contract，而不是只定义最终返回字段
 - 盯盘接口优先服务 5-10 分钟轮询场景，服务端内部维护 symbol 级内存 baseline，重启后不恢复
-- 定时同步任务通过统一 `sync-market-data` 命令执行，支持按市场、scope、symbol 和时间窗口补库
+- 定时同步任务通过统一 `sync-market-data` 命令执行，支持按市场、scope、单 symbol / 显式 symbols 批量和时间窗口补库
 - 统一读写服务固定为：
   - `symbol_catalog_service`
   - `daily_data_read_service`
@@ -199,6 +199,7 @@ src/
   - 刷新 `cn_symbols`
   - 补齐 `cn_daily`
   - 回写本次运行后的全局状态快照
+- `sync-market-data --scope symbol --symbols ...` 是 HK / US 扩充本地 Alpha universe 的显式批量补库入口；它只读取 Futu / provider 日 K，不做全市场 discovery，不订阅、不解锁、不触发交易
 - stale 判定使用 freshness grace，而不是强制每只股票都等于市场最新交易日；同一状态重复运行应直接 `skipped`
 - stale / current 判定必须引入停牌豁免：若 `suspend_d` 能解释窗口内无新日线，则不应把该 symbol 计入普通 stale
 - `sync_runs` 不只是运行日志，还必须表达：

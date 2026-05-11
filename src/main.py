@@ -122,6 +122,7 @@ def sync_market_data():
     parser.add_argument("--market", choices=["cn", "us", "hk"], required=True)
     parser.add_argument("--scope", choices=["all", "symbol"], default="all")
     parser.add_argument("--symbol")
+    parser.add_argument("--symbols")
     parser.add_argument("--days", type=int)
     parser.add_argument("--years", type=int)
     parser.add_argument("--start-date")
@@ -129,13 +130,18 @@ def sync_market_data():
 
     if sum(value is not None for value in (args.days, args.years, args.start_date)) > 1:
         raise SystemExit("`--days`、`--years` 和 `--start-date` 只能三选一")
-    if args.scope == "symbol" and not args.symbol:
-        raise SystemExit("`scope=symbol` 时必须提供 `--symbol`")
+    if args.symbol and args.symbols:
+        raise SystemExit("`--symbol` 和 `--symbols` 只能二选一")
+    if args.scope == "symbol" and not (args.symbol or args.symbols):
+        raise SystemExit("`scope=symbol` 时必须提供 `--symbol` 或 `--symbols`")
+    if args.scope != "symbol" and (args.symbol or args.symbols):
+        raise SystemExit("`--symbol` / `--symbols` 只能用于 `scope=symbol`")
 
     summary = daily_data_write_service.sync_market_data(
         market=args.market,
         scope=args.scope,
         symbol=args.symbol,
+        symbols=args.symbols,
         days=args.days or (None if args.years or args.start_date else 30),
         years=args.years,
         start_date=args.start_date,

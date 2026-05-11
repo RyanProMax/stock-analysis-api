@@ -117,12 +117,15 @@
 - A 股 daily 优先源为 `Tushare`，fallback 为 `AkShare`、`Efinance`
 - 统一同步命令为 `uv run sync-market-data`
 - 同步命令参数固定：
-  - `--market {cn,us}`
+  - `--market {cn,us,hk}`
   - `--scope {all,symbol}`
   - `--symbol`
+  - `--symbols`
   - `--days`
   - `--years`
   - `--start-date`
+- `--symbol` 和 `--symbols` 只能二选一；`scope=symbol` 时必须提供其中一个。
+- `--symbols` 是显式批量补库入口，主要用于 HK / US watchlist 或候选池扩容；它不代表全市场 discovery。
 - `sync-market-data` 应先查最新 `sync_runs`，再结合 live universe 与目标最新交易日判定：
   - `skipped`
   - symbol 缺口补齐

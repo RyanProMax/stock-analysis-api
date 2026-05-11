@@ -4,8 +4,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional, Sequence
 
 import pandas as pd
 
@@ -60,6 +61,7 @@ class DailyDataWriteService:
         market: str,
         scope: str,
         symbol: Optional[str] = None,
+        symbols: Optional[str | Sequence[str]] = None,
         days: Optional[int] = None,
         years: Optional[int] = None,
         start_date: Optional[str] = None,
@@ -67,8 +69,13 @@ class DailyDataWriteService:
     ) -> dict:
         normalized_market = self._normalize_market(market)
         self._validate_window(days=days, years=years, start_date=start_date)
-        if scope == "symbol" and not symbol:
-            raise ValueError("`scope=symbol` 时必须提供 `--symbol`")
+        requested_symbols = self._parse_symbol_list(symbols if symbols is not None else symbol)
+        if symbol and symbols is not None:
+            raise ValueError("`--symbol` 和 `--symbols` 只能二选一")
+        if scope == "symbol" and not requested_symbols:
+            raise ValueError("`scope=symbol` 时必须提供 `--symbol` 或 `--symbols`")
+        if scope != "symbol" and requested_symbols:
+            raise ValueError("`--symbol` / `--symbols` 只能用于 `scope=symbol`")
         if normalized_market == "hk" and scope == "all":
             raise ValueError("hk all universe is not supported yet; use scope=symbol")
 
@@ -79,7 +86,14 @@ class DailyDataWriteService:
             effective_start_date,
             requested_end_date,
         )
-        mode = self._build_mode(normalized_market, scope, symbol, days, years, start_date)
+        mode = self._build_mode(
+            normalized_market,
+            scope,
+            requested_symbols=requested_symbols,
+            days=days,
+            years=years,
+            start_date=start_date,
+        )
         latest_run = self.repository.get_latest_sync_run(mode)
 
         if scope == "all":
@@ -97,13 +111,16 @@ class DailyDataWriteService:
                 market=normalized_market,
             )
         else:
-            universe_source = "symbol_request"
-            resolved = self.symbol_catalog.resolve_symbol(
-                str(symbol or "").strip().upper(), market=normalized_market
-            )
-            stocks = [resolved] if resolved else []
-            if resolved:
-                self.repository.upsert_symbols([resolved], market=normalized_market)
+            universe_source = "symbol_request" if len(requested_symbols) == 1 else "symbols_request"
+            stocks = []
+            for requested_symbol in requested_symbols:
+                resolved = self.symbol_catalog.resolve_symbol(
+                    requested_symbol, market=normalized_market
+                )
+                if resolved:
+                    stocks.append(resolved)
+            if stocks:
+                self.repository.upsert_symbols(stocks, market=normalized_market)
 
         self.repository.backfill_symbol_daily_coverage(normalized_market)
         if scope == "all":
@@ -112,11 +129,17 @@ class DailyDataWriteService:
                 market=normalized_market,
             )
         else:
-            symbol_row = self.repository.get_symbol_record(
-                str(symbol or "").strip().upper(),
-                market=normalized_market,
-            )
-            stocks = [symbol_row] if symbol_row else []
+            stocks = [
+                row
+                for row in (
+                    self.repository.get_symbol_record(
+                        requested_symbol,
+                        market=normalized_market,
+                    )
+                    for requested_symbol in requested_symbols
+                )
+                if row
+            ]
 
         state_before = self._summarize_sync_state(
             normalized_market,
@@ -217,7 +240,7 @@ class DailyDataWriteService:
                 mode=mode,
                 market=normalized_market,
                 scope=scope,
-                symbol=symbol.upper() if symbol else None,
+                symbol=self._sync_run_symbol_value(requested_symbols),
                 requested_start_date=effective_start_date,
                 requested_end_date=requested_end_date,
                 requested_days=days,
@@ -249,7 +272,8 @@ class DailyDataWriteService:
                 "run_id": run_id,
                 "market": normalized_market,
                 "scope": scope,
-                "symbol": symbol.upper() if symbol else None,
+                "symbol": requested_symbols[0] if len(requested_symbols) == 1 else None,
+                "symbols": requested_symbols,
                 "days": days,
                 "years": years,
                 "start_date": effective_start_date,
@@ -268,7 +292,7 @@ class DailyDataWriteService:
             mode=mode,
             market=normalized_market,
             scope=scope,
-            symbol=symbol.upper() if symbol else None,
+            symbol=self._sync_run_symbol_value(requested_symbols),
             requested_start_date=effective_start_date,
             requested_end_date=requested_end_date,
             requested_days=days,
@@ -371,7 +395,8 @@ class DailyDataWriteService:
             "run_id": run_id,
             "market": normalized_market,
             "scope": scope,
-            "symbol": symbol.upper() if symbol else None,
+            "symbol": requested_symbols[0] if len(requested_symbols) == 1 else None,
+            "symbols": requested_symbols,
             "days": days,
             "years": years,
             "start_date": effective_start_date,
@@ -384,6 +409,25 @@ class DailyDataWriteService:
             "status": status,
             "error_summary": errors[:20],
         }
+
+    @staticmethod
+    def _parse_symbol_list(raw: Optional[str | Sequence[str]]) -> list[str]:
+        if raw is None:
+            return []
+        if isinstance(raw, str):
+            parts = raw.split(",")
+        else:
+            parts = list(raw)
+        symbols = [str(part).strip().upper() for part in parts if str(part).strip()]
+        return list(dict.fromkeys(symbols))
+
+    @staticmethod
+    def _sync_run_symbol_value(symbols: Sequence[str]) -> Optional[str]:
+        if not symbols:
+            return None
+        if len(symbols) == 1:
+            return symbols[0]
+        return ",".join(symbols)
 
     @staticmethod
     def _filter_daily_sync_universe(
@@ -935,26 +979,26 @@ class DailyDataWriteService:
     def _build_mode(
         market: str,
         scope: str,
-        symbol: Optional[str],
+        *,
+        requested_symbols: Sequence[str],
         days: Optional[int],
         years: Optional[int],
         start_date: Optional[str],
     ) -> str:
-        if scope == "symbol":
-            if start_date:
-                return f"{market}_symbol_{symbol}_since_{start_date}"
-            if years is not None:
-                return f"{market}_symbol_{symbol}_{years}y"
-            if days is not None:
-                return f"{market}_symbol_{symbol}_{days}d"
-            return f"{market}_symbol_{symbol}_30d"
+        window = "30d"
         if start_date:
-            return f"{market}_all_since_{start_date}"
-        if years is not None:
-            return f"{market}_all_{years}y"
-        if days is not None:
-            return f"{market}_all_{days}d"
-        return f"{market}_all_30d"
+            window = f"since_{start_date}"
+        elif years is not None:
+            window = f"{years}y"
+        elif days is not None:
+            window = f"{days}d"
+
+        if scope == "symbol":
+            if len(requested_symbols) == 1:
+                return f"{market}_symbol_{requested_symbols[0]}_{window}"
+            digest = hashlib.sha1(",".join(requested_symbols).encode("utf-8")).hexdigest()[:10]
+            return f"{market}_symbols_{digest}_{window}"
+        return f"{market}_all_{window}"
 
 
 daily_data_write_service = DailyDataWriteService()

@@ -36,6 +36,7 @@ uv run start
 uv run sync-market-data --market cn --scope all --start-date 2026-01-01
 uv run sync-market-data --market cn --scope symbol --symbol 300827 --days 30
 uv run sync-market-data --market us --scope symbol --symbol NVDA --days 30
+uv run sync-market-data --market hk --scope symbol --symbols HK.00700,HK.09988 --start-date 2026-01-01
 ```
 
 Agent / skill CLI 入口：
