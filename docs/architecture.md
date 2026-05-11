@@ -143,6 +143,7 @@ src/
 - `cn_daily` 的全市场补库口径固定为当前上市 A 股、自 `2026-01-01` 起的日线数据
 - `hk_daily` / `us_daily` 的第一阶段补库口径优先服务显式 symbols；HK 使用 Futu 原生代码如 `HK.00700`，US 可使用裸 ticker 或 `US.AAPL`
 - Futu 日 K 写入本地仓时只作为只读 EOD 数据源，不订阅、不交易解锁、不调用账户写入或订单能力
+- Alpha 非显式 universe 构建必须只使用本地 `daily_start_date` / `daily_end_date` 已存在的标的；显式 `--symbols` 不做覆盖过滤，缺日线时由 scan / evaluate / backtest 输出结构化缺口
 - `src/model/market.py` 是市场规则的最小 contract owner；CN / HK / US 的币种、时区、常规时段、默认 lot / tick 和估算 round-trip 成本必须先进入 `MarketSpec`，Alpha / backtest 只消费 contract，不在业务逻辑里散落市场判断
 - `MarketSpec` 当前只用于评估和回测成本假设，不代表完整交易日历、逐标的港股 lot size、真实成交约束或券商实际费率；显式 `--cost-bps` 始终可覆盖默认估算
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
@@ -226,6 +227,8 @@ src/
   - 风控失败必须返回结构化拒绝原因，不允许用 Agent 文案替代机器判断
 - Alpha 扫描 workflow 固定为只读 research 链路：
   - `alpha_scan.py` 只能读取本地行情仓和标准 contract，不读取或写入 trading ledger
+  - `--universe all|stock|etf` 等非显式股票池必须先过滤到本地已有日线覆盖的标的，避免目录全量标的污染研究链路
+  - 显式 `--symbols` 是排障和定向研究入口，不隐藏缺口；缺日线必须返回 `missing_daily_history`
   - 输出候选 `AlphaCandidate` 只代表研究候选，不是交易信号或策略生效配置
   - 数据不足必须进入 `data_quality` / `data_gaps`，不得为了排序伪造 score
   - 后续策略迭代必须继续走 `strategy_proposal`、回测门槛和人工批准

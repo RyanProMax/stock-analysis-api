@@ -101,6 +101,70 @@ def test_alpha_scan_empty_universe_returns_empty_status(tmp_path):
     assert payload["items"] == []
 
 
+def test_alpha_scan_universe_all_filters_to_local_daily_coverage(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "US.AAPL", "name": "Apple", "market": "美股", "exchange": "NASDAQ"},
+            {"symbol": "US.EMPTY", "name": "No Daily", "market": "美股", "exchange": "NASDAQ"},
+        ],
+        market="us",
+    )
+    repository.upsert_daily_bars(
+        "US.AAPL",
+        _daily_rows([180, 181, 182, 183, 185, 187, 188, 190, 191, 193]),
+        "US_FutuOpenD",
+        market="us",
+        ts_code="US.AAPL",
+    )
+    service = AlphaScanService(repository=repository)
+
+    exit_code, payload = _run_cli(service, "--market", "us", "--universe", "all", "--top", "5")
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["request"]["symbols"] == ["US.AAPL"]
+    assert payload["summary"]["scanned"] == 1
+    assert [item["symbol"] for item in payload["items"]] == ["US.AAPL"]
+
+
+def test_alpha_scan_explicit_symbols_can_report_missing_daily_history(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "US.AAPL", "name": "Apple", "market": "美股", "exchange": "NASDAQ"},
+            {"symbol": "US.EMPTY", "name": "No Daily", "market": "美股", "exchange": "NASDAQ"},
+        ],
+        market="us",
+    )
+    repository.upsert_daily_bars(
+        "US.AAPL",
+        _daily_rows([180, 181, 182, 183, 185, 187, 188, 190, 191, 193]),
+        "US_FutuOpenD",
+        market="us",
+        ts_code="US.AAPL",
+    )
+    service = AlphaScanService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "us",
+        "--symbols",
+        "US.AAPL,US.EMPTY",
+        "--top",
+        "5",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "partial"
+    assert payload["summary"]["scanned"] == 2
+    assert payload["summary"]["failed"] == 1
+    assert [item["symbol"] for item in payload["items"]] == ["US.AAPL", "US.EMPTY"]
+    assert payload["items"][1]["data_quality"] == "missing"
+    assert "missing_daily_history" in payload["items"][1]["data_gaps"]
+
+
 def test_alpha_scan_marks_insufficient_history_as_partial_without_score(tmp_path):
     repository = _repository(tmp_path)
     repository.upsert_symbols(

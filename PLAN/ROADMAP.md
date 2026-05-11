@@ -32,10 +32,11 @@
 - `scripts/watch_worker_tick.py`：读取已审批 active strategy，按时间窗和间隔生成只读 watch summary。
 - `scripts/strategy_judge.py`：由独立 evaluator 根据固定门槛输出 passed / blocked verdict；passed 只代表可进入人工审核，不自动审批或生效。
 - `scripts/alpha_research_loop.py`：离线串联 researcher / backtester / evaluator 三类角色，按 factor 多轮尝试，输出 `human_review_ready` 或 `needs_iteration`。
+- HK / US 的非显式 Alpha universe 当前只扫描本地已有日线覆盖的标的；显式 `--symbols` 会保留缺口并输出结构化 `missing_daily_history`，便于补库排障。
 
 当前缺口：
 
-- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更严格的参数搜索、模拟盘对照和失败归因策略生成。
+- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更完整的 HK / US 日线覆盖、参数搜索、模拟盘对照和失败归因策略生成。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP；真实多 Agent 运行时和调度状态面尚未实现。
 - 回测已有固定 threshold 策略与 native top-N 组合 MVP，尚未覆盖滑点、成交量容量、停牌 / 涨跌停、公司行动、复权口径和多因子组合参数搜索。
@@ -179,9 +180,10 @@ Agent Loop
 功能：
 
 - `alpha_universe_service`
-  - 读取 `cn_symbols`。
-  - 支持 `--market cn`、`--universe watchlist|all|etf|stock`。
+  - 读取本地 `cn_symbols` / `hk_symbols` / `us_symbols`。
+  - 支持 `--market cn/hk/us`、`--universe watchlist|all|etf|stock`。
   - 支持 `--symbols` 显式覆盖。
+  - 非显式 universe 只返回本地已有 `daily_start_date` / `daily_end_date` 覆盖摘要的标的；显式 symbols 不过滤，缺日线时让下游输出缺口。
 - `alpha_feature_service`
   - 复用现有技术因子、基本面字段和 daily 数据。
   - 输出标准化 factor frame。
@@ -200,6 +202,7 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 - stdout 严格 JSON。
 - 空 universe 返回 `status=empty`，不报 500。
 - 数据不足标记 `data_quality=partial`，不伪造分数。
+- 非显式 universe 不把无日线覆盖的目录标的扫入候选池；显式 symbols 仍能返回 `missing_daily_history`。
 - 不写交易 ledger，不触发 broker。
 - 已通过 `uv run pytest tests/test_alpha_scan_cli.py -q`。
 
@@ -555,7 +558,7 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 - Agent 不能在日内链路直接决定下单。
 - Agent 不能自动 approve / activate 策略。
 - 任何 alpha 都必须经过样本外验证和成本 / 滑点评估。
-- 回测报告必须标注数据来源、样本窗口、幸存者偏差、停牌 / 涨跌停 / 复权口径。
+- 回测报告必须标注数据来源、样本窗口、本地日线覆盖范围、幸存者偏差、停牌 / 涨跌停 / 复权口径。
 - 任何策略生效必须可回滚。
 
 ## 推荐实施顺序

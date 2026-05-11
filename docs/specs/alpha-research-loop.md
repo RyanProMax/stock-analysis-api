@@ -90,7 +90,7 @@
 - `src/model/strategy.py`：策略 proposal 与版本治理 contract。
 - `src/model/market.py`：CN / HK / US 最小 `MarketSpec`，包含交易时段、币种、lot / tick 和默认评估成本模型。
 - `src/model/serialization.py`：跨 contract 复用的 JSON 安全序列化。
-- `src/services/alpha_universe_service.py`：只读构建 Alpha 扫描股票池，支持 `all` / `stock` / `etf` / 显式 `symbols`，`watchlist` 在未提供 symbols 时返回空集合。
+- `src/services/alpha_universe_service.py`：只读构建 Alpha 扫描股票池，支持 `all` / `stock` / `etf` / 显式 `symbols`，`watchlist` 在未提供 symbols 时返回空集合；非显式股票池只返回本地已有日线覆盖摘要的标的，显式 `symbols` 不隐藏缺口。
 - `src/services/alpha_feature_service.py`：从本地 SQLite 日线仓提取首批因子，不访问 broker，不拉外部实时行情。
 - `src/services/alpha_scan_service.py`：将 universe 与 feature 转换为 `AlphaCandidate`，数据不足时只标记 `partial`，不伪造分数。
 - `src/services/alpha_scan_cli.py`：内部 CLI 参数解析与纯 JSON 输出。
@@ -126,6 +126,7 @@ uv run python scripts/alpha_scan.py --market cn --symbols 300827,300274 --top 10
 - 顶层固定为 `status`、`source=alpha_scan`、`computed_at`、`request`、`summary`、`items`。
 - `status=empty`：股票池为空，`items=[]`。
 - `status=partial`：至少一个候选缺少足够日线；该候选 `score=null`、`data_quality=partial`、`data_gaps` 说明缺口。
+- `--universe all|stock|etf` 等非显式股票池必须按本地 `daily_start_date` / `daily_end_date` 覆盖摘要过滤，只扫描已有日线的标的；显式 `--symbols` 不过滤，缺日线时返回 `data_quality=missing` 与 `missing_daily_history`。
 - `items` 中每项必须符合 `AlphaCandidate.to_dict()` contract。
 - 该 CLI 只读本地行情仓，不写 trading ledger，不触发 broker，不调用 Futu `SIMULATE`。
 

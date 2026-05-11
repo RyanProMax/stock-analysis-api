@@ -47,6 +47,7 @@ class AlphaUniverseService:
             rows = []
         else:
             rows = self.repository.list_symbols(market=normalized_market)
+            rows = [row for row in rows if self._has_daily_coverage(row)]
 
         filtered = [row for row in rows if self._matches_universe(row, normalized_universe)]
         if limit is not None and limit > 0:
@@ -57,6 +58,9 @@ class AlphaUniverseService:
             market=normalized_market,
             symbols=filtered,
         )
+
+    def _has_daily_coverage(self, row: dict) -> bool:
+        return bool(row.get("daily_start_date") and row.get("daily_end_date"))
 
     def _matches_universe(self, row: dict, universe: str) -> bool:
         if universe in ("all", "watchlist"):
