@@ -38,6 +38,7 @@ uv run sync-market-data --market cn --scope symbol --symbol 300827 --days 30
 uv run sync-market-data --market us --scope symbol --symbol NVDA --days 30
 uv run sync-market-data --market hk --scope symbol --symbols HK.00700,HK.09988 --start-date 2026-01-01
 uv run sync-market-data --market hk --scope symbol --universe-seed hk_core --start-date 2026-01-01
+uv run python scripts/alpha_universe_seed_status.py --market hk --universe-seed hk_core --start-date 2026-01-01 --stale-before 2026-05-11 --pretty
 ```
 
 Agent / skill CLI 入口：
@@ -55,6 +56,7 @@ uv run python scripts/trading_scheduler_tick.py --codes HK.00700 --buy-above HK.
 uv run python scripts/trading_daily_summary.py --date 2026-05-07 --pretty
 uv run python scripts/trading_strategy_review.py --date 2026-05-07 --min-runs 3 --pretty
 uv run python scripts/trading_strategy_backtest.py --codes HK.00700 --buy-above HK.00700=100 --start 2026-05-01 --end 2026-05-07 --pretty
+uv run python scripts/alpha_universe_seed_status.py --market hk --universe-seed hk_core --start-date 2026-01-01 --stale-before 2026-05-11 --pretty
 ```
 
 后台常驻 HTTP 服务：
@@ -105,6 +107,7 @@ black --line-length 100 .
 - `scripts/trading_strategy_backtest.py` 基于历史 K 线或注入 K 线 JSON 回测当前 threshold 策略，用于区别于 ledger replay 的离线评估
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
 - `sync-market-data --universe-seed` 只读取 `config/alpha_universe_seeds.json` 中的显式 symbol 种子，不做 HK / US 全市场 discovery
+- `scripts/alpha_universe_seed_status.py` 只读 tracked seed 和本地 SQLite 日线仓，输出 missing / incomplete / stale 覆盖缺口；它不补库、不改 seed、不写策略配置、不触发 broker
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步
 - `cn_daily.is_suspended` 只是停复牌事件标记，不表示完整停牌区间

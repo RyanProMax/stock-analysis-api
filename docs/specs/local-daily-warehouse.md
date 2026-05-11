@@ -129,6 +129,7 @@
 - `--symbol` 和 `--symbols` 只能二选一；`scope=symbol` 时必须提供其中一个。
 - `--symbols` 是显式批量补库入口，主要用于 HK / US watchlist 或候选池扩容；它不代表全市场 discovery。
 - `--universe-seed` 从 JSON seed 文件读取显式 symbols，与 `--symbol` / `--symbols` 互斥；默认 seed 文件为 `config/alpha_universe_seeds.json`，`--seed-file` 可覆盖。
+- `scripts/alpha_universe_seed_status.py` 是只读状态检查入口，用于对 seed 内 symbols 做精确覆盖检查并输出 missing / incomplete / stale；`start_date` 会解析为本地仓在该日期及之后的首个已观测交易日，避免把非交易日起点误判为缺口；它不执行补库、不写同步状态、不触发外部 provider。
 - `sync-market-data` 应先查最新 `sync_runs`，再结合 live universe 与目标最新交易日判定：
   - `skipped`
   - symbol 缺口补齐

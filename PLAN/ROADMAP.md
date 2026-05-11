@@ -35,10 +35,11 @@
 - HK / US 的非显式 Alpha universe 当前只扫描本地已有日线覆盖的标的；显式 `--symbols` 会保留缺口并输出结构化 `missing_daily_history`，便于补库排障。
 - `sync-market-data --market hk/us --scope symbol --symbols ...` 已支持显式多标的 Futu 日 K 补库，用于扩充本地 Alpha universe 覆盖。
 - `config/alpha_universe_seeds.json` 已提供 tracked `hk_core` / `us_core` seed，`sync-market-data --universe-seed ...` 可直接按种子补库。
+- `scripts/alpha_universe_seed_status.py` 已提供 tracked seed 覆盖状态检查，可只读输出 missing / incomplete / stale 缺口。
 
 当前缺口：
 
-- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；HK / US 已支持显式批量补库和 tracked seed，后续仍需 seed 运行状态面、参数搜索、模拟盘对照和失败归因策略生成。
+- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；HK / US 已支持显式批量补库、tracked seed 和 seed 覆盖状态检查，后续仍需 seed 缺口补库建议、参数搜索、模拟盘对照和失败归因策略生成。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP；真实多 Agent 运行时和调度状态面尚未实现。
 - 回测已有固定 threshold 策略与 native top-N 组合 MVP，尚未覆盖滑点、成交量容量、停牌 / 涨跌停、公司行动、复权口径和多因子组合参数搜索。
@@ -543,6 +544,7 @@ uv run python scripts/watch_worker_tick.py --market cn --state-key cn-alpha-watc
 
 ```bash
 uv run python scripts/alpha_scan.py --market cn --universe all --top 50 --pretty
+uv run python scripts/alpha_universe_seed_status.py --market hk --universe-seed hk_core --start-date 2026-01-01 --stale-before 2026-05-11 --pretty
 uv run python scripts/alpha_evaluate.py --market cn --start 2026-01-01 --end 2026-05-09 --forward-windows 1,5,20 --pretty
 uv run python scripts/alpha_backtest.py --market cn --factor momentum_5d --start 2026-01-01 --end 2026-05-09 --top-n 10 --pretty
 uv run python scripts/alpha_daily_report.py --date 2026-05-09 --pretty
@@ -591,12 +593,13 @@ uv run python scripts/trading_strategy_review.py --date 2026-05-09 --min-runs 3 
 1. `alpha_scan.py` 生成候选池。
 2. `alpha_evaluate.py` 输出 IC / RankIC / quantile spread。
 3. `alpha_backtest.py` 输出组合级收益、回撤、夏普、换手和胜率。
-4. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
-5. `alpha_daily_report.py` 汇总并输出人工操作项。
-6. `strategy_judge.py` 由独立 evaluator 基于 evaluation + backtest evidence 输出可审核 verdict。
-7. `alpha_research_loop.py` 串联多 factor 尝试，输出 `human_review_ready` 或 `needs_iteration`。
-8. `strategy_registry.py research-history` 汇总 run history、阻断原因和 factor drift。
-9. 所有输出严格 JSON，Feishu 只展示 summary-only。
+4. `alpha_universe_seed_status.py` 检查 tracked seed 覆盖缺口，作为补库前置状态面。
+5. `strategy_registry.py` 保存 candidate proposal，但不自动生效。
+6. `alpha_daily_report.py` 汇总并输出人工操作项。
+7. `strategy_judge.py` 由独立 evaluator 基于 evaluation + backtest evidence 输出可审核 verdict。
+8. `alpha_research_loop.py` 串联多 factor 尝试，输出 `human_review_ready` 或 `needs_iteration`。
+9. `strategy_registry.py research-history` 汇总 run history、阻断原因和 factor drift。
+10. 所有输出严格 JSON，Feishu 只展示 summary-only。
 
 ## 调研来源
 

@@ -6,7 +6,7 @@
 
 Futu OpenD daily kline -> local SQLite daily warehouse -> alpha scan -> alpha evaluate -> alpha daily report -> alpha research loop。
 
-Status: explicit symbol, explicit symbol-batch, and tracked seed MVP completed on 2026-05-11.
+Status: explicit symbol, explicit symbol-batch, tracked seed, and seed coverage status MVP completed on 2026-05-11.
 
 ## Scope
 
@@ -17,6 +17,7 @@ Status: explicit symbol, explicit symbol-batch, and tracked seed MVP completed o
 - `sync-market-data --market hk/us --scope symbol --symbol ...` 可用 Futu 日 K 补单标的本地仓。
 - `sync-market-data --market hk/us --scope symbol --symbols ...` 可用 Futu 日 K 批量补显式标的本地仓。
 - `sync-market-data --market hk/us --scope symbol --universe-seed ...` 可从 seed 读取显式 symbols 后批量补库。
+- `scripts/alpha_universe_seed_status.py` 可只读检查 seed 内标的在本地日线仓的覆盖状态，用于补库前置检查和运行状态面。
 - Alpha CLI 必须接受 `--market hk`；`cn/us` 既有语义不回退。
 
 ## Data Contract
@@ -29,6 +30,10 @@ Status: explicit symbol, explicit symbol-batch, and tracked seed MVP completed o
 - Futu source 只沉淀 OHLCV 和必要 source metadata；市场细节由 `src/model/market.py` 的 `MarketSpec` 独立表达，不写入 Futu 日线 source。
 - HK / US Alpha 评估未显式传 `--cost-bps` 时，使用 `MarketSpec` 的市场默认 round-trip 成本模型；显式传参时保留 fixed bps override。
 - Seed contract 固定为 `version` + `seeds[]`；每个 seed 至少包含 `id`、`market`、`symbols`，可选 `description`。
+- Seed status 输出顶层固定为 `status`、`source=alpha_universe_seed_status`、`computed_at`、`request`、`seed`、`summary`、`items`、`constraints`。
+- Seed status 的 `request.effective_start_date` 表示本地仓在 `request.start_date` 及之后观测到的首个交易日，用于避免把非交易日起点误判为历史缺口。
+- Seed status 的逐标的状态固定为 `ok`、`missing_daily_history`、`incomplete_history` 或 `stale`；`summary.needs_sync` 是需要补库的标的数。
+- Seed status 只读本地仓，不调用 Futu/OpenD，不触发补库，不写 seed，不写 registry，不触发 broker。
 
 ## Acceptance
 
@@ -36,6 +41,7 @@ Status: explicit symbol, explicit symbol-batch, and tracked seed MVP completed o
 - `sync-market-data --market hk --scope symbol --symbol HK.00700` 可通过 Futu daily source 写入 HK daily。
 - `sync-market-data --market hk --scope symbol --symbols HK.00700,HK.09988` 可在同一 sync run 内写入多只 HK daily，并回写覆盖摘要。
 - `sync-market-data --market hk --scope symbol --universe-seed hk_core` 可从默认 seed 文件补 HK daily。
+- `alpha_universe_seed_status.py --market hk --universe-seed hk_core --start-date 2026-01-01 --stale-before 2026-05-11` 可输出 HK seed 覆盖缺口。
 - `alpha_scan.py --market hk --symbols HK.00700` 能基于本地日线输出候选。
 - `alpha_evaluate.py --market hk --symbols HK.00700,HK.09988` 能输出因子评估。
 - `alpha_research_loop.py --market hk --symbols ...` 能进入 `human_review_ready` 或 `needs_iteration`，不触发 broker。

@@ -1340,6 +1340,36 @@ class MarketDataRepository:
             for row in rows
         }
 
+    def get_first_available_trade_date(
+        self,
+        market: str,
+        *,
+        on_or_after: str,
+        symbols: Optional[Iterable[str]] = None,
+    ) -> Optional[str]:
+        normalized_market = self._normalize_market(market)
+        normalized_symbols = sorted(
+            {str(symbol).strip().upper() for symbol in (symbols or []) if str(symbol).strip()}
+        )
+        clauses = ["trade_date >= ?"]
+        params: list[Any] = [on_or_after]
+        if normalized_symbols:
+            placeholders = ", ".join("?" for _ in normalized_symbols)
+            clauses.append(f"symbol IN ({placeholders})")
+            params.extend(normalized_symbols)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT MIN(trade_date) AS first_trade_date
+                FROM {self._daily_table(normalized_market)}
+                WHERE {' AND '.join(clauses)}
+                """,
+                params,
+            ).fetchone()
+        if row is None:
+            return None
+        return row["first_trade_date"]
+
     def list_symbols_missing_standardized_daily_fields(
         self,
         market: str,

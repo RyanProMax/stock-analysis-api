@@ -18,6 +18,7 @@
   - `scripts/alpha_scan.py`
   - `scripts/alpha_evaluate.py`
   - `scripts/alpha_backtest.py`
+  - `scripts/alpha_universe_seed_status.py`
   - `scripts/strategy_registry.py`
   - `scripts/alpha_daily_report.py`
   - `scripts/watch_worker_tick.py`
@@ -68,6 +69,7 @@ src/
 - `scripts/alpha_scan.py` 只读 SQLite 行情仓，输出 `AlphaCandidate` 候选池；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/alpha_evaluate.py` 只读 SQLite 行情仓，输出 `AlphaEvaluation` 因子验证结果；该入口不写 trading ledger、不触发 broker、不改变运行时策略
 - `scripts/alpha_backtest.py` 只读 SQLite 日线仓，做 native long-only top-N equal-weight 组合回测；默认 summary-only，不写 registry、不写 trading ledger、不触发 broker、不改变运行时策略
+- `scripts/alpha_universe_seed_status.py` 只读 tracked seed 和 SQLite 日线仓，输出 seed 内标的的日线覆盖状态；该入口不补库、不写 seed、不写 registry、不触发 broker、不改变运行时策略
 - `scripts/strategy_registry.py` 只管理候选策略、人工审批记录、research history 和 active strategy 指针；该入口不触发 broker、不下单、不调用 Futu `SIMULATE`，且 `approve` 必须已有 passed judge verdict，`activate` 必须已有人工 approval record
 - `scripts/alpha_daily_report.py` 串联 Alpha 扫描和因子评估，输出 summary-only 盘后报告和候选 `StrategyProposal`；该入口不写 trading ledger、不触发 broker、不 approve、不 activate
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
@@ -201,6 +203,7 @@ src/
   - 回写本次运行后的全局状态快照
 - `sync-market-data --scope symbol --symbols ...` 是 HK / US 扩充本地 Alpha universe 的显式批量补库入口；它只读取 Futu / provider 日 K，不做全市场 discovery，不订阅、不解锁、不触发交易
 - `sync-market-data --scope symbol --universe-seed ...` 只从 tracked JSON seed 解析显式 symbols，再复用同一批量补库路径；seed 文件不是行情事实源，也不代表交易策略生效配置
+- `alpha_universe_seed_status.py` 是 seed 补库前后的只读状态面；它会把请求起点解析为本地仓首个已观测交易日，避免非交易日误报；missing / incomplete / stale 只能作为补库调度依据，不能直接解释为策略信号或交易决策
 - stale 判定使用 freshness grace，而不是强制每只股票都等于市场最新交易日；同一状态重复运行应直接 `skipped`
 - stale / current 判定必须引入停牌豁免：若 `suspend_d` 能解释窗口内无新日线，则不应把该 symbol 计入普通 stale
 - `sync_runs` 不只是运行日志，还必须表达：

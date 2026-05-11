@@ -98,6 +98,8 @@
 - `src/services/alpha_evaluate_cli.py`：内部因子评估 CLI 参数解析与纯 JSON 输出。
 - `src/services/alpha_backtest_service.py`：只读本地日线仓，做 long-only top-N equal-weight 组合回测，使用 `MarketSpec` 成本假设，不调用 broker。
 - `src/services/alpha_backtest_cli.py`：内部组合回测 CLI 参数解析与纯 JSON 输出。
+- `src/services/alpha_universe_seed_status_service.py`：只读 tracked seed 和本地日线仓，检查 seed 内标的是否缺失、历史不足或 stale。
+- `src/services/alpha_universe_seed_status_cli.py`：内部 seed 覆盖状态 CLI 参数解析与纯 JSON 输出。
 - `src/repositories/strategy_registry_repository.py`：SQLite strategy registry，保存 proposal、strategy version、approval、activation history、version event 以及 alpha candidate / evaluation 记录。
 - `src/services/strategy_registry_service.py`：策略版本治理业务逻辑，保证未审批不能 active、active 同时只能有一个、状态变更进入事件表。
 - `src/services/strategy_registry_cli.py`：内部策略 registry CLI 参数解析与纯 JSON 输出。
