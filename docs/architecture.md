@@ -203,7 +203,7 @@ src/
   - 回写本次运行后的全局状态快照
 - `sync-market-data --scope symbol --symbols ...` 是 HK / US 扩充本地 Alpha universe 的显式批量补库入口；它只读取 Futu / provider 日 K，不做全市场 discovery，不订阅、不解锁、不触发交易
 - `sync-market-data --scope symbol --universe-seed ...` 只从 tracked JSON seed 解析显式 symbols，再复用同一批量补库路径；seed 文件不是行情事实源，也不代表交易策略生效配置
-- `alpha_universe_seed_status.py` 是 seed 补库前后的只读状态面；它会把请求起点解析为本地仓首个已观测交易日，避免非交易日误报；missing / incomplete / stale 只能作为补库调度依据，不能直接解释为策略信号或交易决策
+- `alpha_universe_seed_status.py` 是 seed 补库前后的只读状态面；它会把请求起点解析为本地仓首个已观测交易日，避免非交易日误报；`sync_plan` 只生成补库建议，不执行命令；missing / incomplete / stale 只能作为补库调度依据，不能直接解释为策略信号或交易决策
 - stale 判定使用 freshness grace，而不是强制每只股票都等于市场最新交易日；同一状态重复运行应直接 `skipped`
 - stale / current 判定必须引入停牌豁免：若 `suspend_d` 能解释窗口内无新日线，则不应把该 symbol 计入普通 stale
 - `sync_runs` 不只是运行日志，还必须表达：

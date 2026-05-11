@@ -30,9 +30,10 @@ Status: explicit symbol, explicit symbol-batch, tracked seed, and seed coverage 
 - Futu source 只沉淀 OHLCV 和必要 source metadata；市场细节由 `src/model/market.py` 的 `MarketSpec` 独立表达，不写入 Futu 日线 source。
 - HK / US Alpha 评估未显式传 `--cost-bps` 时，使用 `MarketSpec` 的市场默认 round-trip 成本模型；显式传参时保留 fixed bps override。
 - Seed contract 固定为 `version` + `seeds[]`；每个 seed 至少包含 `id`、`market`、`symbols`，可选 `description`。
-- Seed status 输出顶层固定为 `status`、`source=alpha_universe_seed_status`、`computed_at`、`request`、`seed`、`summary`、`items`、`constraints`。
+- Seed status 输出顶层固定为 `status`、`source=alpha_universe_seed_status`、`computed_at`、`request`、`seed`、`summary`、`items`、`sync_plan`、`constraints`。
 - Seed status 的 `request.effective_start_date` 表示本地仓在 `request.start_date` 及之后观测到的首个交易日，用于避免把非交易日起点误判为历史缺口。
 - Seed status 的逐标的状态固定为 `ok`、`missing_daily_history`、`incomplete_history` 或 `stale`；`summary.needs_sync` 是需要补库的标的数。
+- Seed status 的 `sync_plan` 只生成机器可读补库建议；`command_args` 可交给人工或调度器执行，status CLI 本身不执行补库。
 - Seed status 只读本地仓，不调用 Futu/OpenD，不触发补库，不写 seed，不写 registry，不触发 broker。
 
 ## Acceptance

@@ -110,6 +110,21 @@ def test_seed_status_reports_missing_incomplete_and_stale_symbols(tmp_path):
         "HK.09988": "incomplete_history",
         "HK.03690": "missing_daily_history",
     }
+    assert payload["sync_plan"]["required"] is True
+    assert payload["sync_plan"]["symbols"] == ["HK.00700", "HK.09988", "HK.03690"]
+    assert payload["sync_plan"]["command_args"] == [
+        "uv",
+        "run",
+        "sync-market-data",
+        "--market",
+        "hk",
+        "--scope",
+        "symbol",
+        "--symbols",
+        "HK.00700,HK.09988,HK.03690",
+        "--start-date",
+        "2026-01-01",
+    ]
     json.dumps(payload, allow_nan=False)
 
 
@@ -151,6 +166,12 @@ def test_seed_status_reports_ok_when_seed_is_covered(tmp_path):
     assert payload["status"] == "ok"
     assert payload["summary"]["ok"] == 1
     assert payload["items"][0]["needs_sync"] is False
+    assert payload["sync_plan"] == {
+        "required": False,
+        "status": "not_required",
+        "symbols": [],
+        "command_args": [],
+    }
 
 
 def test_seed_status_adjusts_start_date_to_first_observed_trade_date(tmp_path):

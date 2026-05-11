@@ -57,6 +57,12 @@ class AlphaUniverseSeedStatusService:
             if item["needs_sync"]:
                 counts["needs_sync"] += 1
 
+        sync_plan = self._build_sync_plan(
+            market=seed["market"],
+            items=items,
+            start_date=start_date,
+            stale_before=stale_before,
+        )
         return {
             "status": "ok" if counts["needs_sync"] == 0 else "needs_sync",
             "source": "alpha_universe_seed_status",
@@ -71,6 +77,7 @@ class AlphaUniverseSeedStatusService:
             "seed": seed,
             "summary": counts,
             "items": items,
+            "sync_plan": sync_plan,
             "constraints": [
                 "read_only_local_warehouse",
                 "seed_not_strategy_config",
@@ -95,6 +102,53 @@ class AlphaUniverseSeedStatusService:
         if first_available and first_available > start_date:
             return first_available
         return start_date
+
+    @staticmethod
+    def _build_sync_plan(
+        *,
+        market: str,
+        items: list[dict],
+        start_date: Optional[str],
+        stale_before: Optional[str],
+    ) -> dict:
+        symbols = [item["symbol"] for item in items if item["needs_sync"]]
+        if not symbols:
+            return {
+                "required": False,
+                "status": "not_required",
+                "symbols": [],
+                "command_args": [],
+            }
+
+        command_args = [
+            "uv",
+            "run",
+            "sync-market-data",
+            "--market",
+            market,
+            "--scope",
+            "symbol",
+            "--symbols",
+            ",".join(symbols),
+        ]
+        requested_start = start_date or stale_before
+        if requested_start:
+            command_args.extend(["--start-date", requested_start])
+
+        return {
+            "required": True,
+            "status": "ready",
+            "market": market,
+            "scope": "symbol",
+            "symbols": symbols,
+            "requested_start_date": requested_start,
+            "command_args": command_args,
+            "constraints": [
+                "suggestion_only",
+                "status_cli_does_not_execute_sync",
+                "manual_or_scheduler_trigger_required",
+            ],
+        }
 
     def _build_item(
         self,
