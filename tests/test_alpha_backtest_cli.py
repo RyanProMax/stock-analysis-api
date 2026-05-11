@@ -121,6 +121,37 @@ def test_alpha_backtest_outputs_summary_only_portfolio_metrics(tmp_path):
     json.dumps(payload, allow_nan=False)
 
 
+def test_alpha_backtest_auto_excludes_immature_holding_period_tail(tmp_path):
+    repository = _repository(tmp_path)
+    _seed_market(repository)
+    service = AlphaBacktestService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factor",
+        "momentum_5d",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-12",
+        "--top-n",
+        "1",
+        "--holding-period",
+        "3",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["summary"]["effective_end"] == "2026-05-09"
+    assert payload["summary"]["data_gaps"] == []
+    assert "periods" not in payload
+    json.dumps(payload, allow_nan=False)
+
+
 def test_alpha_backtest_include_details_is_explicit_opt_in(tmp_path):
     repository = _repository(tmp_path)
     _seed_market(repository, market="hk")

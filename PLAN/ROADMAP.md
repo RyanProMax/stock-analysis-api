@@ -35,7 +35,7 @@
 
 当前缺口：
 
-- Alpha 扫描、因子评估、native 组合回测、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更严格的参数搜索、模拟盘对照和失败归因策略生成。
+- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；后续仍需更严格的参数搜索、模拟盘对照和失败归因策略生成。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP；真实多 Agent 运行时和调度状态面尚未实现。
 - 回测已有固定 threshold 策略与 native top-N 组合 MVP，尚未覆盖滑点、成交量容量、停牌 / 涨跌停、公司行动、复权口径和多因子组合参数搜索。
@@ -224,6 +224,7 @@ uv run python scripts/alpha_scan.py --market cn --universe watchlist --top 20 --
 功能：
 
 - forward returns：1D / 3D / 5D / 10D / 20D。
+- 请求 end 自动按最大 forward window 截到最后一个成熟样本日，并输出 `summary.effective_end`。
 - IC / RankIC。
 - quantile return spread。
 - turnover / holding decay。
@@ -266,7 +267,7 @@ uv run python scripts/alpha_evaluate.py --market cn --factor momentum_20d --star
 功能：
 
 - 已支持 long-only top N / equal weight native 回测。
-- 已支持 holding period、MarketSpec 成本和 fixed bps override。
+- 已支持 holding period、成熟窗口自动截断、MarketSpec 成本和 fixed bps override。
 - 后续支持 signal matrix、volatility capped、rebalance frequency、滑点、最大单标的权重、最大持仓数。
 - 支持参数网格扫描。
 

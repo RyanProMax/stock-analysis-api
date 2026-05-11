@@ -234,11 +234,13 @@ src/
   - 输出 `AlphaEvaluation` 只代表历史样本统计，不是交易信号或策略生效配置
   - `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover` 等指标缺失时必须返回 `null` 并写入 `data_gaps`，不得伪造指标
   - 样本切分必须显式区分 `train`、`validation`、`out_of_sample`
+  - 请求 `end` 落到最新交易日时，必须按最大 forward window 自动截到最后一个成熟样本日，并通过 `summary.effective_end` / `evaluation.as_of` 暴露真实评估截止日
   - 未显式传 `--cost-bps` 时必须使用 `MarketSpec` 默认 round-trip 成本；显式传参时保持 fixed bps override，用于敏感性分析
 - Alpha 组合回测 workflow 固定为只读验证链路：
   - `alpha_backtest.py` 只能读取本地 SQLite 日线仓和 `MarketSpec` 成本 contract
   - 当前实现为 native long-only top-N equal-weight MVP，不接入 Qlib / Alpha158 / 外部因子库
   - 输出 `total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate`、`orders_total` 等组合指标
+  - 请求 `end` 晚于持有期成熟日时，必须自动向前截断，并通过 `summary.effective_end` 暴露真实回测截止日
   - 默认 summary-only；逐期持仓、收益和换手明细必须显式 `--include-details`
   - 回测结果只能作为 judge evidence，不得自动写入 registry、trading ledger 或 active strategy
 - 策略 registry workflow 固定为人工治理链路：

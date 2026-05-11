@@ -223,7 +223,7 @@ def test_alpha_research_loop_returns_human_review_ready_without_applying_strateg
     assert payload["summary"]["proposal_not_applied"] is True
     assert payload["summary"]["approval_required"] is True
     assert payload["selected"]["verdict"]["gate_status"] == "passed"
-    assert payload["selected"]["verdict"]["evaluation_id"] == "alpha-eval-2026-05-10-momentum_5d"
+    assert payload["selected"]["verdict"]["evaluation_id"] == "alpha-eval-2026-05-09-momentum_5d"
     assert payload["selected"]["strategy_proposal"]["approval_required"] is True
     assert payload["selected"]["strategy_proposal"]["effective_status"] == "candidate_only"
     assert payload["attempts"][0]["roles"]["researcher_id"] == "researcher-agent"
@@ -436,7 +436,7 @@ def test_alpha_research_loop_records_run_and_verdicts_only_when_explicitly_enabl
     assert payload["recorded"]["judge_verdicts"][0]["verdict"]["gate_status"] == "passed"
     assert (
         payload["recorded"]["judge_verdicts"][0]["verdict"]["evaluation_id"]
-        == "alpha-eval-2026-05-10-momentum_5d"
+        == "alpha-eval-2026-05-09-momentum_5d"
     )
     assert registry.current_strategy() is None
     runs = registry.list_research_loop_runs()

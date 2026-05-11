@@ -19,6 +19,7 @@
 - 当前优先级调整：Tushare 过期期间优先跑通 Futu 驱动的港股 / 美股 Alpha 研究链路，先支持显式 symbols 的 Futu 日 K 入库与本地 Alpha scan/evaluate/report/research loop
 - 本轮继续补齐 MarketSpec 与策略评估机制：把 CN / HK / US 的最小市场规则独立成 contract，并让 judge 支持 active champion vs challenger 增量评估
 - 本轮补齐 Alpha 自迭代的组合级回测 evidence：Qlib 只作为框架组织思路参考，不接入其旧因子库；策略是否进入人工审核必须看 native backtest、模拟盘 ledger 和独立 judge gate
+- 本轮继续补齐成熟评估窗口：当请求日期落在最新交易日时，Alpha evaluate / backtest 自动剔除 forward return 尚未成熟的尾部样本，避免日常运行被误判为数据缺口
 
 ## 最近完成项
 
@@ -125,6 +126,11 @@
   - 默认 summary-only，逐期明细必须显式 `--include-details`
   - `alpha_daily_report.py` 已把 `alpha_backtest_summary` 写入 proposal evidence
   - `strategy_judge.py` 已把回测证据纳入固定 gate，缺失或不达标会 blocked
+- 已修复 Alpha 自迭代日常运行窗口：
+  - `alpha_evaluate.py` 根据最大 forward window 自动计算 `summary.effective_end`
+  - `evaluation_id` / `evaluation.as_of` 使用真实成熟样本截止日，不再使用未成熟请求 end
+  - `alpha_backtest.py` 根据 holding period 自动输出 `summary.effective_end`
+  - 最新交易日作为 `--end` 时不再因为尾部 forward return 未生成而误触发 `data_gaps_present`
 
 ## 当前状态
 
@@ -187,11 +193,13 @@
   - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`quantile_spread`、`turnover`
   - `sample_split` 固定包含 `train`、`validation`、`out_of_sample`
   - 未显式传 `--cost-bps` 时使用 MarketSpec 默认 round-trip 成本；显式传参时保持 fixed bps override
+  - 请求 `end` 晚于成熟样本日时自动向前截断，`summary.effective_end` / `evaluation.as_of` 表示真实评估截止日
 - Alpha 组合回测 P3 native MVP 已完成：
   - `alpha_backtest.py` 只读本地行情仓，当前不拉外部实时行情、不写 registry、不写 ledger、不触发 broker
   - 当前组合模型为 long-only top-N equal-weight，按 `holding_period` 使用 forward return 估算再平衡收益
   - 未显式传 `--cost-bps` 时使用 MarketSpec 默认 round-trip 成本，显式传参时保持 fixed bps override
   - 默认只输出 summary；逐期持仓、收益和换手需要显式 `--include-details`
+  - 请求 `end` 晚于持有期成熟日时自动向前截断，`summary.effective_end` 表示真实回测截止日
   - 当前 Alpha 自迭代主链路不使用 Qlib / Alpha158 / 外部因子库
 - 策略 registry P4 MVP 已完成：
   - `strategy_registry.py` 写独立 SQLite registry，不写 trading ledger、不触发 broker

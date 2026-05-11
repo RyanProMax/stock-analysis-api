@@ -96,6 +96,7 @@ class AlphaEvaluationService:
                 evaluation=evaluation,
                 observations=0,
                 data_gaps=["empty_universe"],
+                effective_end=None,
             )
 
         frame, data_gaps = self._build_observation_frame(
@@ -116,11 +117,13 @@ class AlphaEvaluationService:
         status = "ok"
         if data_gaps or frame.empty:
             status = "partial"
+        effective_end = self._frame_as_of(frame)
+        as_of = effective_end or end or self._today()
         evaluation = AlphaEvaluation(
-            evaluation_id=f"alpha-eval-{end or self._today()}-{normalized_factor}",
+            evaluation_id=f"alpha-eval-{as_of}-{normalized_factor}",
             candidate_id=f"factor:{normalized_factor}",
             method="factor_forward_returns",
-            as_of=end or self._frame_as_of(frame) or self._today(),
+            as_of=as_of,
             forward_windows=list(windows),
             metrics=metrics,
             sample_split=sample_split,
@@ -142,6 +145,7 @@ class AlphaEvaluationService:
             evaluation=evaluation,
             observations=int(len(frame)),
             data_gaps=data_gaps,
+            effective_end=effective_end,
         )
 
     def _build_observation_frame(
@@ -198,11 +202,12 @@ class AlphaEvaluationService:
         for window in windows:
             df[f"forward_{window}d"] = closes.shift(-window) / closes - 1.0
 
+        effective_end = self._effective_end(df, requested_end=end, windows=windows)
         mask = pd.Series(True, index=df.index)
         if start:
             mask &= df["date"] >= pd.to_datetime(start)
-        if end:
-            mask &= df["date"] <= pd.to_datetime(end)
+        if effective_end is not None:
+            mask &= df["date"] <= effective_end
         selected = df.loc[mask].copy()
         selected["symbol"] = symbol
         selected["date"] = selected["date"].dt.strftime("%Y-%m-%d")
@@ -227,6 +232,24 @@ class AlphaEvaluationService:
 
         columns = ["date", "symbol", "factor"] + [f"forward_{window}d" for window in windows]
         return selected[columns].reset_index(drop=True), gaps
+
+    def _effective_end(
+        self,
+        df: pd.DataFrame,
+        *,
+        requested_end: str | None,
+        windows: tuple[int, ...],
+    ) -> pd.Timestamp | None:
+        if df.empty or "date" not in df:
+            return pd.to_datetime(requested_end) if requested_end else None
+        requested = pd.to_datetime(requested_end) if requested_end else None
+        max_window = max(windows) if windows else 0
+        if max_window <= 0 or len(df) <= max_window:
+            return requested
+        last_mature = df["date"].iloc[len(df) - max_window - 1]
+        if requested is None:
+            return last_mature
+        return min(requested, last_mature)
 
     def _factor_series(self, df: pd.DataFrame, factor: str) -> pd.Series:
         closes = pd.to_numeric(df.get("close"), errors="coerce")
@@ -450,6 +473,7 @@ class AlphaEvaluationService:
         evaluation: dict,
         observations: int,
         data_gaps: list[str],
+        effective_end: str | None,
     ) -> dict:
         return json_safe(
             {
@@ -470,6 +494,7 @@ class AlphaEvaluationService:
                 "summary": {
                     "symbols": len(symbols),
                     "observations": observations,
+                    "effective_end": effective_end,
                     "data_gaps": data_gaps,
                 },
                 "evaluation": evaluation,

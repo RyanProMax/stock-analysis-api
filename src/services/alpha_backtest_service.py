@@ -189,6 +189,7 @@ class AlphaBacktestService:
         total_return = equity - 1.0 if net_returns else None
         return {
             "periods": len(periods),
+            "effective_end": str(periods[-1]["date"]) if periods else None,
             "orders_total": sum(
                 int(period.get("orders", {}).get("total") or 0) for period in periods
             ),
@@ -220,6 +221,7 @@ class AlphaBacktestService:
     def _empty_summary(self, data_gaps: list[str]) -> dict:
         return {
             "periods": 0,
+            "effective_end": None,
             "orders_total": 0,
             "gross_return_mean": None,
             "net_return_mean": None,

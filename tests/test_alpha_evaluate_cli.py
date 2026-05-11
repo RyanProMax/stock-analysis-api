@@ -114,6 +114,59 @@ def test_alpha_evaluate_outputs_core_factor_metrics_and_sample_split(tmp_path):
     json.dumps(payload, allow_nan=False)
 
 
+def test_alpha_evaluate_auto_excludes_immature_forward_return_tail(tmp_path):
+    repository = _repository(tmp_path)
+    repository.upsert_symbols(
+        [
+            {"symbol": "300001", "name": "趋势科技", "market": "创业板"},
+            {"symbol": "300002", "name": "反转科技", "market": "创业板"},
+            {"symbol": "300003", "name": "震荡科技", "market": "创业板"},
+        ],
+        market="cn",
+    )
+    for symbol, closes in {
+        "300001": [10, 10.1, 10.3, 10.6, 11.0, 11.4, 11.9, 12.5, 13.2, 14.0, 14.7, 15.5],
+        "300002": [20, 19.8, 19.5, 19.3, 19.1, 18.9, 18.8, 18.7, 18.9, 19.2, 19.6, 20.1],
+        "300003": [30, 30.2, 30.1, 30.4, 30.3, 30.8, 30.7, 31.0, 31.4, 31.2, 31.8, 32.1],
+    }.items():
+        repository.upsert_daily_bars(
+            symbol,
+            _daily_rows(closes),
+            "test",
+            market="cn",
+        )
+    service = AlphaEvaluationService(repository=repository)
+
+    exit_code, payload = _run_cli(
+        service,
+        "--market",
+        "cn",
+        "--symbols",
+        "300001,300002,300003",
+        "--factor",
+        "momentum_5d",
+        "--start",
+        "2026-05-04",
+        "--end",
+        "2026-05-12",
+        "--forward-windows",
+        "1,3",
+        "--quantiles",
+        "2",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["summary"]["effective_end"] == "2026-05-09"
+    assert payload["evaluation"]["as_of"] == "2026-05-09"
+    assert payload["evaluation"]["evaluation_id"] == "alpha-eval-2026-05-09-momentum_5d"
+    assert payload["summary"]["data_gaps"] == []
+    assert all(
+        "partial_missing_forward_return" not in gap for gap in payload["summary"]["data_gaps"]
+    )
+    json.dumps(payload, allow_nan=False)
+
+
 def test_alpha_evaluate_reports_data_gaps_for_missing_forward_returns(tmp_path):
     repository = _repository(tmp_path)
     repository.upsert_symbols(

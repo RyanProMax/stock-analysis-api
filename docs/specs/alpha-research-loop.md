@@ -36,6 +36,7 @@
 
 - `evaluation_id` / `candidate_id` / `method`：评估标识。
 - `forward_windows`：前瞻窗口，例如 1D / 5D / 20D。
+- `summary.effective_end` / `evaluation.as_of`：真实可验证的成熟样本截止日；当请求 `end` 落到最新交易日时，系统会按最大 forward window 自动剔除尾部未成熟样本。
 - `metrics`：IC、RankIC、分组收益、换手、命中率、回撤等指标。
 - `sample_split`：必须包含 `train`、`validation`、`out_of_sample`。
 - `cost_model`：交易成本假设。显式传 `--cost-bps` 时使用固定 bps；未传时使用 `MarketSpec` 的市场默认估算成本。
@@ -59,6 +60,7 @@
 
 - 输入只来自本地 SQLite 日线仓、显式 universe / symbols、factor、top N、holding period 和成本假设。
 - 输出 `summary` 固定包含 `periods`、`orders_total`、`gross_return_mean`、`net_return_mean`、`total_return`、`annualized_return`、`max_drawdown`、`sharpe`、`turnover`、`win_rate`、`data_gaps`。
+- `summary.effective_end` 表示本次回测最后一个可验证调仓日；请求 `end` 晚于持有期成熟日时自动向前截断。
 - 默认 summary-only，不输出逐期 `periods`；只有显式 `--include-details` 才输出回测明细。
 - 固定约束包含 `backtest_not_applied_to_runtime`、`read_only_market_data`、`no_broker_or_order_side_effects`。
 - 当前实现是轻量 native backtest，不接 Qlib / Alpha158 / 外部因子库。
@@ -140,6 +142,7 @@ uv run python scripts/alpha_evaluate.py --market cn --symbols 300827,300274 --fa
 
 - 顶层固定为 `status`、`source=alpha_evaluate`、`computed_at`、`request`、`summary`、`evaluation`。
 - `evaluation` 必须符合 `AlphaEvaluation.to_dict()` contract。
+- `summary.effective_end` 固定存在，用于说明本次 metrics 实际覆盖到哪一天；`evaluation_id` 和 `evaluation.as_of` 使用该日期，避免把未成熟尾部当作有效样本。
 - `metrics` 固定包含 `rank_ic_mean`、`rank_ic_tstat`、`rank_ic_by_window`、`ic_by_window`、`quantile_returns_by_window`、`quantile_spread`、`quantile_spread_by_window`、`cost_adjusted_quantile_spread`、`turnover`。
 - `sample_split` 必须包含 `train`、`validation`、`out_of_sample` 三段，即使样本为空也要显式输出。
 - `status=empty`：股票池为空，`summary.data_gaps=["empty_universe"]`。
@@ -162,6 +165,7 @@ uv run python scripts/alpha_backtest.py --market hk --symbols HK.00700,HK.09988 
 
 - 顶层固定为 `status`、`source=alpha_backtest`、`computed_at`、`request`、`cost_model`、`summary`、`constraints`。
 - `summary` 固定包含组合级收益、回撤、夏普、换手、胜率和数据缺口。
+- `summary.effective_end` 固定存在，用于说明回测实际覆盖到的最后可验证调仓日。
 - `status=empty`：股票池为空或无可回测期，`summary.periods=0`。
 - `status=partial`：存在缺失因子、缺失 forward return 或样本不足，缺口必须进入 `data_gaps`。
 - 默认 summary-only；逐期持仓和收益必须显式 `--include-details` 才输出。
