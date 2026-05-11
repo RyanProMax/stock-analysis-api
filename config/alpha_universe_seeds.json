@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "id": "hk_core",
+      "market": "hk",
+      "description": "HK large-cap seed universe for Futu daily warehouse coverage.",
+      "symbols": ["HK.00005", "HK.00700", "HK.03690", "HK.09988"]
+    },
+    {
+      "id": "us_core",
+      "market": "us",
+      "description": "US mega-cap and AI infrastructure seed universe for Futu daily warehouse coverage.",
+      "symbols": ["US.AAPL", "US.MSFT", "US.NVDA", "US.AMD", "US.NET", "US.TSLA"]
+    }
+  ]
+}

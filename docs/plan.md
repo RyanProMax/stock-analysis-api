@@ -18,6 +18,7 @@
 - 已明确治理原则：模型在达到评估门槛前可以自动研究迭代；进入候选策略审核前应由独立 evaluator / judge 角色复核，避免同一个 Agent 既开发、回测又最终评估
 - 当前优先级调整：Tushare 过期期间优先跑通 Futu 驱动的港股 / 美股 Alpha 研究链路；HK / US 的 `universe all` 已改为只扫描本地已有日线覆盖的标的，显式 `--symbols` 仍保留缺口暴露用于排障
 - 本轮补齐 HK / US 显式多标的日线补库入口：`sync-market-data --scope symbol --symbols ...` 复用 Futu 只读日 K，一次性扩充本地 Alpha universe 覆盖
+- 本轮新增 tracked Alpha universe seed：`config/alpha_universe_seeds.json` 提供 `hk_core` / `us_core`，`sync-market-data --universe-seed ...` 可直接按种子补本地日线仓
 - 本轮继续补齐 MarketSpec 与策略评估机制：把 CN / HK / US 的最小市场规则独立成 contract，并让 judge 支持 active champion vs challenger 增量评估
 - 本轮补齐 Alpha 自迭代的组合级回测 evidence：Qlib 只作为框架组织思路参考，不接入其旧因子库；策略是否进入人工审核必须看 native backtest、模拟盘 ledger 和独立 judge gate
 - 本轮继续补齐成熟评估窗口：当请求日期落在最新交易日时，Alpha evaluate / backtest 自动剔除 forward return 尚未成熟的尾部样本，避免日常运行被误判为数据缺口
@@ -233,6 +234,7 @@
 - 已完成港股 / 美股 Futu EOD warehouse 第一阶段：
   - `sync-market-data --market hk/us --scope symbol --symbol ...` 可通过 Futu daily kline 写入单标的本地仓
   - `sync-market-data --market hk/us --scope symbol --symbols ...` 支持显式多标的批量补库，便于扩充本地 Alpha universe 覆盖
+  - `sync-market-data --market hk/us --scope symbol --universe-seed hk_core/us_core` 支持从 tracked seed 读取显式 symbols 后批量补库
   - 新增 `hk_symbols` / `hk_daily`，HK symbol 保留 `HK.00700` 这类 Futu 原生前缀
   - `alpha_scan.py`、`alpha_evaluate.py`、`alpha_daily_report.py`、`alpha_research_loop.py` 和 `watch_worker_tick.py` 已接受 `--market hk`
   - HK / US 非显式 `universe all` 当前以本地 `daily_start_date` / `daily_end_date` 覆盖摘要为准，只扫描已补齐日线的子集
@@ -245,7 +247,7 @@
 
 ## 下一步计划
 
-- 下一步补充港股 / 美股 watchlist / universe 种子管理、逐标的 HK lot size / tick ladder、交易日历、公司行动 / 分红复权和更真实组合级回测
+- 下一步补充 seed 运行状态面、逐标的 HK lot size / tick ladder、交易日历、公司行动 / 分红复权和更真实组合级回测
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型

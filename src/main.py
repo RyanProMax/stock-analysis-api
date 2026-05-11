@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from src.api.routes import index as controller
 from src.api.schemas import StandardResponse
 from src.config import is_development
+from src.services.alpha_universe_seed_service import AlphaUniverseSeedService
 from src.services.daily_data_write_service import daily_data_write_service
 from src.services.symbol_snapshot_refresh_service import symbol_snapshot_refresh_service
 
@@ -123,6 +124,8 @@ def sync_market_data():
     parser.add_argument("--scope", choices=["all", "symbol"], default="all")
     parser.add_argument("--symbol")
     parser.add_argument("--symbols")
+    parser.add_argument("--universe-seed")
+    parser.add_argument("--seed-file")
     parser.add_argument("--days", type=int)
     parser.add_argument("--years", type=int)
     parser.add_argument("--start-date")
@@ -130,6 +133,17 @@ def sync_market_data():
 
     if sum(value is not None for value in (args.days, args.years, args.start_date)) > 1:
         raise SystemExit("`--days`、`--years` 和 `--start-date` 只能三选一")
+    if args.universe_seed:
+        if args.symbol or args.symbols:
+            raise SystemExit("`--universe-seed` 不能和 `--symbol` / `--symbols` 同时使用")
+        try:
+            seed = AlphaUniverseSeedService(args.seed_file).get_seed(
+                args.universe_seed,
+                market=args.market,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        args.symbols = ",".join(seed["symbols"])
     if args.symbol and args.symbols:
         raise SystemExit("`--symbol` 和 `--symbols` 只能二选一")
     if args.scope == "symbol" and not (args.symbol or args.symbols):

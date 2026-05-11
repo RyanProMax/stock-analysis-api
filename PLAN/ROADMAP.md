@@ -34,10 +34,11 @@
 - `scripts/alpha_research_loop.py`：离线串联 researcher / backtester / evaluator 三类角色，按 factor 多轮尝试，输出 `human_review_ready` 或 `needs_iteration`。
 - HK / US 的非显式 Alpha universe 当前只扫描本地已有日线覆盖的标的；显式 `--symbols` 会保留缺口并输出结构化 `missing_daily_history`，便于补库排障。
 - `sync-market-data --market hk/us --scope symbol --symbols ...` 已支持显式多标的 Futu 日 K 补库，用于扩充本地 Alpha universe 覆盖。
+- `config/alpha_universe_seeds.json` 已提供 tracked `hk_core` / `us_core` seed，`sync-market-data --universe-seed ...` 可直接按种子补库。
 
 当前缺口：
 
-- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；HK / US 已支持显式批量补库，后续仍需 watchlist / universe 种子管理、参数搜索、模拟盘对照和失败归因策略生成。
+- Alpha 扫描、因子评估、native 组合回测、成熟窗口自动截断、盘后日报、research loop run 记录、verdict 记录和 research-history 查询已有 MVP；HK / US 已支持显式批量补库和 tracked seed，后续仍需 seed 运行状态面、参数搜索、模拟盘对照和失败归因策略生成。
 - 因子评估已有 IC / RankIC / 分组收益 / 换手和样本切分，尚未覆盖 group neutral、holding decay 细分和更严格的样本外门槛。
 - 策略版本 registry、审批记录、Alpha 日报、自动盯盘 worker、evaluator / judge gate 和离线 agent teams 编排已有 MVP；真实多 Agent 运行时和调度状态面尚未实现。
 - 回测已有固定 threshold 策略与 native top-N 组合 MVP，尚未覆盖滑点、成交量容量、停牌 / 涨跌停、公司行动、复权口径和多因子组合参数搜索。

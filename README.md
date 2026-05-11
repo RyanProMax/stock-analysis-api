@@ -37,6 +37,7 @@ uv run sync-market-data --market cn --scope all --start-date 2026-01-01
 uv run sync-market-data --market cn --scope symbol --symbol 300827 --days 30
 uv run sync-market-data --market us --scope symbol --symbol NVDA --days 30
 uv run sync-market-data --market hk --scope symbol --symbols HK.00700,HK.09988 --start-date 2026-01-01
+uv run sync-market-data --market hk --scope symbol --universe-seed hk_core --start-date 2026-01-01
 ```
 
 Agent / skill CLI 入口：
@@ -103,6 +104,7 @@ black --line-length 100 .
 - `scripts/trading_strategy_review.py` 基于 ledger 摘要生成候选 `strategy_proposal`，不会写入策略配置或触发盘中下单
 - `scripts/trading_strategy_backtest.py` 基于历史 K 线或注入 K 线 JSON 回测当前 threshold 策略，用于区别于 ledger replay 的离线评估
 - `sync-market-data` 会先读取 `sync_runs` 当前状态，再决定补库、补缺口或直接 `skipped`
+- `sync-market-data --universe-seed` 只读取 `config/alpha_universe_seeds.json` 中的显式 symbol 种子，不做 HK / US 全市场 discovery
 - 本地行情仓默认写入 SQLite
 - A 股 universe 当前按 Tushare `stock_basic(exchange='', list_status='L')` 的 listed 快照同步
 - `cn_daily.is_suspended` 只是停复牌事件标记，不表示完整停牌区间

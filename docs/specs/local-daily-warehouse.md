@@ -121,11 +121,14 @@
   - `--scope {all,symbol}`
   - `--symbol`
   - `--symbols`
+  - `--universe-seed`
+  - `--seed-file`
   - `--days`
   - `--years`
   - `--start-date`
 - `--symbol` 和 `--symbols` 只能二选一；`scope=symbol` 时必须提供其中一个。
 - `--symbols` 是显式批量补库入口，主要用于 HK / US watchlist 或候选池扩容；它不代表全市场 discovery。
+- `--universe-seed` 从 JSON seed 文件读取显式 symbols，与 `--symbol` / `--symbols` 互斥；默认 seed 文件为 `config/alpha_universe_seeds.json`，`--seed-file` 可覆盖。
 - `sync-market-data` 应先查最新 `sync_runs`，再结合 live universe 与目标最新交易日判定：
   - `skipped`
   - symbol 缺口补齐

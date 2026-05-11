@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import importlib
+import json
 import sys
 
 import pandas as pd
@@ -939,6 +940,59 @@ class TestSyncCli:
         assert captured["scope"] == "symbol"
         assert captured["symbol"] is None
         assert captured["symbols"] == "US.AAPL,US.MSFT"
+        assert captured["start_date"] == "2026-01-01"
+
+    def test_sync_market_data_cli_accepts_universe_seed(self, tmp_path, monkeypatch):
+        captured = {}
+        seed_file = tmp_path / "seeds.json"
+        seed_file.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "seeds": [
+                        {
+                            "id": "hk_core",
+                            "market": "hk",
+                            "symbols": ["HK.00700", "HK.09988"],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def fake_sync_market_data(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "src.main.daily_data_write_service.sync_market_data",
+            fake_sync_market_data,
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "sync-market-data",
+                "--market",
+                "hk",
+                "--scope",
+                "symbol",
+                "--universe-seed",
+                "hk_core",
+                "--seed-file",
+                str(seed_file),
+                "--start-date",
+                "2026-01-01",
+            ],
+        )
+
+        sync_market_data()
+
+        assert captured["market"] == "hk"
+        assert captured["scope"] == "symbol"
+        assert captured["symbol"] is None
+        assert captured["symbols"] == "HK.00700,HK.09988"
         assert captured["start_date"] == "2026-01-01"
 
 
