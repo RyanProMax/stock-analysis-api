@@ -257,7 +257,42 @@
 - 未到执行间隔：`status=skipped`、`reason=not_due`。
 - 单轮执行锁冲突：`status=skipped`，`run_once.reason=lock_unavailable`。
 
-### 6. `scripts/trading_daily_summary.py`
+### 6. `scripts/grey_market_watch.py`
+
+用途：
+
+- 港股 IPO 暗盘 / grey market / OTC 只读监听入口。
+- 供 cron / launchd / Agent 在暗盘时段定时查询。
+- 聚合 provider capability 状态；当前 Futu 为正式 provider，Tiger / Fosun 等未接入正式授权 API 时返回 `unsupported`。
+
+关键参数：
+
+- `--code`: Futu 港股代码，例如 `HK.02618`
+- `--name`: 可选展示名
+- `--issue-price`: 可选发行价，用于计算相对发行价涨跌幅
+- `--providers`: 默认 `futu,tiger,fosun`
+- `--order-book-depth`: 默认 5
+- `--state-db`: SQLite scheduler tick 状态库路径，默认 `.cache/grey_market_watch.sqlite`
+- `--interval-seconds`: 默认 10
+- `--timezone`: 默认 `Asia/Shanghai`
+- `--active-window`: 默认 `16:15-18:30`
+- `--state-key`: 可选，不传时按标的、provider 和发行价生成
+- `--force`: 忽略时间窗和执行间隔
+- `--pretty`
+
+输出语义：
+
+- 到点执行：顶层 `status=ok`，`watch` 保存本次暗盘快照。
+- 未到时间窗：`status=skipped`、`reason=outside_active_window`。
+- 未到执行间隔：`status=skipped`、`reason=not_due`。
+- provider 未接入正式 API：provider item `status=unsupported`，不补编报价。
+
+安全边界：
+
+- 只读查询，不下单、不改单、不撤单、不解锁交易、不订阅推送。
+- 不把单一券商暗盘报价解释为全市场价格。
+
+### 7. `scripts/trading_daily_summary.py`
 
 用途：
 
@@ -297,7 +332,7 @@
   - `strategy_versions`
 - 默认输出遵循最小必要原则：只给用户盘后总结需要的计数、标的、策略版本、风控原因分布和行情首末变化；明细仅供调试或策略评审内部使用。
 
-### 7. `scripts/trading_strategy_review.py`
+### 8. `scripts/trading_strategy_review.py`
 
 用途：
 
@@ -334,7 +369,7 @@
   - `evidence`
   - `constraints`
 
-### 8. `scripts/trading_strategy_backtest.py`
+### 9. `scripts/trading_strategy_backtest.py`
 
 用途：
 

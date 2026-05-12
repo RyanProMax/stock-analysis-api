@@ -1,6 +1,6 @@
 # Futu 内部 CLI Contract
 
-更新时间：2026-05-06
+更新时间：2026-05-12
 
 ## 目标
 
@@ -33,6 +33,8 @@ uv run python scripts/futu_market_data.py <command> --json
 - `orders --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`：Futu `SIMULATE` 订单只读查询
 - `deals --market HK --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --history`：Futu `SIMULATE` 成交只读查询
 - `cash-flow --market HK --clearing-date YYYY-MM-DD`：Futu `SIMULATE` 交易流水只读查询
+
+灰市 / 暗盘 watch 能力独立为 `scripts/grey_market_watch.py`，不塞进通用 Futu 查询 CLI。它复用 Futu OpenD snapshot / order book，并额外处理暗盘时间窗、provider capability 状态和调度节流；详见 `docs/specs/grey-market-watch.md`。
 
 ## 运行依赖
 
