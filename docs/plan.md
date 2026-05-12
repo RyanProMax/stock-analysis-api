@@ -24,6 +24,7 @@
 - 本轮补齐 Alpha 自迭代的组合级回测 evidence：Qlib 只作为框架组织思路参考，不接入其旧因子库；策略是否进入人工审核必须看 native backtest、模拟盘 ledger 和独立 judge gate
 - 本轮继续补齐成熟评估窗口：当请求日期落在最新交易日时，Alpha evaluate / backtest 自动剔除 forward return 尚未成熟的尾部样本，避免日常运行被误判为数据缺口
 - 本轮新增港股 IPO 暗盘 / OTC 只读 watch 入口：通过 API 内部 `grey_market_watch.py` 支持暗盘时段定时查询；Futu 为正式 provider，Tiger / Fosun 等未接入正式授权 API 时明确返回 `unsupported`
+- 本轮补齐 `/otc` skill 调用所需的 API contract：`grey_market_watch.py --once` 支持暗盘时段内单次查询，不受 scheduler tick 节流状态影响；默认 tick 模式继续服务 `--loop=300s` 这类定时轮询。
 
 ## 最近完成项
 
@@ -141,6 +142,9 @@
   - 支持 `--code`、`--issue-price`、`--providers`、`--active-window`、`--interval-seconds`、`--state-key`
   - 默认暗盘窗口为北京时间 `16:15-18:30`，默认 provider 为 `futu,tiger,fosun`
   - Futu provider 只读使用 OpenD snapshot / order book；Tiger / Fosun 尚未接入正式授权 API 时返回 `unsupported`
+- 已明确 `grey_market_watch.py` 的两类消费方式：
+  - `--once`：单次查询，仍校验暗盘时间窗，但不读取或写入 scheduler tick 状态。
+  - 默认 tick：供 cron / launchd / Agent 轮询使用，按 `--interval-seconds` 做节流并写本地 scheduler tick 状态。
 
 ## 当前状态
 
@@ -187,7 +191,7 @@
   - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` / `order-book` / `ticker` / `rt-data` / `option-expirations` / `option-chain` / `account` / `positions` / `orders` / `deals` / `cash-flow` JSON contract
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
-- `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 定时查询内部入口，只读拉取 Futu OpenD snapshot / order book；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
+- `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
 - Alpha 研究闭环 P0 contract 已完成：
   - `AlphaCandidate`：候选信号、因子值、分数、排名、原因和数据质量。

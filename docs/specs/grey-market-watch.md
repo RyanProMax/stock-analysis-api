@@ -4,7 +4,7 @@
 
 ## 目标
 
-为 skill / Agent 提供港股 IPO 暗盘（grey market / OTC）只读查询入口，支持 cron / launchd / Agent 定时 tick 调用。该能力只做行情查询和跨 provider 状态聚合，不下单、不订阅、不解锁交易、不写 watchlist 或券商配置。
+为 skill / Agent 提供港股 IPO 暗盘（grey market / OTC）只读查询入口，支持单次查询和 cron / launchd / Agent 定时 tick 调用。该能力只做行情查询和跨 provider 状态聚合，不下单、不订阅、不解锁交易、不写 watchlist 或券商配置。
 
 ## 内部 CLI
 
@@ -12,8 +12,15 @@
 uv run python scripts/grey_market_watch.py --code HK.02618 --name 剂泰医药 --issue-price 10 --json
 ```
 
+单次查询：
+
+```bash
+uv run python scripts/grey_market_watch.py --once --code HK.02618 --name 剂泰医药 --issue-price 10 --json
+```
+
 常用调度参数：
 
+- `--once`: 单次查询模式；仍校验 `--active-window`，但不读取或写入 scheduler tick 状态，不受上一次轮询时间影响。
 - `--providers`: 默认 `futu,tiger,fosun`。当前仅 `futu` 接入正式 API；`tiger` / `fosun` 返回 `status=unsupported`，等待正式授权 API adapter。
 - `--order-book-depth`: 默认 5，Futu provider 会尝试只读盘口摘要。
 - `--timezone`: 默认 `Asia/Shanghai`。
@@ -67,6 +74,25 @@ uv run python scripts/grey_market_watch.py --code HK.02618 --name 剂泰医药 -
       "price_spread": null
     },
     "providers": []
+  }
+}
+```
+
+单次查询：
+
+```json
+{
+  "status": "ok",
+  "source": "grey_market_watch_once",
+  "schedule": {
+    "mode": "once",
+    "timezone": "Asia/Shanghai",
+    "active_window": "16:15-18:30",
+    "interval_seconds": 10
+  },
+  "watch": {
+    "status": "ok",
+    "source": "grey_market_watch"
   }
 }
 ```

@@ -14,6 +14,7 @@ from ..repositories.trading_ledger_repository import SqliteTradingLedger
 from .grey_market_watch_service import GreyMarketWatchService, parse_providers
 
 DEFAULT_SOURCE = "grey_market_watch_tick"
+ONCE_SOURCE = "grey_market_watch_once"
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_ACTIVE_WINDOW = "16:15-18:30"
 DEFAULT_STATE_DB_NAME = "grey_market_watch.sqlite"
@@ -26,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--issue-price", type=float)
     parser.add_argument("--providers", default="futu,tiger,fosun")
     parser.add_argument("--order-book-depth", type=int, default=5)
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one query without reading or writing scheduler tick state",
+    )
     parser.add_argument("--state-db", help="SQLite state DB path for scheduler tick state")
     parser.add_argument("--interval-seconds", type=int, default=10)
     parser.add_argument("--timezone", default=DEFAULT_TIMEZONE)
@@ -114,6 +120,7 @@ def _build_state_key(args: argparse.Namespace, providers: list[str]) -> str:
 
 def _schedule_payload(args: argparse.Namespace, state_key: str, now: datetime) -> dict[str, Any]:
     return {
+        "mode": "once" if args.once else "tick",
         "state_key": state_key,
         "timezone": args.timezone,
         "active_window": args.active_window,
@@ -143,16 +150,15 @@ def main(
         providers = parse_providers(args.providers)
         now = _parse_now(args.now, args.timezone)
         windows = _parse_windows(args.active_window)
-        ledger = SqliteTradingLedger(_state_db_path(args.state_db))
         state_key = _build_state_key(args, providers)
         schedule = _schedule_payload(args, state_key, now)
-        last_tick = ledger.get_scheduler_tick(state_key)
+        source = ONCE_SOURCE if args.once else DEFAULT_SOURCE
 
         if not args.force and not _is_inside_window(now, windows):
             _emit(
                 {
                     "status": "skipped",
-                    "source": DEFAULT_SOURCE,
+                    "source": source,
                     "reason": "outside_active_window",
                     "schedule": {
                         **schedule,
@@ -163,6 +169,27 @@ def main(
                 writer,
             )
             return 0
+
+        if args.once:
+            watch_service = service or GreyMarketWatchService(timezone_name=args.timezone)
+            watch_payload = watch_service.query(
+                code=args.code,
+                name=args.name or None,
+                issue_price=args.issue_price,
+                providers=providers,
+                order_book_depth=max(0, int(args.order_book_depth)),
+            )
+            payload = {
+                "status": watch_payload.get("status", "failed"),
+                "source": ONCE_SOURCE,
+                "schedule": schedule,
+                "watch": watch_payload,
+            }
+            _emit(payload, args.pretty, writer)
+            return 0 if payload["status"] == "ok" else 1
+
+        ledger = SqliteTradingLedger(_state_db_path(args.state_db))
+        last_tick = ledger.get_scheduler_tick(state_key)
 
         if last_tick and not args.force:
             last_started_at = datetime.fromisoformat(last_tick["last_started_at"]).astimezone(

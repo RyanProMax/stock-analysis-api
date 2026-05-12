@@ -262,7 +262,7 @@
 用途：
 
 - 港股 IPO 暗盘 / grey market / OTC 只读监听入口。
-- 供 cron / launchd / Agent 在暗盘时段定时查询。
+- 支持单次查询，也供 cron / launchd / Agent 在暗盘时段定时查询。
 - 聚合 provider capability 状态；当前 Futu 为正式 provider，Tiger / Fosun 等未接入正式授权 API 时返回 `unsupported`。
 
 关键参数：
@@ -272,6 +272,7 @@
 - `--issue-price`: 可选发行价，用于计算相对发行价涨跌幅
 - `--providers`: 默认 `futu,tiger,fosun`
 - `--order-book-depth`: 默认 5
+- `--once`: 单次查询模式；仍校验 `--active-window`，但不读取或写入 scheduler tick 状态
 - `--state-db`: SQLite scheduler tick 状态库路径，默认 `.cache/grey_market_watch.sqlite`
 - `--interval-seconds`: 默认 10
 - `--timezone`: 默认 `Asia/Shanghai`
@@ -282,7 +283,8 @@
 
 输出语义：
 
-- 到点执行：顶层 `status=ok`，`watch` 保存本次暗盘快照。
+- 单次查询：顶层 `status=ok`、`source=grey_market_watch_once`，`watch` 保存本次暗盘快照，不受 scheduler tick 节流影响。
+- 到点执行：顶层 `status=ok`、`source=grey_market_watch_tick`，`watch` 保存本次暗盘快照。
 - 未到时间窗：`status=skipped`、`reason=outside_active_window`。
 - 未到执行间隔：`status=skipped`、`reason=not_due`。
 - provider 未接入正式 API：provider item `status=unsupported`，不补编报价。

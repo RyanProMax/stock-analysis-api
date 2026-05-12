@@ -60,8 +60,8 @@ src/
 - `data_provider/sources/futu.py` 同时提供 `FutuOpenDTradeGateway` 作为 Futu `SIMULATE` broker 的底层网关；该网关固定 `TrdEnv.SIMULATE`，不得封装 `unlock_trade`
 - `scripts/futu_market_data.py` 只暴露 Futu/OpenD 只读查询能力：OpenD global state、IPO list、history kline、snapshot、order book、ticker、RT data、option expirations、option chain，以及 Futu `SIMULATE` 环境下的 account / positions / orders / deals / cash-flow 查询
 - `scripts/futu_market_data.py` 不得暴露或调用下单、改单、撤单、交易解锁、订阅推送、配置写入或其他 OpenD 状态变更能力
-- `scripts/grey_market_watch.py` 是港股 IPO 暗盘 / OTC 只读定时查询入口；当前 Futu 通过正式 OpenD snapshot / order book provider 接入，Tiger / Fosun 等未接入正式授权 API 的 provider 必须输出 `unsupported`，不得用网页抓取伪造跨券商报价
-- `scripts/grey_market_watch.py` 只做暗盘时段、执行间隔和 provider 汇总，不下单、不解锁交易、不订阅、不写自选股；本地 SQLite 仅保存 scheduler tick 节流状态
+- `scripts/grey_market_watch.py` 是港股 IPO 暗盘 / OTC 只读查询入口；`--once` 做单次查询且不读写 scheduler tick 状态，默认 tick 模式做定时间隔查询；当前 Futu 通过正式 OpenD snapshot / order book provider 接入，Tiger / Fosun 等未接入正式授权 API 的 provider 必须输出 `unsupported`，不得用网页抓取伪造跨券商报价
+- `scripts/grey_market_watch.py` 只做暗盘时段、执行间隔和 provider 汇总，不下单、不解锁交易、不订阅、不写自选股；本地 SQLite 仅在默认 tick 模式保存 scheduler tick 节流状态
 - `scripts/trading_run_once.py` 只暴露模拟盘一期单次执行入口，默认 dry-run broker；核心流程必须落在 `TradingAutomationService`，审计与幂等必须落在 SQLite trading ledger
 - `scripts/trading_run_once.py --broker futu-simulate` 是显式 opt-in 的 Futu 模拟盘 broker 路径；该路径禁止与 `--snapshots-json` 混用，避免用离线行情触发模拟盘订单
 - `scripts/trading_run_once.py` 默认使用 SQLite 调度锁；并发触发时只能有一个 worker 进入行情 / 策略 / broker 流程，其余调用返回 `status=skipped`

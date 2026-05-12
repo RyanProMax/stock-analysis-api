@@ -156,6 +156,74 @@ def test_grey_market_watch_tick_runs_once_then_skips_until_interval(tmp_path):
     assert service.calls == 1
 
 
+def test_grey_market_watch_once_ignores_scheduler_interval(tmp_path):
+    service = FakeGreyMarketWatchService()
+    state_db = tmp_path / "state.sqlite"
+
+    first_exit_code, first_payload = _run_cli(
+        "--code",
+        "HK.02618",
+        "--name",
+        "剂泰医药",
+        "--issue-price",
+        "10",
+        "--state-db",
+        str(state_db),
+        "--now",
+        "2026-05-12T16:20:00+08:00",
+        service=service,
+    )
+    second_exit_code, second_payload = _run_cli(
+        "--once",
+        "--code",
+        "HK.02618",
+        "--name",
+        "剂泰医药",
+        "--issue-price",
+        "10",
+        "--state-db",
+        str(state_db),
+        "--now",
+        "2026-05-12T16:20:05+08:00",
+        service=service,
+    )
+
+    assert first_exit_code == 0
+    assert first_payload["status"] == "ok"
+    assert first_payload["source"] == "grey_market_watch_tick"
+    assert second_exit_code == 0
+    assert second_payload["status"] == "ok"
+    assert second_payload["source"] == "grey_market_watch_once"
+    assert second_payload["schedule"]["mode"] == "once"
+    assert service.calls == 2
+
+
+def test_grey_market_watch_once_does_not_create_scheduler_state_db(tmp_path):
+    service = FakeGreyMarketWatchService()
+    state_db = tmp_path / "state.sqlite"
+
+    exit_code, payload = _run_cli(
+        "--once",
+        "--code",
+        "HK.02618",
+        "--name",
+        "剂泰医药",
+        "--issue-price",
+        "10",
+        "--state-db",
+        str(state_db),
+        "--now",
+        "2026-05-12T16:20:00+08:00",
+        service=service,
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["source"] == "grey_market_watch_once"
+    assert not state_db.exists()
+    assert service.calls == 1
+
+
 def test_grey_market_watch_tick_skips_outside_dark_window(tmp_path):
     service = FakeGreyMarketWatchService()
 
@@ -171,6 +239,28 @@ def test_grey_market_watch_tick_skips_outside_dark_window(tmp_path):
 
     assert exit_code == 0
     assert payload["status"] == "skipped"
+    assert payload["reason"] == "outside_active_window"
+    assert payload["schedule"]["next_run_at"] == "2026-05-12T16:15:00+08:00"
+    assert service.calls == 0
+
+
+def test_grey_market_watch_once_still_skips_outside_dark_window(tmp_path):
+    service = FakeGreyMarketWatchService()
+
+    exit_code, payload = _run_cli(
+        "--once",
+        "--code",
+        "HK.02618",
+        "--state-db",
+        str(tmp_path / "state.sqlite"),
+        "--now",
+        "2026-05-12T15:59:00+08:00",
+        service=service,
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "skipped"
+    assert payload["source"] == "grey_market_watch_once"
     assert payload["reason"] == "outside_active_window"
     assert payload["schedule"]["next_run_at"] == "2026-05-12T16:15:00+08:00"
     assert service.calls == 0
