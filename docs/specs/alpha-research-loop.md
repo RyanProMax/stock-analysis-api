@@ -48,7 +48,7 @@
 
 - `market` / `exchange` / `currency` / `timezone`：市场基础身份。
 - `regular_sessions`：常规交易时段，仅用于调度和报告语义，不代表完整交易日历。
-- `lot_size` / `price_tick`：默认交易单位和价格最小变动；港股真实 lot size 可能逐标的不同，当前只作为评估默认假设。
+- `lot_size` / `price_tick`：默认交易单位和价格最小变动；港股真实 lot size / tick 可能逐标的不同，当前可先通过 `futu_market_data.py symbol-rules` 读取 Futu snapshot 暴露值，缺失时回退到 `MarketSpec` 默认假设。
 - `entry_fee_bps` / `exit_fee_bps` / `entry_slippage_bps` / `exit_slippage_bps`：用于因子评估的 round-trip 成本估算。
 - `constraints`：标记估算成本、逐标的规则未完全覆盖等限制。
 

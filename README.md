@@ -47,6 +47,7 @@ Agent / skill CLI 入口：
 uv run python scripts/stock_analyze.py --market cn --symbols 300827 --mode base --pretty
 uv run python scripts/stock_analyze.py --market us --symbols NVDA,MSFT --mode full --pretty
 uv run python scripts/futu_market_data.py snapshot --codes HK.00700,US.AAPL --json
+uv run python scripts/futu_market_data.py symbol-rules --codes HK.00700,US.AAPL --json
 uv run python scripts/futu_market_data.py order-book --code HK.00700 --num 10 --json
 uv run python scripts/futu_market_data.py option-chain --code US.AAPL --start 2026-05-15 --end 2026-06-19 --option-type CALL --json
 uv run python scripts/futu_market_data.py positions --market HK --code HK.00700 --json
@@ -97,7 +98,7 @@ black --line-length 100 .
 ## 使用级注意事项
 
 - `scripts/stock_analyze.py` 的 stdout 设计为纯 JSON，方便外部 Agent 直接消费
-- `scripts/futu_market_data.py` 只暴露 Futu/OpenD 查询能力：global state、IPO、snapshot、K 线、盘口、逐笔、分时、期权、SIMULATE 账户 / 持仓 / 订单 / 成交 / 流水只读查询
+- `scripts/futu_market_data.py` 只暴露 Futu/OpenD 查询能力：global state、IPO、snapshot、逐标的 symbol rules、K 线、盘口、逐笔、分时、期权、SIMULATE 账户 / 持仓 / 订单 / 成交 / 流水只读查询
 - `scripts/futu_market_data.py` 不暴露下单、改单、撤单、交易解锁、订阅或任何 OpenD 写入类子命令
 - `scripts/trading_run_once.py` 默认使用 dry-run broker 和 SQLite 调度锁，只做模拟盘单次执行与 ledger 审计；只有显式传 `--broker futu-simulate` 时才连接 Futu `SIMULATE` broker
 - `--broker futu-simulate` 固定使用 Futu `TrdEnv.SIMULATE`，不调用 `unlock_trade`，也不允许和 `--snapshots-json` 混用

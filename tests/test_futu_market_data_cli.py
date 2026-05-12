@@ -75,6 +75,9 @@ class FakeFutuGateway:
                 "code": "HK.00700",
                 "name": "Tencent",
                 "last_price": 390.2,
+                "lot_size": 100,
+                "price_spread": 0.2,
+                "stock_type": "STOCK",
                 "stock_owner": float("nan"),
             }
         ]
@@ -308,6 +311,25 @@ def test_snapshot_cli_contract():
     assert payload["data"][0]["raw"]["stock_owner"] is None
 
 
+def test_symbol_rules_cli_extracts_lot_size_and_tick_from_futu_snapshot():
+    exit_code, payload = _run_cli("symbol-rules", "--codes", "HK.00700", "--json")
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["source"] == "futu_opend"
+    assert payload["request"] == {"codes": ["HK.00700"], "count": 1}
+    rule = payload["data"][0]
+    assert rule["code"] == "HK.00700"
+    assert rule["market"] == "hk"
+    assert rule["lot_size"] == 100
+    assert rule["lot_size_source"] == "futu_snapshot"
+    assert rule["price_tick"] == 0.2
+    assert rule["price_tick_source"] == "futu_snapshot"
+    assert rule["market_spec"]["default_lot_size"] == 100
+    assert rule["market_spec"]["default_price_tick"] == 0.01
+    assert rule["raw_fields"]["price_spread"] == 0.2
+
+
 def test_order_book_ticker_rt_data_cli_contracts():
     exit_code, order_book = _run_cli("order-book", "--code", "HK.00700", "--num", "3", "--json")
     assert exit_code == 0
@@ -439,6 +461,7 @@ def test_futu_market_data_cli_does_not_expose_write_subcommands():
     subcommands = next(action for action in parser._actions if action.dest == "command")
     exposed = set(subcommands.choices)
 
+    assert "symbol-rules" in exposed
     assert not exposed.intersection(
         {
             "place-order",

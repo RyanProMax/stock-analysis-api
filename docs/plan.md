@@ -25,6 +25,7 @@
 - 本轮继续补齐成熟评估窗口：当请求日期落在最新交易日时，Alpha evaluate / backtest 自动剔除 forward return 尚未成熟的尾部样本，避免日常运行被误判为数据缺口
 - 本轮新增港股 IPO 暗盘 / OTC 只读 watch 入口：通过 API 内部 `grey_market_watch.py` 支持暗盘时段定时查询；Futu 为正式 provider，Tiger / Fosun 等未接入正式授权 API 时明确返回 `unsupported`
 - 本轮补齐 `/otc` skill 调用所需的 API contract：`grey_market_watch.py --once` 支持暗盘时段内单次查询，不受 scheduler tick 节流状态影响；默认 tick 模式继续服务 `--loop=300s` 这类定时轮询。
+- 本轮开始补齐更真实市场规则：新增 `futu_market_data.py symbol-rules`，从 Futu snapshot 暴露逐标的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值。
 
 ## 最近完成项
 
@@ -64,7 +65,7 @@
 - 已新增 `FutuSimulateBroker` 与 `FutuOpenDTradeGateway`，`trading_run_once.py --broker futu-simulate` 可显式启用 Futu `SIMULATE` broker；默认仍是 dry-run，且 `futu-simulate` 禁止与 `--snapshots-json` 混用。
 - `trading_scheduler_tick.py` 已支持透传 `--broker`，因此显式 opt-in 的 Futu `SIMULATE` 也能接入 cron / launchd / Agent 调度 tick。
 - 已新增 `scripts/trading_strategy_backtest.py`，支持注入 K 线 JSON 或 Futu 历史 K 线，对固定 threshold 策略做离线回测；该入口不读写 ledger、不触发 broker。
-- 已扩展 `scripts/futu_market_data.py` Futu/OpenD 只读查询能力，新增 `order-book`、`ticker`、`rt-data`、`option-expirations`、`option-chain`、`account`、`positions`、`orders`、`deals`、`cash-flow` 子命令。
+- 已扩展 `scripts/futu_market_data.py` Futu/OpenD 只读查询能力，新增 `symbol-rules`、`order-book`、`ticker`、`rt-data`、`option-expirations`、`option-chain`、`account`、`positions`、`orders`、`deals`、`cash-flow` 子命令。
 - 已补充 Futu 只读 CLI contract 与安全回归测试，覆盖新增命令 stdout JSON、Futu `SIMULATE` 账户类只读查询，以及 CLI 不暴露写入类子命令。
 - 已新增 `PLAN/ROADMAP.md`，基于 vectorbt、Alphalens 方法论、NautilusTrader、LEAN、Backtrader、OpenBB 和 vn.py 等成熟开源项目调研，沉淀自动盯盘与 Alpha 自我迭代的阶段路线；Qlib 仅保留框架组织思路参考，不作为因子库或集成目标。
 - 已完成 `PLAN/ROADMAP.md` P0：新增 `docs/specs/alpha-research-loop.md`、`src/model/alpha.py`、`src/model/strategy.py` 与共享 `src/model/serialization.py`，锁定 Alpha 候选、因子评估、策略 proposal、策略版本治理和 JSON 安全序列化 contract。
@@ -145,6 +146,9 @@
 - 已明确 `grey_market_watch.py` 的两类消费方式：
   - `--once`：单次查询，仍校验暗盘时间窗，但不读取或写入 scheduler tick 状态。
   - 默认 tick：供 cron / launchd / Agent 轮询使用，按 `--interval-seconds` 做节流并写本地 scheduler tick 状态。
+- 已新增 `futu_market_data.py symbol-rules`：
+  - 从 Futu snapshot 输出逐标的 `lot_size`、`price_tick`、来源标记和 `MarketSpec` 默认规则。
+  - 已用真实 OpenD 验证 `HK.00700` 返回 `lot_size=100`、`price_tick=0.2`，stdout 为严格 JSON。
 
 ## 当前状态
 
@@ -188,7 +192,7 @@
 - Futu/OpenD hkipo / research 迁移在 API 侧已完成内部 CLI 与 contract 测试：
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
-  - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` / `order-book` / `ticker` / `rt-data` / `option-expirations` / `option-chain` / `account` / `positions` / `orders` / `deals` / `cash-flow` JSON contract
+  - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` / `symbol-rules` / `order-book` / `ticker` / `rt-data` / `option-expirations` / `option-chain` / `account` / `positions` / `orders` / `deals` / `cash-flow` JSON contract
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
@@ -258,12 +262,12 @@
   - 已用真实 OpenD 验证 HK.00700 / HK.09988 / HK.03690 与 US.AAPL / US.NVDA / US.MSFT 入库，并跑通 HK/US alpha scan 与 research loop
 - `MarketSpec` 当前已提供评估 / 回测最小规则：
   - CN：CNY / Asia-Shanghai / SSE-SZSE session / 100 股 lot / 0.01 tick / 估算成本
-  - HK：HKD / Asia-Hong_Kong / HKEX session / 默认 100 股 lot / 0.01 tick / 估算成本；真实 lot size 后续需要逐标的覆盖
+  - HK：HKD / Asia-Hong_Kong / HKEX session / 默认 100 股 lot / 0.01 tick / 估算成本；`futu_market_data.py symbol-rules` 已可暴露逐标的 lot size / tick，后续接入回测和模拟盘执行规则
   - US：USD / America-New_York / NYSE-NASDAQ regular session / 1 股 lot / 0.01 tick / 估算成本
 
 ## 下一步计划
 
-- 下一步补充逐标的 HK lot size / tick ladder、交易日历、公司行动 / 分红复权和更真实组合级回测
+- 下一步把 `symbol-rules` 的逐标的 HK lot size / tick 接入回测和模拟盘执行规则，并继续补交易日历、公司行动 / 分红复权和更真实组合级回测
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型

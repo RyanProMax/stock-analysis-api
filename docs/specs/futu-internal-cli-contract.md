@@ -20,6 +20,7 @@ uv run python scripts/futu_market_data.py <command> --json
 - `ipo-list --market HK`：港股 IPO 当前池，替代 `futuapi/scripts/quote/get_ipo_list.py HK`
 - `kline --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD --ktype 1d --rehab none`：历史日 K，替代 HK IPO 回测里直接调用 Futu SDK
 - `snapshot --codes HK.00700,US.AAPL`：港股 `/research` prompt 中需要的只读行情快照入口
+- `symbol-rules --codes HK.00700,US.AAPL`：逐标的交易规则，只读输出 Futu snapshot 中的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值
 
 第二阶段补齐高频只读查询能力：
 

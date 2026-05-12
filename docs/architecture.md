@@ -58,7 +58,7 @@ src/
 - `data_provider/` 负责取数、source chain、fallback、字段原始语义维护，不反向依赖 SQLite
 - `data_provider/sources/futu.py` 负责 Futu OpenD SDK 适配和行情 snapshot 标准化；Futu 查询类能力可以通过内部只读 CLI 暴露，模拟盘订单只能通过 service 层定义的 broker contract 暴露
 - `data_provider/sources/futu.py` 同时提供 `FutuOpenDTradeGateway` 作为 Futu `SIMULATE` broker 的底层网关；该网关固定 `TrdEnv.SIMULATE`，不得封装 `unlock_trade`
-- `scripts/futu_market_data.py` 只暴露 Futu/OpenD 只读查询能力：OpenD global state、IPO list、history kline、snapshot、order book、ticker、RT data、option expirations、option chain，以及 Futu `SIMULATE` 环境下的 account / positions / orders / deals / cash-flow 查询
+- `scripts/futu_market_data.py` 只暴露 Futu/OpenD 只读查询能力：OpenD global state、IPO list、history kline、snapshot、symbol rules、order book、ticker、RT data、option expirations、option chain，以及 Futu `SIMULATE` 环境下的 account / positions / orders / deals / cash-flow 查询
 - `scripts/futu_market_data.py` 不得暴露或调用下单、改单、撤单、交易解锁、订阅推送、配置写入或其他 OpenD 状态变更能力
 - `scripts/grey_market_watch.py` 是港股 IPO 暗盘 / OTC 只读查询入口；`--once` 做单次查询且不读写 scheduler tick 状态，默认 tick 模式做定时间隔查询；当前 Futu 通过正式 OpenD snapshot / order book provider 接入，Tiger / Fosun 等未接入正式授权 API 的 provider 必须输出 `unsupported`，不得用网页抓取伪造跨券商报价
 - `scripts/grey_market_watch.py` 只做暗盘时段、执行间隔和 provider 汇总，不下单、不解锁交易、不订阅、不写自选股；本地 SQLite 仅在默认 tick 模式保存 scheduler tick 节流状态
@@ -150,7 +150,7 @@ src/
 - Futu 日 K 写入本地仓时只作为只读 EOD 数据源，不订阅、不交易解锁、不调用账户写入或订单能力
 - Alpha 非显式 universe 构建必须只使用本地 `daily_start_date` / `daily_end_date` 已存在的标的；显式 `--symbols` 不做覆盖过滤，缺日线时由 scan / evaluate / backtest 输出结构化缺口
 - `src/model/market.py` 是市场规则的最小 contract owner；CN / HK / US 的币种、时区、常规时段、默认 lot / tick 和估算 round-trip 成本必须先进入 `MarketSpec`，Alpha / backtest 只消费 contract，不在业务逻辑里散落市场判断
-- `MarketSpec` 当前只用于评估和回测成本假设，不代表完整交易日历、逐标的港股 lot size、真实成交约束或券商实际费率；显式 `--cost-bps` 始终可覆盖默认估算
+- `MarketSpec` 当前只用于评估和回测成本假设；逐标的 lot size / tick 可先通过 `futu_market_data.py symbol-rules` 从 Futu snapshot 暴露，尚未代表完整交易日历、真实成交约束或券商实际费率；显式 `--cost-bps` 始终可覆盖默认估算
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实
 - `cn_daily` 只保存真实存在的日线事实，不为停牌日期补 synthetic row
 - `cn_daily.is_suspended` 只表示“这条已有日线 row 命中了停复牌事件”，不是持续状态，也不能解释整段无 row 的停牌区间

@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import json
+import math
 import sys
 from typing import Any, Callable, Iterable, TextIO, TypeVar
 import warnings
@@ -12,8 +13,11 @@ from ..data_provider.sources.futu import (
     FutuMarketDataProvider,
     FutuOpenDGateway,
     FutuOpenDTradeGateway,
+    normalize_futu_code,
     to_jsonable,
 )
+from ..model.market import get_market_spec, normalize_market
+from ..model.trading import MarketSnapshot
 
 SOURCE = "futu_opend"
 T = TypeVar("T")
@@ -34,6 +38,83 @@ def _parse_codes(raw_codes: str | Iterable[str]) -> list[str]:
 
 def _normalize_code_arg(raw_code: str) -> str:
     return str(raw_code or "").strip().upper()
+
+
+def _safe_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(result):
+        return None
+    return result
+
+
+def _safe_int(value: Any) -> int | None:
+    result = _safe_float(value)
+    return int(result) if result is not None else None
+
+
+def _first_present(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in raw and raw[key] not in (None, ""):
+            return raw[key]
+    return None
+
+
+def _market_from_futu_code(code: str) -> str:
+    prefix = normalize_futu_code(code).split(".", 1)[0]
+    if prefix in {"SH", "SZ"}:
+        return "cn"
+    return normalize_market(prefix.lower())
+
+
+def _symbol_rule_from_snapshot(snapshot: MarketSnapshot) -> dict[str, Any]:
+    market = _market_from_futu_code(snapshot.code)
+    spec = get_market_spec(market)
+    raw = snapshot.raw or {}
+
+    raw_lot_size = _safe_int(_first_present(raw, ("lot_size", "lot", "round_lot")))
+    raw_price_tick = _safe_float(
+        _first_present(raw, ("price_spread", "price_tick", "tick_size", "spread"))
+    )
+    lot_size = raw_lot_size if raw_lot_size is not None else spec.lot_size
+    price_tick = raw_price_tick if raw_price_tick is not None else spec.price_tick
+
+    return {
+        "code": snapshot.code,
+        "name": snapshot.name,
+        "market": market,
+        "source": snapshot.source,
+        "as_of": snapshot.as_of,
+        "lot_size": lot_size,
+        "lot_size_source": "futu_snapshot" if raw_lot_size is not None else "market_spec_default",
+        "price_tick": price_tick,
+        "price_tick_source": (
+            "futu_snapshot" if raw_price_tick is not None else "market_spec_default"
+        ),
+        "market_spec": {
+            "currency": spec.currency,
+            "timezone": spec.timezone,
+            "exchange": spec.exchange,
+            "regular_sessions": spec.regular_sessions,
+            "default_lot_size": spec.lot_size,
+            "default_price_tick": spec.price_tick,
+            "round_trip_cost_bps": spec.round_trip_cost_bps,
+            "constraints": spec.constraints,
+        },
+        "raw_fields": to_jsonable(
+            {
+                "lot_size": raw.get("lot_size"),
+                "price_spread": raw.get("price_spread"),
+                "stock_type": raw.get("stock_type"),
+                "stock_child_type": raw.get("stock_child_type"),
+                "listing_date": raw.get("listing_date"),
+            }
+        ),
+    }
 
 
 def _call_suppressing_stdout(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
@@ -71,6 +152,13 @@ def _build_parser() -> argparse.ArgumentParser:
     snapshot = subparsers.add_parser("snapshot", help="Get market snapshots")
     snapshot.add_argument("--codes", required=True)
     snapshot.add_argument("--json", action="store_true", dest="output_json")
+
+    symbol_rules = subparsers.add_parser(
+        "symbol-rules",
+        help="Get readonly symbol lot size and tick rules from Futu snapshot",
+    )
+    symbol_rules.add_argument("--codes", required=True)
+    symbol_rules.add_argument("--json", action="store_true", dest="output_json")
 
     order_book = subparsers.add_parser("order-book", help="Get readonly order book")
     order_book.add_argument("--code", required=True)
@@ -237,6 +325,21 @@ def main(
                     "source": SOURCE,
                     "request": {"codes": codes, "count": len(codes)},
                     "data": [snapshot.to_dict() for snapshot in snapshots],
+                },
+            )
+            return 0
+
+        if args.command == "symbol-rules":
+            codes = [normalize_futu_code(code) for code in _parse_codes(args.codes)]
+            provider = FutuMarketDataProvider(gateway=gateway)
+            snapshots = _call_suppressing_stdout(provider.get_market_snapshots, codes)
+            _write_payload(
+                writer,
+                {
+                    "status": "ok",
+                    "source": SOURCE,
+                    "request": {"codes": codes, "count": len(codes)},
+                    "data": [_symbol_rule_from_snapshot(snapshot) for snapshot in snapshots],
                 },
             )
             return 0

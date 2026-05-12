@@ -118,6 +118,7 @@
 - `global-state`: OpenD 行情登录和市场状态预检
 - `ipo-list --market HK`: IPO 当前池查询
 - `snapshot --codes HK.00700,US.AAPL`: 多市场行情快照
+- `symbol-rules --codes HK.00700,US.AAPL`: 逐标的 lot size / tick 规则，只读来自 Futu snapshot，缺失时回退到 `MarketSpec`
 - `kline --code HK.00700 --start YYYY-MM-DD --end YYYY-MM-DD`: 历史 K 线
 - `order-book --code HK.00700 --num 10`: 盘口
 - `ticker --code HK.00700 --num 500`: 逐笔成交
