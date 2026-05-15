@@ -879,8 +879,19 @@ class TaskChainService:
         configured = os.environ.get("TASK_CHAIN_NEWS_SEARCH_COMMAND")
         if configured:
             return {"name": "configured_search_command", "command": configured}
-        if shutil.which("tvly"):
-            return {"name": "tavily_cli", "command": "tvly"}
+        tvly_path = shutil.which("tvly")
+        if not tvly_path:
+            for candidate in [
+                Path.home() / ".local" / "bin" / "tvly",
+                Path.home() / ".cargo" / "bin" / "tvly",
+                Path("/opt/homebrew/bin/tvly"),
+                Path("/usr/local/bin/tvly"),
+            ]:
+                if candidate.exists() and os.access(candidate, os.X_OK):
+                    tvly_path = str(candidate)
+                    break
+        if tvly_path:
+            return {"name": "tavily_cli", "command": tvly_path}
         return None
 
     def _run_news_query(self, *, provider: dict[str, Any], query: str) -> dict[str, Any]:
