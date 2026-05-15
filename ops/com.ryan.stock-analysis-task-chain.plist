@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ryan.stock-analysis-task-chain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ryan/.local/bin/uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>scripts/task_chain.py</string>
+        <string>--task-db</string>
+        <string>/Users/ryan/projects/stock-analysis-api/.cache/task_chain.sqlite</string>
+        <string>tick</string>
+        <string>--owner-id</string>
+        <string>launchd-task-chain</string>
+        <string>--lease-ttl-seconds</string>
+        <string>900</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ryan/projects/stock-analysis-api</string>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ryan/projects/stock-analysis-api/.cache/logs/task-chain.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ryan/projects/stock-analysis-api/.cache/logs/task-chain.stderr.log</string>
+</dict>
+</plist>

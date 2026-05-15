@@ -303,6 +303,7 @@
 - Alpha / 模拟盘自迭代元调度入口。
 - 将每一轮工作抽象成可持久化 task，由上一轮结果写入下一颗 task 的 `due_at`。
 - 外部 watchdog / launchd 只需周期性调用轻量 `tick`，避免重任务固定 cron 堆积。
+- launchd 示例配置：`ops/com.ryan.stock-analysis-task-chain.plist`。
 
 子命令：
 

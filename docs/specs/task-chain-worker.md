@@ -20,6 +20,12 @@ uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite bootstrap
 uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite tick
 ```
 
+launchd 示例配置：
+
+- `ops/com.ryan.stock-analysis-task-chain.plist`
+- `StartInterval=60`，只负责轻量调用 `tick`。
+- `tick` 每次最多执行一颗 due task；重任务间隔仍由 task-chain 写入的下一颗 task `due_at` 控制。
+
 ### `bootstrap`
 
 创建第一颗 pending task。

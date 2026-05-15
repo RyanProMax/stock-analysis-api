@@ -78,6 +78,8 @@ src/
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
 - `scripts/strategy_judge.py` 作为独立 evaluator / judge gate，仅输出 `passed` / `blocked` verdict；该入口不写策略状态、不 approve、不 activate
 - `scripts/alpha_research_loop.py` 作为离线 agent teams 编排入口，串联 alpha daily report 和 judge gate；默认只输出 JSON，不写 registry、不 approve、不 activate、不触发 broker；只有显式 `--record-to-registry` 才追加 research loop run 和 judge verdict
+- `scripts/task_chain.py` 作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、append-only run log、小时 / 日终 summary 和下一颗 task 的 `due_at`；该入口不承载具体策略逻辑、不下单、不 approve、不 activate
+- `ops/com.ryan.stock-analysis-task-chain.plist` 只负责高频轻量触发 `task_chain.py tick`，真实执行节奏由 task-chain 中每颗 task 的 `due_at` 决定，避免把重任务直接写成固定 cron
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
 
@@ -276,6 +278,12 @@ src/
   - evaluator 与 researcher 相同必须 blocked
   - proposal 必须携带 `alpha_backtest_summary` 回测证据；缺失、样本不足、收益不达标或回撤超阈值时 blocked
   - 可选 champion/challenger 对比：当提供 active champion verdict 时，challenger 除了满足绝对阈值，还必须相对 champion 达到配置的 RankIC / quantile spread 增量
+- task-chain workflow 固定为元调度链路：
+  - `task_chain.py tick` 每次最多获取并执行一颗 due task
+  - active lease 未过期时不能重入；lease 过期后允许恢复
+  - 每轮 task / run / summary 必须可回溯
+  - 小时 / 日终报告只汇总已经发生的 run，不把当前正在生成报告的 run 计入自身
+  - `paper_trade` 只代表模拟盘阶段，真实下单能力不允许通过 task-chain 暴露
   - verdict passed 只表示 `human_review_ready`，不等于 approval
   - registry 可 append 记录 verdict，但不得因为 verdict passed 自动 activate
 - alpha research loop workflow 固定为离线自迭代链路：
