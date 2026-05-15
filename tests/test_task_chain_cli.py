@@ -5,6 +5,7 @@ import json
 
 from src.repositories.task_chain_repository import SqliteTaskChainRepository
 from src.services.task_chain_cli import main as task_chain_main
+from src.services.task_chain_service import TaskChainService
 
 
 def _run_cli(*args: str) -> tuple[int, dict]:
@@ -263,7 +264,7 @@ def test_post_market_pipeline_drains_without_hourly_wait(tmp_path):
         "--due-at",
         "2026-05-15T08:41:00+00:00",
         "--payload-json",
-        '{"market":"hk_us"}',
+        '{"market":"hk_us","disable_external_collectors":true}',
     )
     stale_observe = repository.create_task(
         task_type="market_observe",
@@ -273,13 +274,15 @@ def test_post_market_pipeline_drains_without_hourly_wait(tmp_path):
     )
 
     expected = [
-        ("2026-05-15T08:41:00+00:00", "post_market_research", "sector_review"),
-        ("2026-05-15T08:43:00+00:00", "sector_review", "strategy_analysis"),
-        ("2026-05-15T08:45:00+00:00", "strategy_analysis", "daily_report"),
-        ("2026-05-15T08:47:00+00:00", "daily_report", "market_observe"),
+        ("2026-05-15T08:41:00+00:00", "post_market_research", "news_scan", 20),
+        ("2026-05-15T08:42:00+00:00", "news_scan", "news_scan", 40),
+        ("2026-05-15T08:42:01+00:00", "kol_scan", "kol_scan", 40),
+        ("2026-05-15T08:44:00+00:00", "sector_review", "strategy_analysis", 20),
+        ("2026-05-15T08:46:00+00:00", "strategy_analysis", "daily_report", 20),
+        ("2026-05-15T08:48:00+00:00", "daily_report", "market_observe", 100),
     ]
 
-    for now, task_type, next_task_type in expected:
+    for now, task_type, next_task_type, next_priority in expected:
         exit_code, payload = _run_cli(
             "--task-db",
             task_db,
@@ -293,12 +296,15 @@ def test_post_market_pipeline_drains_without_hourly_wait(tmp_path):
         assert payload["status"] == "ok"
         assert payload["task"]["task_type"] == task_type
         assert payload["next_tasks"][0]["task_type"] == next_task_type
-        if next_task_type != "market_observe":
-            assert payload["next_tasks"][0]["priority"] == 20
+        assert payload["next_tasks"][0]["priority"] == next_priority
 
     assert payload["result"]["report_type"] == "daily"
     assert payload["result"]["superseded_pending_tasks"]["market_observe"] == 1
     assert payload["result"]["market_research"]["status"] == "summarized"
+    assert payload["result"]["news_scan"]["status"] == "skipped"
+    assert payload["result"]["news_scan"]["cadence_minutes"] == 15
+    assert payload["result"]["kol_intel"]["status"] == "skipped"
+    assert payload["result"]["kol_intel"]["cadence_minutes"] == 30
     assert payload["result"]["sector_view"]["status"] == "summarized"
     assert payload["result"]["strategy_analysis"]["status"] == "summarized"
     assert repository.get_task(stale_observe["id"])["result"]["status"] == "superseded"
@@ -342,3 +348,44 @@ def test_daily_report_contains_correction_reviews_and_next_day_plan(tmp_path):
     summaries = SqliteTaskChainRepository(task_db).list_summaries(summary_type="daily")
     assert len(summaries) == 1
     assert summaries[0]["summary"]["correction_reviews"][0]["role"] == "trade_auditor"
+
+
+def test_kol_scan_does_not_treat_assistant_prompt_as_final_report(tmp_path, monkeypatch):
+    skill_root = tmp_path / "stock-kol-intel"
+    command_dir = skill_root / "commands"
+    command_dir.mkdir(parents=True)
+    (command_dir / "kol.py").write_text("print('unused')", encoding="utf-8")
+    monkeypatch.setenv("STOCK_KOL_INTEL_ROOT", str(skill_root))
+
+    def fake_command(*args, **kwargs):
+        return {
+            "status": "ok",
+            "stdout": json.dumps(
+                {
+                    "reply": {
+                        "type": "assistant_prompt",
+                        "content": "build the actual KOL report",
+                        "ack": "queued",
+                    }
+                }
+            ),
+            "stderr": "",
+            "returncode": 0,
+        }
+
+    monkeypatch.setattr(
+        TaskChainService,
+        "_run_external_command",
+        staticmethod(fake_command),
+    )
+    service = TaskChainService(SqliteTaskChainRepository(tmp_path / "task_chain.sqlite"))
+
+    result, next_specs = service._execute_task(
+        {"task_type": "kol_scan", "payload": {"market": "hk_us"}},
+        now="2026-05-15T10:00:00+00:00",
+    )
+
+    assert result["status"] == "agent_required"
+    assert result["reason"] == "stock_kol_intel_returns_assistant_prompt"
+    assert "summary_markdown" not in result
+    assert next_specs[0].task_type == "kol_scan"

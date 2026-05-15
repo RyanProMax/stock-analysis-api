@@ -3,6 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
 from zoneinfo import ZoneInfo
 from typing import Any
 
@@ -16,10 +22,15 @@ TASK_TYPES = {
     "paper_trade",
     "hourly_report",
     "post_market_research",
+    "news_scan",
+    "kol_scan",
     "sector_review",
     "strategy_analysis",
     "daily_report",
 }
+
+NEWS_SCAN_INTERVAL_MINUTES = 15
+KOL_SCAN_INTERVAL_MINUTES = 30
 
 
 @dataclass(frozen=True)
@@ -237,12 +248,42 @@ class TaskChainService:
             result = self._build_post_market_research(now_dt, payload=payload)
             return result, [
                 self._next(
-                    "sector_review",
-                    now_dt + timedelta(minutes=2),
+                    "news_scan",
+                    now_dt + timedelta(minutes=1),
                     payload,
                     priority=20,
+                ),
+                self._next(
+                    "kol_scan",
+                    now_dt + timedelta(minutes=1),
+                    payload,
+                    priority=25,
+                ),
+                self._next(
+                    "sector_review",
+                    now_dt + timedelta(minutes=3),
+                    payload,
+                    priority=30,
                 )
             ]
+
+        if task_type == "news_scan":
+            result = self._build_news_scan(now_dt, payload=payload)
+            return result, self._next_recurring_scan(
+                "news_scan",
+                now_dt,
+                payload,
+                interval_minutes=NEWS_SCAN_INTERVAL_MINUTES,
+            )
+
+        if task_type == "kol_scan":
+            result = self._build_kol_scan(now_dt, payload=payload)
+            return result, self._next_recurring_scan(
+                "kol_scan",
+                now_dt,
+                payload,
+                interval_minutes=KOL_SCAN_INTERVAL_MINUTES,
+            )
 
         if task_type == "sector_review":
             result = self._build_sector_review(now_dt, payload=payload)
@@ -329,13 +370,164 @@ class TaskChainService:
             "objective": "collect_after_close_market_news_kol_and_hotspots",
             "research_streams": [
                 "market_hotspots",
-                "kol_watchlist",
+                "news_search_scan_15m",
+                "kol_intel_scan_30m",
                 "macro_and_liquidity_context",
                 "corporate_events",
             ],
             "status": "collected",
             "write_policy": "append_only_task_run",
-            "next_focus": "sector_review",
+            "next_focus": "news_scan_kol_scan_and_sector_review",
+        }
+
+    def _build_news_scan(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if payload.get("disable_external_collectors") is True:
+            return {
+                "task_type": "news_scan",
+                "report_type": "news_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": NEWS_SCAN_INTERVAL_MINUTES,
+                "status": "skipped",
+                "reason": "external_collectors_disabled",
+            }
+
+        queries = self._news_queries(payload)
+        provider = self._news_search_provider()
+        if provider is None:
+            return {
+                "task_type": "news_scan",
+                "report_type": "news_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": NEWS_SCAN_INTERVAL_MINUTES,
+                "status": "degraded",
+                "reason": "news_search_provider_unavailable",
+                "setup_hint": "install tvly or set TASK_CHAIN_NEWS_SEARCH_COMMAND",
+                "queries": queries,
+            }
+
+        results = [
+            self._run_news_query(provider=provider, query=query)
+            for query in queries
+        ]
+        ok_count = sum(1 for result in results if result.get("status") == "ok")
+        return {
+            "task_type": "news_scan",
+            "report_type": "news_scan",
+            "computed_at": _format_dt(now),
+            "market": payload.get("market", "cn"),
+            "cadence_minutes": NEWS_SCAN_INTERVAL_MINUTES,
+            "status": "collected" if ok_count else "degraded",
+            "provider": provider["name"],
+            "queries": queries,
+            "result_count": ok_count,
+            "results": results,
+        }
+
+    def _build_kol_scan(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        days = int(payload.get("kol_days") or payload.get("days") or 1)
+        if payload.get("disable_external_collectors") is True:
+            return {
+                "task_type": "kol_scan",
+                "report_type": "kol_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
+                "days": days,
+                "status": "skipped",
+                "reason": "external_collectors_disabled",
+            }
+
+        skill_root = Path(
+            os.environ.get("STOCK_KOL_INTEL_ROOT")
+            or "/Users/ryan/projects/stock-kol-intel"
+        )
+        script_path = skill_root / "commands" / "kol.py"
+        if not script_path.exists():
+            return {
+                "task_type": "kol_scan",
+                "report_type": "kol_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
+                "days": days,
+                "status": "degraded",
+                "reason": "stock_kol_intel_skill_not_found",
+                "skill_root": str(skill_root),
+            }
+
+        command = [
+            os.environ.get("TASK_CHAIN_PYTHON") or "python3",
+            str(script_path),
+        ]
+        command_result = self._run_external_command(
+            command,
+            input_text=json.dumps({"argsText": f"--days={days}"}, ensure_ascii=False),
+            timeout_seconds=int(os.environ.get("TASK_CHAIN_KOL_TIMEOUT_SECONDS") or 180),
+            cwd=skill_root,
+        )
+        if command_result["status"] != "ok":
+            return {
+                "task_type": "kol_scan",
+                "report_type": "kol_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
+                "days": days,
+                "status": "degraded",
+                "reason": "stock_kol_intel_skill_failed",
+                "command": command_result,
+            }
+
+        parsed = self._parse_json_text(command_result.get("stdout") or "")
+        reply = parsed.get("reply") if isinstance(parsed, dict) else {}
+        if isinstance(reply, dict) and reply.get("type") == "assistant_prompt":
+            prompt = str(reply.get("content") or "").strip()
+            return {
+                "task_type": "kol_scan",
+                "report_type": "kol_scan",
+                "computed_at": _format_dt(now),
+                "market": payload.get("market", "cn"),
+                "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
+                "days": days,
+                "status": "agent_required",
+                "source": "stock-kol-intel",
+                "ack": reply.get("ack"),
+                "prompt_chars": len(prompt),
+                "prompt_preview": prompt[:1200],
+                "reason": "stock_kol_intel_returns_assistant_prompt",
+            }
+
+        final_markdown = (
+            reply.get("final_markdown")
+            or reply.get("content")
+            if isinstance(reply, dict)
+            else ""
+        )
+        final_markdown = str(final_markdown or "").strip()
+        return {
+            "task_type": "kol_scan",
+            "report_type": "kol_scan",
+            "computed_at": _format_dt(now),
+            "market": payload.get("market", "cn"),
+            "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
+            "days": days,
+            "status": "collected" if final_markdown else "degraded",
+            "source": "stock-kol-intel",
+            "summary_markdown": final_markdown[:4000],
+            "content_chars": len(final_markdown),
+            "raw_status": parsed.get("status") if isinstance(parsed, dict) else None,
         }
 
     def _build_sector_review(
@@ -433,6 +625,8 @@ class TaskChainService:
             runs,
             task_types=[
                 "post_market_research",
+                "news_scan",
+                "kol_scan",
                 "sector_review",
                 "strategy_analysis",
             ],
@@ -451,6 +645,8 @@ class TaskChainService:
             "market_research": self._summarize_post_market_research(
                 post_market_outputs.get("post_market_research")
             ),
+            "news_scan": self._summarize_news_scan(post_market_outputs.get("news_scan")),
+            "kol_intel": self._summarize_kol_scan(post_market_outputs.get("kol_scan")),
             "sector_view": self._summarize_sector_review(post_market_outputs.get("sector_review")),
             "strategy_analysis": self._summarize_strategy_analysis(
                 post_market_outputs.get("strategy_analysis")
@@ -520,6 +716,40 @@ class TaskChainService:
             "status": "summarized",
             "streams": output.get("research_streams") or [],
             "next_focus": output.get("next_focus"),
+        }
+
+    @staticmethod
+    def _summarize_news_scan(output: dict[str, Any] | None) -> dict[str, Any]:
+        if not output:
+            return {"status": "missing", "reason": "news_scan_not_run"}
+        results = output.get("results") if isinstance(output.get("results"), list) else []
+        top_items: list[dict[str, Any]] = []
+        for result in results:
+            items = result.get("items") if isinstance(result, dict) else []
+            if isinstance(items, list):
+                top_items.extend(items[:2])
+        return {
+            "status": output.get("status") or "unknown",
+            "provider": output.get("provider"),
+            "cadence_minutes": output.get("cadence_minutes"),
+            "query_count": len(output.get("queries") or []),
+            "item_count": len(top_items),
+            "top_items": top_items[:6],
+            "reason": output.get("reason"),
+        }
+
+    @staticmethod
+    def _summarize_kol_scan(output: dict[str, Any] | None) -> dict[str, Any]:
+        if not output:
+            return {"status": "missing", "reason": "kol_scan_not_run"}
+        return {
+            "status": output.get("status") or "unknown",
+            "source": output.get("source"),
+            "cadence_minutes": output.get("cadence_minutes"),
+            "days": output.get("days"),
+            "content_chars": output.get("content_chars", 0),
+            "summary_markdown": str(output.get("summary_markdown") or "")[:1200],
+            "reason": output.get("reason"),
         }
 
     @staticmethod
@@ -603,6 +833,180 @@ class TaskChainService:
             payload=payload,
             priority=int(priority),
         )
+
+    def _next_recurring_scan(
+        self,
+        task_type: str,
+        now: datetime,
+        payload: dict[str, Any],
+        *,
+        interval_minutes: int,
+    ) -> list[NextTaskSpec]:
+        if payload.get("force_post_market_research") is True:
+            return []
+        next_due = now + timedelta(minutes=interval_minutes)
+        if not self._is_post_market_research_window(next_due, payload=payload):
+            return []
+        return [
+            self._next(
+                task_type,
+                next_due,
+                payload,
+                priority=40,
+            )
+        ]
+
+    @staticmethod
+    def _news_queries(payload: dict[str, Any]) -> list[str]:
+        raw_queries = payload.get("news_queries")
+        if isinstance(raw_queries, list):
+            queries = [str(item).strip() for item in raw_queries if str(item).strip()]
+            if queries:
+                return queries[:5]
+
+        markets = TaskChainService._research_markets(payload)
+        base: list[str] = []
+        if "hk" in markets:
+            base.append("港股 今日 热点 板块 AI 半导体 IPO")
+        if "us" in markets:
+            base.append("US stocks today AI semiconductor software market news")
+        if "cn" in markets:
+            base.append("A股 今日 热点 板块 AI 半导体 新能源")
+        return base or ["全球 股市 今日 热点 板块"]
+
+    @staticmethod
+    def _news_search_provider() -> dict[str, Any] | None:
+        configured = os.environ.get("TASK_CHAIN_NEWS_SEARCH_COMMAND")
+        if configured:
+            return {"name": "configured_search_command", "command": configured}
+        if shutil.which("tvly"):
+            return {"name": "tavily_cli", "command": "tvly"}
+        return None
+
+    def _run_news_query(self, *, provider: dict[str, Any], query: str) -> dict[str, Any]:
+        command = self._news_command(provider=provider, query=query)
+        command_result = self._run_external_command(
+            command,
+            timeout_seconds=int(os.environ.get("TASK_CHAIN_NEWS_TIMEOUT_SECONDS") or 30),
+        )
+        if command_result["status"] != "ok":
+            return {"status": "failed", "query": query, "command": command_result}
+
+        parsed = self._parse_json_text(command_result.get("stdout") or "")
+        items = self._extract_search_items(parsed)
+        return {
+            "status": "ok",
+            "query": query,
+            "items": items,
+            "raw_chars": len(command_result.get("stdout") or ""),
+        }
+
+    @staticmethod
+    def _news_command(*, provider: dict[str, Any], query: str) -> list[str]:
+        command = str(provider.get("command") or "")
+        if provider.get("name") == "tavily_cli":
+            return [
+                command,
+                "search",
+                query,
+                "--topic",
+                "news",
+                "--time-range",
+                "day",
+                "--max-results",
+                "5",
+                "--json",
+            ]
+        if "{query}" in command:
+            return shlex.split(command.format(query=query))
+        return [*shlex.split(command), query]
+
+    @staticmethod
+    def _run_external_command(
+        command: list[str],
+        *,
+        input_text: str | None = None,
+        timeout_seconds: int,
+        cwd: Path | None = None,
+    ) -> dict[str, Any]:
+        try:
+            completed = subprocess.run(
+                command,
+                input=input_text,
+                text=True,
+                capture_output=True,
+                timeout=timeout_seconds,
+                cwd=str(cwd) if cwd else None,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            return {"status": "failed", "reason": "command_not_found", "error": str(exc)}
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "status": "failed",
+                "reason": "timeout",
+                "timeout_seconds": timeout_seconds,
+                "stdout": exc.stdout or "",
+                "stderr": exc.stderr or "",
+            }
+
+        status = "ok" if completed.returncode == 0 else "failed"
+        return {
+            "status": status,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+
+    @staticmethod
+    def _parse_json_text(raw: str) -> Any:
+        text = str(raw or "").strip()
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {"raw_text": text}
+
+    @staticmethod
+    def _extract_search_items(parsed: Any) -> list[dict[str, Any]]:
+        candidates: Any
+        if isinstance(parsed, list):
+            candidates = parsed
+        elif isinstance(parsed, dict):
+            candidates = (
+                parsed.get("results")
+                or parsed.get("data")
+                or parsed.get("items")
+                or parsed.get("raw_text")
+                or []
+            )
+        else:
+            candidates = []
+
+        if isinstance(candidates, str):
+            return [{"title": candidates[:160], "url": None, "snippet": candidates[:300]}]
+        if not isinstance(candidates, list):
+            return []
+
+        items: list[dict[str, Any]] = []
+        for item in candidates[:5]:
+            if isinstance(item, str):
+                items.append({"title": item[:160], "url": None, "snippet": item[:300]})
+                continue
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title") or item.get("name") or item.get("headline")
+            url = item.get("url") or item.get("link")
+            snippet = item.get("content") or item.get("snippet") or item.get("description")
+            items.append(
+                {
+                    "title": str(title or "")[:160],
+                    "url": str(url or "")[:300] if url else None,
+                    "snippet": str(snippet or "")[:300],
+                }
+            )
+        return items
 
     @staticmethod
     def _validate_task_type(task_type: str) -> None:

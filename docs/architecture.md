@@ -25,6 +25,7 @@
   - `scripts/watch_worker_tick.py`
   - `scripts/strategy_judge.py`
   - `scripts/alpha_research_loop.py`
+  - `scripts/task_chain.py`
 - 公共研究分析能力统一收敛到单一 `POST /stock/analyze` 入口，不再暴露 `/analysis/research/snapshot`、`/valuation/*`、`/model/*`、`/analysis/*`、`/stock/list`、`/stock/search` 等额外公共分析或基础查询路由
 - 模拟盘自动交易能力第一阶段只作为内部 worker / script 能力建设，不新增公共 HTTP 路由
 - Futu/OpenD 只能作为正式 `data_provider` / broker adapter 接入，不从 API 仓库反向调用外部 `futuskill` 脚本
@@ -78,7 +79,7 @@ src/
 - `scripts/watch_worker_tick.py` 读取 registry 中已审批 active strategy，按时间窗和间隔生成只读 Alpha watch summary；当前 MVP 默认不调用模拟交易、不写订单
 - `scripts/strategy_judge.py` 作为独立 evaluator / judge gate，仅输出 `passed` / `blocked` verdict；该入口不写策略状态、不 approve、不 activate
 - `scripts/alpha_research_loop.py` 作为离线 agent teams 编排入口，串联 alpha daily report 和 judge gate；默认只输出 JSON，不写 registry、不 approve、不 activate、不触发 broker；只有显式 `--record-to-registry` 才追加 research loop run 和 judge verdict
-- `scripts/task_chain.py` 作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、append-only run log、小时 / 日终 summary 和下一颗 task 的 `due_at`；盘中观察可按小时节奏推进，盘后必须按分钟级连续 drain `post_market_research -> sector_review -> strategy_analysis -> daily_report`，不能用 1h 间隔阻塞复盘；该入口不下单、不 approve、不 activate
+- `scripts/task_chain.py` 作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、append-only run log、小时 / 日终 summary 和下一颗 task 的 `due_at`；盘中观察可按小时节奏推进，盘后必须按分钟级连续 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，不能用 1h 间隔阻塞复盘；`news_scan` 默认 15 分钟自续并优先使用搜索引擎 CLI，`kol_scan` 默认 30 分钟自续并复用 `stock-kol-intel` skill 预检与 assistant prompt，不能把 prompt 误记为最终情报报告；该入口不下单、不 approve、不 activate
 - `ops/com.ryan.stock-analysis-task-chain.plist` 只负责高频轻量触发 `task_chain.py tick`，真实执行节奏由 task-chain 中每颗 task 的 `due_at` 决定，避免把重任务直接写成固定 cron
 - `core/` 仅保留流程编排和旧导入兼容
 - `model/` 负责统一 contract，避免 route 或 provider 私自扩字段语义
