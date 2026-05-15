@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-12
+更新时间：2026-05-15
 
 ## 当前目标
 
@@ -149,6 +149,10 @@
 - 已新增 `futu_market_data.py symbol-rules`：
   - 从 Futu snapshot 输出逐标的 `lot_size`、`price_tick`、来源标记和 `MarketSpec` 默认规则。
   - 已用真实 OpenD 验证 `HK.00700` 返回 `lot_size=100`、`price_tick=0.2`，stdout 为严格 JSON。
+- 已修复 `poll_realtime_quotes.py` 在盯盘脚本中的市场时段超时问题：
+  - 新增 `--fast-realtime` 低延迟模式，跳过每个标的串行 `stock_basic / etf_basic / quotation` 慢查询。
+  - fast 模式直接使用旧版实时行情并保留现有 JSON contract，适合 Feishu 盯盘快照这类只需要价格、涨跌幅和名称的热路径。
+  - 已用真实行情验证 14 个盯盘标的返回 `14/14`，不再触发外层 60s 调度超时。
 
 ## 当前状态
 
@@ -176,9 +180,8 @@
 - `scripts/poll_realtime_quotes.py` 当前 contract 固定为轻量 quote payload：
   - `status / computed_at / source / request / summary / items`
 - `scripts/poll_realtime_quotes.py` 当前实现固定为 Tushare-only：
-  - 身份信息：`stock_basic / etf_basic`
-  - 实时行情：`quotation`
-  - 降级：旧版 `get_realtime_quotes`
+  - 默认完整模式：身份信息走 `stock_basic / etf_basic`，实时行情走 `quotation`，失败后降级旧版 `get_realtime_quotes`
+  - `--fast-realtime` 低延迟模式：跳过 Pro 元数据与 `quotation`，直接使用旧版 `get_realtime_quotes`，用于定时盯盘快照等超时敏感链路
 - 模拟盘自动交易一期已完成最小执行闭环：
   - 已新增 `src/data_provider/sources/futu.py`
   - 已新增 `src/model/trading.py`

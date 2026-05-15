@@ -194,6 +194,40 @@ class TestRealtimeQuotePollingCli:
         assert item["quote_data"]["mode"] == "legacy_realtime"
         assert item["quote_data"]["change_pct"] is not None
 
+    def test_fast_realtime_skips_pro_and_uses_legacy_quotes(self):
+        get_pro_calls = 0
+
+        def fail_if_called():
+            nonlocal get_pro_calls
+            get_pro_calls += 1
+            raise AssertionError("fast realtime should not initialize Tushare Pro")
+
+        service = RealtimeQuotePollingService(
+            get_pro=fail_if_called,
+            legacy_quote_fetcher=lambda symbol: _legacy_frame(name=f"Name{symbol[-6:]}"),
+        )
+
+        exit_code, payload = _run_cli(
+            service,
+            "--symbols",
+            "600000,510300",
+            "--fast-realtime",
+        )
+
+        assert exit_code == 0
+        assert get_pro_calls == 0
+        assert payload["status"] == "ok"
+        assert payload["summary"]["ok"] == 2
+        assert payload["summary"]["failed"] == 0
+        assert [item["quote_data"]["mode"] for item in payload["items"]] == [
+            "legacy_realtime",
+            "legacy_realtime",
+        ]
+        assert [item["info"]["name"] for item in payload["items"]] == [
+            "Name600000",
+            "Name510300",
+        ]
+
     def test_missing_tushare_token_returns_failed_payload(self):
         service = RealtimeQuotePollingService(
             get_pro=lambda: (_ for _ in ()).throw(

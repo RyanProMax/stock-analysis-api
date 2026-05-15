@@ -26,12 +26,17 @@ class RealtimeQuotePollingService:
         self._get_pro = get_pro or self._default_get_pro
         self._legacy_quote_fetcher = legacy_quote_fetcher or ts.get_realtime_quotes
 
-    def poll(self, symbols: list[str]) -> dict[str, Any]:
+    def poll(self, symbols: list[str], *, fast_realtime: bool = False) -> dict[str, Any]:
         requested_symbols = self.parse_symbols(symbols)
-        pro = self._get_pro()
+        pro = None if fast_realtime else self._get_pro()
         computed_at = self._now_iso()
         items = [
-            self._fetch_item(pro, requested_symbol=symbol, computed_at=computed_at)
+            self._fetch_item(
+                pro,
+                requested_symbol=symbol,
+                computed_at=computed_at,
+                fast_realtime=fast_realtime,
+            )
             for symbol in requested_symbols
         ]
 
@@ -333,7 +338,31 @@ class RealtimeQuotePollingService:
             "mode": "legacy_realtime",
         }
 
-    def _fetch_item(self, pro: Any, *, requested_symbol: str, computed_at: str) -> dict[str, Any]:
+    def _fetch_legacy_quote(
+        self,
+        symbol: str,
+        *,
+        computed_at: str,
+    ) -> tuple[Optional[dict[str, Any]], Optional[str], list[str]]:
+        try:
+            legacy_symbol = self._build_legacy_symbol(symbol)
+            dataframe = self._legacy_quote_fetcher(legacy_symbol)
+            if dataframe is not None and not dataframe.empty:
+                row = dataframe.iloc[0]
+                quote_name = str(row.get("name", "") or "")
+                return self._build_quote_from_legacy(row, computed_at), quote_name, []
+            return None, None, ["legacy realtime 返回空结果"]
+        except Exception as exc:
+            return None, None, [f"legacy realtime 查询失败: {exc}"]
+
+    def _fetch_item(
+        self,
+        pro: Any,
+        *,
+        requested_symbol: str,
+        computed_at: str,
+        fast_realtime: bool = False,
+    ) -> dict[str, Any]:
         symbol = self._normalize_symbol(requested_symbol)
         if not symbol:
             return self._build_failed_item(requested_symbol, f"非法证券代码: {requested_symbol}")
@@ -343,6 +372,23 @@ class RealtimeQuotePollingService:
             security_type = self._infer_security_type(symbol)
         except ValueError as exc:
             return self._build_failed_item(requested_symbol, str(exc))
+
+        if fast_realtime:
+            info = self._build_base_info(symbol, ts_code, security_type)
+            quote_data, quote_name, errors = self._fetch_legacy_quote(
+                symbol,
+                computed_at=computed_at,
+            )
+            info = self._ensure_info_name(info, quote_name)
+            if quote_data is not None:
+                return {
+                    "requested_symbol": requested_symbol,
+                    "status": "ok",
+                    "error": None,
+                    "info": info,
+                    "quote_data": quote_data,
+                }
+            return self._build_failed_item(requested_symbol, "；".join(errors), info=info)
 
         info, info_error = self._fetch_security_info(
             pro,
@@ -367,17 +413,15 @@ class RealtimeQuotePollingService:
             errors.append(f"quotation 查询失败: {exc}")
 
         if quote_data is None:
-            try:
-                legacy_symbol = self._build_legacy_symbol(symbol)
-                dataframe = self._legacy_quote_fetcher(legacy_symbol)
-                if dataframe is not None and not dataframe.empty:
-                    row = dataframe.iloc[0]
-                    quote_name = str(row.get("name", "") or quote_name or "")
-                    quote_data = self._build_quote_from_legacy(row, computed_at)
-                else:
-                    errors.append("legacy realtime 返回空结果")
-            except Exception as exc:
-                errors.append(f"legacy realtime 查询失败: {exc}")
+            legacy_quote_data, legacy_quote_name, legacy_errors = self._fetch_legacy_quote(
+                symbol,
+                computed_at=computed_at,
+            )
+            if legacy_quote_data is not None:
+                quote_data = legacy_quote_data
+                quote_name = legacy_quote_name or quote_name
+            else:
+                errors.extend(legacy_errors)
 
         info = self._ensure_info_name(info, quote_name)
 

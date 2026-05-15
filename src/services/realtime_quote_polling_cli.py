@@ -25,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="格式化输出 JSON，便于人工阅读",
     )
+    parser.add_argument(
+        "--fast-realtime",
+        action="store_true",
+        help="使用低延迟实时行情路径，跳过 Tushare Pro 元数据和 quotation 查询。",
+    )
     return parser
 
 
@@ -62,7 +67,10 @@ def main(
 
     try:
         with contextlib.redirect_stdout(io.StringIO()):
-            payload = polling_service.poll(requested_symbols)
+            payload = polling_service.poll(
+                requested_symbols,
+                fast_realtime=args.fast_realtime,
+            )
         _emit(payload, args.pretty, writer)
         return 0
     except RuntimeError as exc:
