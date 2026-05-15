@@ -1,6 +1,6 @@
 # Skill / Agent CLI Contract
 
-更新时间：2026-05-07
+更新时间：2026-05-15
 
 本文件是 `stock-analysis-api` 内部 skill / agent CLI contract 的唯一规格说明，不属于公共 HTTP API 文档。
 
@@ -58,6 +58,7 @@
 参数：
 
 - `--symbols`
+- `--fast-realtime`: 低延迟模式，跳过 Pro 元数据和 `quotation`，直接使用旧版实时行情
 - `--pretty`
 
 输出：
@@ -295,7 +296,46 @@
 - 只读查询，不下单、不改单、不撤单、不解锁交易、不订阅推送。
 - 不把单一券商暗盘报价解释为全市场价格。
 
-### 7. `scripts/trading_daily_summary.py`
+### 7. `scripts/task_chain.py`
+
+用途：
+
+- Alpha / 模拟盘自迭代元调度入口。
+- 将每一轮工作抽象成可持久化 task，由上一轮结果写入下一颗 task 的 `due_at`。
+- 外部 watchdog / launchd 只需周期性调用轻量 `tick`，避免重任务固定 cron 堆积。
+
+子命令：
+
+- `bootstrap`: 创建第一颗 pending task。
+- `tick`: 抢占一个 due task 的 lease，执行并落库 run log，再写入下一颗 task。
+
+关键参数：
+
+- 全局：
+  - `--task-db`: SQLite task-chain DB 路径，默认 `.cache/task_chain.sqlite`
+  - `--pretty`
+- `bootstrap`：
+  - `--task-type`: `market_observe | alpha_mine | judge_review | paper_trade | hourly_report | daily_report`
+  - `--due-at`: ISO datetime；不传则当前 UTC 时间
+  - `--payload-json`: JSON object，保存 market、symbols、factor 等上下文
+- `tick`：
+  - `--now`: 测试用 ISO datetime；不传则当前 UTC 时间
+  - `--owner-id`: worker identity；不传自动生成
+  - `--lease-ttl-seconds`: 默认 900
+
+输出语义：
+
+- 有 due task：顶层 `status=ok`，返回 `task`、`run`、`result` 和 `next_tasks`。
+- 无 due task 或 lease 未过期：顶层 `status=skipped`、`reason=no_due_task`。
+- task 执行异常：顶层 `status=failed`，run/task 均落库为 failed。
+
+安全边界：
+
+- 当前 task-chain 只做元调度、lease、run log 和 summary，不直接下单。
+- `paper_trade` task 仅表示模拟盘链路阶段，真实执行仍必须通过 dry-run / Futu `SIMULATE` 能力。
+- `daily_report` 当前输出结构化纠偏 reviewer verdict；真实 subagents review 后续由 Agent 层接入。
+
+### 8. `scripts/trading_daily_summary.py`
 
 用途：
 
@@ -335,7 +375,7 @@
   - `strategy_versions`
 - 默认输出遵循最小必要原则：只给用户盘后总结需要的计数、标的、策略版本、风控原因分布和行情首末变化；明细仅供调试或策略评审内部使用。
 
-### 8. `scripts/trading_strategy_review.py`
+### 9. `scripts/trading_strategy_review.py`
 
 用途：
 
@@ -372,7 +412,7 @@
   - `evidence`
   - `constraints`
 
-### 9. `scripts/trading_strategy_backtest.py`
+### 10. `scripts/trading_strategy_backtest.py`
 
 用途：
 

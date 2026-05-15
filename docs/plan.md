@@ -26,6 +26,7 @@
 - 本轮新增港股 IPO 暗盘 / OTC 只读 watch 入口：通过 API 内部 `grey_market_watch.py` 支持暗盘时段定时查询；Futu 为正式 provider，Tiger / Fosun 等未接入正式授权 API 时明确返回 `unsupported`
 - 本轮补齐 `/otc` skill 调用所需的 API contract：`grey_market_watch.py --once` 支持暗盘时段内单次查询，不受 scheduler tick 节流状态影响；默认 tick 模式继续服务 `--loop=300s` 这类定时轮询。
 - 本轮开始补齐更真实市场规则：新增 `futu_market_data.py symbol-rules`，从 Futu snapshot 暴露逐标的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值。
+- 本轮开始落实 Alpha / 模拟盘自迭代任务链：新增持久化 task-chain worker，先跑通 due task、lease、防重入、append-only run log、小时汇报和日终纠偏 review 结构。
 
 ## 最近完成项
 
@@ -153,6 +154,12 @@
   - 新增 `--fast-realtime` 低延迟模式，跳过每个标的串行 `stock_basic / etf_basic / quotation` 慢查询。
   - fast 模式直接使用旧版实时行情并保留现有 JSON contract，适合 Feishu 盯盘快照这类只需要价格、涨跌幅和名称的热路径。
   - 已用真实行情验证 14 个盯盘标的返回 `14/14`，不再触发外层 60s 调度超时。
+- 已新增 task-chain worker MVP：
+  - 新增 `src/repositories/task_chain_repository.py`，独立 SQLite task store，避免污染 trading ledger。
+  - 新增 `src/services/task_chain_service.py`、`src/services/task_chain_cli.py` 和 `scripts/task_chain.py`。
+  - 支持 `bootstrap` 创建第一颗任务，`tick` 每次只执行一个 due task。
+  - 支持 per-task lease、防重入、lease 过期恢复、append-only run log、小时总结和日终纠偏 review 结构。
+  - 当前只做元调度和结构化报告；真实 subagents review 后续由 Cli Claw / Agent 层接入。
 
 ## 当前状态
 
@@ -162,6 +169,7 @@
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
   - `scripts/grey_market_watch.py`
+  - `scripts/task_chain.py`
   - `scripts/trading_run_once.py`
   - `scripts/trading_scheduler_tick.py`
   - `scripts/trading_daily_summary.py`
@@ -199,6 +207,7 @@
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
+- `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，只负责 due task、lease、run log、summary 和 next task；不触发真实下单，不直接持有策略逻辑。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
 - Alpha 研究闭环 P0 contract 已完成：
   - `AlphaCandidate`：候选信号、因子值、分数、排名、原因和数据质量。

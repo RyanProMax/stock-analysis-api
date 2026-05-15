@@ -33,6 +33,7 @@ _EXPORT_MODULES = {
     "AlphaResearchLoopService": "alpha_research_loop_service",
     "AlphaUniverseSeedService": "alpha_universe_seed_service",
     "AlphaUniverseSeedStatusService": "alpha_universe_seed_status_service",
+    "TaskChainService": "task_chain_service",
 }
 
 __all__ = [
@@ -60,6 +61,7 @@ __all__ = [
     "AlphaResearchLoopService",
     "AlphaUniverseSeedService",
     "AlphaUniverseSeedStatusService",
+    "TaskChainService",
 ]
 
 
