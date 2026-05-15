@@ -389,3 +389,114 @@ def test_kol_scan_does_not_treat_assistant_prompt_as_final_report(tmp_path, monk
     assert result["reason"] == "stock_kol_intel_returns_assistant_prompt"
     assert "summary_markdown" not in result
     assert next_specs[0].task_type == "kol_scan"
+    assert next_specs[1].task_type == "strategy_iteration"
+    assert next_specs[1].priority == 45
+
+
+def test_kol_scan_does_not_interrupt_main_post_market_drain(tmp_path, monkeypatch):
+    skill_root = tmp_path / "stock-kol-intel"
+    command_dir = skill_root / "commands"
+    command_dir.mkdir(parents=True)
+    (command_dir / "kol.py").write_text("print('unused')", encoding="utf-8")
+    monkeypatch.setenv("STOCK_KOL_INTEL_ROOT", str(skill_root))
+
+    monkeypatch.setattr(
+        TaskChainService,
+        "_run_external_command",
+        staticmethod(
+            lambda *args, **kwargs: {
+                "status": "ok",
+                "stdout": json.dumps(
+                    {
+                        "reply": {
+                            "type": "assistant_prompt",
+                            "content": "build report",
+                        }
+                    }
+                ),
+                "stderr": "",
+                "returncode": 0,
+            }
+        ),
+    )
+    repository = SqliteTaskChainRepository(tmp_path / "task_chain.sqlite")
+    repository.create_task(
+        task_type="sector_review",
+        due_at="2026-05-15T10:01:00+00:00",
+        payload={"market": "hk_us"},
+    )
+    service = TaskChainService(repository)
+
+    result, next_specs = service._execute_task(
+        {"task_type": "kol_scan", "payload": {"market": "hk_us"}},
+        now="2026-05-15T10:00:00+00:00",
+    )
+
+    assert result["status"] == "agent_required"
+    assert [spec.task_type for spec in next_specs] == ["kol_scan"]
+
+
+def test_strategy_iteration_consumes_latest_intel_without_scheduling_daily_report(tmp_path):
+    task_db = str(tmp_path / "task_chain.sqlite")
+    repository = SqliteTaskChainRepository(task_db)
+    repository.create_task(
+        task_type="news_scan",
+        due_at="2026-05-15T10:00:00+00:00",
+        payload={"market": "hk_us"},
+        created_at="2026-05-15T10:00:00+00:00",
+        task_id="news-task",
+    )
+    run = repository.start_run(
+        task=repository.get_task("news-task"),
+        owner_id="tester",
+        started_at="2026-05-15T10:00:00+00:00",
+    )
+    repository.finish_run(
+        run_id=run["id"],
+        finished_at="2026-05-15T10:00:00+00:00",
+        status="ok",
+        output={
+            "task_type": "news_scan",
+            "report_type": "news_scan",
+            "status": "collected",
+            "cadence_minutes": 15,
+            "queries": ["US stocks today AI semiconductor software market news"],
+            "provider": "tavily_cli",
+            "results": [],
+        },
+    )
+    repository.complete_task(
+        task_id="news-task",
+        status="completed",
+        updated_at="2026-05-15T10:00:00+00:00",
+        result={"status": "collected"},
+    )
+
+    _run_cli(
+        "--task-db",
+        task_db,
+        "bootstrap",
+        "--task-type",
+        "strategy_iteration",
+        "--due-at",
+        "2026-05-15T10:01:00+00:00",
+        "--payload-json",
+        '{"market":"hk_us"}',
+    )
+
+    exit_code, payload = _run_cli(
+        "--task-db",
+        task_db,
+        "tick",
+        "--now",
+        "2026-05-15T10:01:00+00:00",
+        "--owner-id",
+        "worker-a",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["task"]["task_type"] == "strategy_iteration"
+    assert payload["result"]["report_type"] == "strategy_iteration"
+    assert payload["result"]["iteration_inputs"]["news_scan"]["status"] == "collected"
+    assert payload["next_tasks"] == []

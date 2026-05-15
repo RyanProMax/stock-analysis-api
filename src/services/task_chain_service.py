@@ -26,6 +26,7 @@ TASK_TYPES = {
     "kol_scan",
     "sector_review",
     "strategy_analysis",
+    "strategy_iteration",
     "daily_report",
 }
 
@@ -278,12 +279,15 @@ class TaskChainService:
 
         if task_type == "kol_scan":
             result = self._build_kol_scan(now_dt, payload=payload)
-            return result, self._next_recurring_scan(
+            return result, [
+                *self._next_recurring_scan(
                 "kol_scan",
                 now_dt,
                 payload,
                 interval_minutes=KOL_SCAN_INTERVAL_MINUTES,
-            )
+                ),
+                *self._next_strategy_iteration(now_dt, payload),
+            ]
 
         if task_type == "sector_review":
             result = self._build_sector_review(now_dt, payload=payload)
@@ -306,6 +310,10 @@ class TaskChainService:
                     priority=20,
                 )
             ]
+
+        if task_type == "strategy_iteration":
+            result = self._build_strategy_iteration(now_dt, payload=payload)
+            return result, []
 
         result = self._build_daily_report(now_dt, current_run_id=current_run_id)
         superseded = self.repository.supersede_pending_tasks(
@@ -609,6 +617,44 @@ class TaskChainService:
             "next_focus": "daily_report",
         }
 
+    def _build_strategy_iteration(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        runs = self.repository.list_runs_between(
+            period_start=_format_dt(day_start),
+            period_end=_format_dt(now),
+        )
+        inputs = self._latest_outputs_by_task_type(
+            runs,
+            task_types=["news_scan", "kol_scan", "sector_review", "strategy_analysis"],
+        )
+        analysis = self._build_strategy_analysis(now, payload=payload)
+        return {
+            **analysis,
+            "task_type": "strategy_iteration",
+            "report_type": "strategy_iteration",
+            "objective": "iterate_alpha_strategy_from_latest_market_intel",
+            "iteration_inputs": {
+                "news_scan": self._summarize_news_scan(inputs.get("news_scan")),
+                "kol_intel": self._summarize_kol_scan(inputs.get("kol_scan")),
+                "sector_view": self._summarize_sector_review(inputs.get("sector_review")),
+                "previous_strategy_analysis": self._summarize_strategy_analysis(
+                    inputs.get("strategy_analysis")
+                ),
+            },
+            "iteration_policy": {
+                "cadence": "after_kol_scan_when_no_main_drain_task_is_pending",
+                "paper_only": True,
+                "proposal_not_applied": True,
+                "requires_human_approval_before_activation": True,
+            },
+            "next_focus": "wait_for_next_intel_or_market_session",
+        }
+
     def _build_daily_report(
         self,
         now: datetime,
@@ -855,6 +901,35 @@ class TaskChainService:
                 priority=40,
             )
         ]
+
+    def _next_strategy_iteration(
+        self,
+        now: datetime,
+        payload: dict[str, Any],
+    ) -> list[NextTaskSpec]:
+        if payload.get("force_post_market_research") is True:
+            return []
+        if not self._is_post_market_research_window(now, payload=payload):
+            return []
+        if self._has_pending_or_running_task(
+            ["sector_review", "strategy_analysis", "strategy_iteration", "daily_report"]
+        ):
+            return []
+        return [
+            self._next(
+                "strategy_iteration",
+                now + timedelta(minutes=1),
+                payload,
+                priority=45,
+            )
+        ]
+
+    def _has_pending_or_running_task(self, task_types: list[str]) -> bool:
+        wanted = set(task_types)
+        for status in ["pending", "running"]:
+            if any(task["task_type"] in wanted for task in self.repository.list_tasks(status=status)):
+                return True
+        return False
 
     @staticmethod
     def _news_queries(payload: dict[str, Any]) -> list[str]:

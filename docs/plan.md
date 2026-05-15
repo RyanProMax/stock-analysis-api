@@ -173,6 +173,10 @@
   - `news_scan` 默认每 15 分钟自续，优先使用本机 `tvly` 搜索引擎 CLI；也支持通过 `TASK_CHAIN_NEWS_SEARCH_COMMAND` 替换为其他搜索命令。
   - `kol_scan` 默认每 30 分钟自续，复用现有 `stock-kol-intel` skill 的 `/kol --days=...` 预检与 assistant prompt；若 skill 返回的是 `assistant_prompt`，task-chain 标记为 `agent_required`，不把提示词误当最终情报报告。
   - 高频扫描任务 priority 低于主线日报 drain，避免新闻 / KOL 轮询抢占 `sector_review -> strategy_analysis -> daily_report`。
+- 已补齐盘后策略自迭代触发点：
+  - 新增 `strategy_iteration` task，KOL 扫描完成后如果当前没有 `sector_review / strategy_analysis / daily_report` 主线任务待执行，会在 1 分钟后触发一轮策略迭代。
+  - `strategy_iteration` 消费当天最新 `news_scan`、`kol_scan`、`sector_review` 和上一轮 `strategy_analysis` 摘要，再运行只读 Alpha research loop。
+  - 该任务不生成新的 `daily_report`，不写 registry、不 approve、不 activate、不触发 broker，避免把 30 分钟循环误扩成实盘自动交易。
 - 已启动第一轮真实港股 alpha research loop：
   - run id：`research-loop-20260515T0424189834140000`
   - 范围：`HK.00700,HK.09988,HK.03690,HK.00005`
@@ -226,7 +230,7 @@
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
-- `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，不触发真实下单、不 approve、不 activate。
+- `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，并在后续 KOL 扫描后追加 `strategy_iteration`；不触发真实下单、不 approve、不 activate。
 - `ops/com.ryan.stock-analysis-task-chain.plist` 当前只作为高频轻量 tick 的 launchd 配置；真实执行节奏由 task-chain 的 task `due_at` 决定。
 - 当前 task-chain 本地状态：LaunchAgent 已启动；`strategy_analysis` 已把真实 `AlphaResearchLoopService` 挂入 task-chain executor，但仍是只读 / paper-only，候选策略不会自动写 registry 或生效。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
