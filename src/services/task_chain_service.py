@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from ..repositories.task_chain_repository import SqliteTaskChainRepository
+from .alpha_research_loop_service import AlphaResearchLoopService
 
 TASK_TYPES = {
     "market_observe",
@@ -13,6 +15,9 @@ TASK_TYPES = {
     "judge_review",
     "paper_trade",
     "hourly_report",
+    "post_market_research",
+    "sector_review",
+    "strategy_analysis",
     "daily_report",
 }
 
@@ -22,6 +27,7 @@ class NextTaskSpec:
     task_type: str
     due_at: str
     payload: dict[str, Any]
+    priority: int = 100
 
 
 def _parse_dt(value: str | None) -> datetime:
@@ -44,8 +50,13 @@ def _status_counts(runs: list[dict[str, Any]]) -> dict[str, int]:
 class TaskChainService:
     """Runs one due atomic task and persists the next task decision."""
 
-    def __init__(self, repository: SqliteTaskChainRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: SqliteTaskChainRepository | None = None,
+        alpha_research_loop: AlphaResearchLoopService | None = None,
+    ) -> None:
         self.repository = repository or SqliteTaskChainRepository()
+        self.alpha_research_loop = alpha_research_loop or AlphaResearchLoopService()
 
     def bootstrap(
         self,
@@ -85,9 +96,7 @@ class TaskChainService:
                 "schedule": {"now": now},
             }
 
-        run = self.repository.start_run(
-            task=acquired, owner_id=owner_id, started_at=now
-        )
+        run = self.repository.start_run(task=acquired, owner_id=owner_id, started_at=now)
         try:
             result, next_specs = self._execute_task(
                 acquired,
@@ -100,6 +109,7 @@ class TaskChainService:
                     due_at=spec.due_at,
                     payload=spec.payload,
                     parent_task_id=acquired["id"],
+                    priority=spec.priority,
                     created_at=now,
                 )
                 for spec in next_specs
@@ -185,9 +195,7 @@ class TaskChainService:
                 "research_status": "queued_for_existing_alpha_research_loop",
                 "allowed_execution": "readonly_research_and_backtest_only",
             }
-            return result, [
-                self._next("judge_review", now_dt + timedelta(minutes=5), payload)
-            ]
+            return result, [self._next("judge_review", now_dt + timedelta(minutes=5), payload)]
 
         if task_type == "judge_review":
             result = {
@@ -196,9 +204,7 @@ class TaskChainService:
                 "review_status": "queued_for_independent_judge",
                 "gate_policy": "paper_trade_only_after_passed_verdict",
             }
-            return result, [
-                self._next("paper_trade", now_dt + timedelta(minutes=5), payload)
-            ]
+            return result, [self._next("paper_trade", now_dt + timedelta(minutes=5), payload)]
 
         if task_type == "paper_trade":
             result = {
@@ -207,35 +213,82 @@ class TaskChainService:
                 "execution_mode": "paper_only",
                 "write_policy": "ledger_only_no_live_order",
             }
-            return result, [
-                self._next("hourly_report", now_dt + timedelta(minutes=5), payload)
-            ]
+            return result, [self._next("hourly_report", now_dt + timedelta(minutes=5), payload)]
 
         if task_type == "hourly_report":
             result = self._build_hourly_report(
                 now_dt,
                 current_run_id=current_run_id,
+                payload=payload,
             )
+            if self._is_post_market_research_window(now_dt, payload=payload):
+                result["summary"]["next_focus"] = "post_market_research"
+                return result, [
+                    self._next(
+                        "post_market_research",
+                        now_dt + timedelta(minutes=1),
+                        payload,
+                        priority=20,
+                    )
+                ]
+            return result, [self._next("market_observe", now_dt + timedelta(hours=1), payload)]
+
+        if task_type == "post_market_research":
+            result = self._build_post_market_research(now_dt, payload=payload)
             return result, [
-                self._next("market_observe", now_dt + timedelta(hours=1), payload)
+                self._next(
+                    "sector_review",
+                    now_dt + timedelta(minutes=2),
+                    payload,
+                    priority=20,
+                )
+            ]
+
+        if task_type == "sector_review":
+            result = self._build_sector_review(now_dt, payload=payload)
+            return result, [
+                self._next(
+                    "strategy_analysis",
+                    now_dt + timedelta(minutes=2),
+                    payload,
+                    priority=20,
+                )
+            ]
+
+        if task_type == "strategy_analysis":
+            result = self._build_strategy_analysis(now_dt, payload=payload)
+            return result, [
+                self._next(
+                    "daily_report",
+                    now_dt + timedelta(minutes=2),
+                    payload,
+                    priority=20,
+                )
             ]
 
         result = self._build_daily_report(now_dt, current_run_id=current_run_id)
-        return result, [
-            self._next("market_observe", now_dt + timedelta(days=1), payload)
-        ]
+        superseded = self.repository.supersede_pending_tasks(
+            task_types=["market_observe"],
+            due_before=_format_dt(now_dt),
+            updated_at=_format_dt(now_dt),
+            reason="post_market_daily_report_completed",
+        )
+        result["superseded_pending_tasks"] = {
+            "market_observe": superseded,
+            "reason": "post_market_daily_report_completed",
+        }
+        return result, [self._next("market_observe", now_dt + timedelta(days=1), payload)]
 
     def _build_hourly_report(
         self,
         now: datetime,
         *,
         current_run_id: str | None,
+        payload: dict[str, Any],
     ) -> dict[str, Any]:
         period_end = _format_dt(now)
         period_start = _format_dt(now - timedelta(hours=1))
-        runs = self.repository.list_runs_between(
-            period_start=period_start, period_end=period_end
-        )
+        runs = self.repository.list_runs_between(period_start=period_start, period_end=period_end)
         runs = [run for run in runs if run.get("id") != current_run_id]
         summary = {
             "report_type": "hourly",
@@ -246,7 +299,11 @@ class TaskChainService:
                 "tasks_by_status": _status_counts(runs),
                 "simulated_orders": 0,
                 "risk_events": [],
-                "next_focus": "continue_task_chain",
+                "next_focus": (
+                    "post_market_research"
+                    if self._is_post_market_research_window(now, payload=payload)
+                    else "continue_task_chain"
+                ),
             },
         }
         self.repository.record_summary(
@@ -258,6 +315,108 @@ class TaskChainService:
         )
         return summary
 
+    def _build_post_market_research(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "task_type": "post_market_research",
+            "report_type": "post_market_research",
+            "computed_at": _format_dt(now),
+            "market": payload.get("market", "cn"),
+            "objective": "collect_after_close_market_news_kol_and_hotspots",
+            "research_streams": [
+                "market_hotspots",
+                "kol_watchlist",
+                "macro_and_liquidity_context",
+                "corporate_events",
+            ],
+            "status": "collected",
+            "write_policy": "append_only_task_run",
+            "next_focus": "sector_review",
+        }
+
+    def _build_sector_review(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "task_type": "sector_review",
+            "report_type": "sector_review",
+            "computed_at": _format_dt(now),
+            "market": payload.get("market", "cn"),
+            "objective": "summarize_sector_direction_and_trackable_targets",
+            "sector_view": {
+                "status": "summarized",
+                "trackable_direction_required": True,
+                "requires_symbols_or_etfs": True,
+                "source_policy": "only_verified_market_context",
+            },
+            "next_focus": "strategy_analysis",
+        }
+
+    def _build_strategy_analysis(
+        self,
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        markets = self._research_markets(payload)
+        research_results = []
+        for market in markets:
+            try:
+                research_results.append(
+                    self.alpha_research_loop.run(
+                        market=market,
+                        universe=str(payload.get("universe") or "tracked"),
+                        symbols=payload.get("symbols"),
+                        date=now.date().isoformat(),
+                        top=int(payload.get("top") or 10),
+                        allow_data_gaps=True,
+                        include_attempt_details=False,
+                        record_to_registry=False,
+                        run_id=f"task-chain-{market}-{now.date().isoformat()}",
+                    )
+                )
+            except Exception as exc:
+                research_results.append(
+                    {
+                        "status": "degraded",
+                        "source": "alpha_research_loop",
+                        "market": market,
+                        "error": str(exc),
+                    }
+                )
+        passed = sum(
+            1 for result in research_results if result.get("status") == "human_review_ready"
+        )
+        return {
+            "task_type": "strategy_analysis",
+            "report_type": "strategy_analysis",
+            "computed_at": _format_dt(now),
+            "objective": "run_alpha_research_loop_and_prepare_daily_review",
+            "markets": markets,
+            "status": "completed" if research_results else "empty",
+            "summary": {
+                "research_runs": len(research_results),
+                "human_review_ready": passed,
+                "needs_iteration": sum(
+                    1 for result in research_results if result.get("status") == "needs_iteration"
+                ),
+                "degraded": sum(
+                    1 for result in research_results if result.get("status") == "degraded"
+                ),
+                "proposal_not_applied": True,
+                "paper_only": True,
+            },
+            "research_results": research_results,
+            "next_focus": "daily_report",
+        }
+
     def _build_daily_report(
         self,
         now: datetime,
@@ -267,11 +426,17 @@ class TaskChainService:
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         period_start = _format_dt(day_start)
         period_end = _format_dt(now)
-        runs = self.repository.list_runs_between(
-            period_start=period_start, period_end=period_end
-        )
+        runs = self.repository.list_runs_between(period_start=period_start, period_end=period_end)
         runs = [run for run in runs if run.get("id") != current_run_id]
         failed_count = sum(1 for run in runs if run.get("status") == "failed")
+        post_market_outputs = self._latest_outputs_by_task_type(
+            runs,
+            task_types=[
+                "post_market_research",
+                "sector_review",
+                "strategy_analysis",
+            ],
+        )
         correction_reviews = self._build_correction_reviews(failed_count=failed_count)
         summary = {
             "report_type": "daily",
@@ -283,7 +448,13 @@ class TaskChainService:
                 "policy": "paper_only",
             },
             "positions": {"status": "paper_ledger_pending"},
-            "sector_view": {"status": "pending_market_context"},
+            "market_research": self._summarize_post_market_research(
+                post_market_outputs.get("post_market_research")
+            ),
+            "sector_view": self._summarize_sector_review(post_market_outputs.get("sector_review")),
+            "strategy_analysis": self._summarize_strategy_analysis(
+                post_market_outputs.get("strategy_analysis")
+            ),
             "tasks": {
                 "total": len(runs),
                 "by_status": _status_counts(runs),
@@ -304,11 +475,85 @@ class TaskChainService:
         return summary
 
     @staticmethod
+    def _is_post_market_research_window(
+        now: datetime,
+        *,
+        payload: dict[str, Any],
+    ) -> bool:
+        if payload.get("force_post_market_research") is True:
+            return True
+        local = now.astimezone(ZoneInfo("Asia/Shanghai"))
+        return time(15, 30) <= local.time() <= time(23, 59)
+
+    @staticmethod
+    def _research_markets(payload: dict[str, Any]) -> list[str]:
+        raw = str(payload.get("market") or "cn").strip().lower()
+        if raw in {"hk_us", "hk-us", "hk,us"}:
+            return ["hk", "us"]
+        if raw in {"all", "global"}:
+            return ["cn", "hk", "us"]
+        if raw in {"cn", "hk", "us"}:
+            return [raw]
+        return ["cn"]
+
+    @staticmethod
+    def _latest_outputs_by_task_type(
+        runs: list[dict[str, Any]],
+        *,
+        task_types: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        wanted = set(task_types)
+        outputs: dict[str, dict[str, Any]] = {}
+        for run in runs:
+            task_type = str(run.get("task_type") or "")
+            if task_type not in wanted:
+                continue
+            output = run.get("output") if isinstance(run.get("output"), dict) else {}
+            outputs[task_type] = output
+        return outputs
+
+    @staticmethod
+    def _summarize_post_market_research(output: dict[str, Any] | None) -> dict[str, Any]:
+        if not output:
+            return {"status": "missing", "reason": "post_market_research_not_run"}
+        return {
+            "status": "summarized",
+            "streams": output.get("research_streams") or [],
+            "next_focus": output.get("next_focus"),
+        }
+
+    @staticmethod
+    def _summarize_sector_review(output: dict[str, Any] | None) -> dict[str, Any]:
+        if not output:
+            return {"status": "missing", "reason": "sector_review_not_run"}
+        sector_view = (
+            output.get("sector_view") if isinstance(output.get("sector_view"), dict) else {}
+        )
+        return {
+            "status": "summarized",
+            "trackable_direction_required": bool(sector_view.get("trackable_direction_required")),
+            "requires_symbols_or_etfs": bool(sector_view.get("requires_symbols_or_etfs")),
+        }
+
+    @staticmethod
+    def _summarize_strategy_analysis(output: dict[str, Any] | None) -> dict[str, Any]:
+        if not output:
+            return {"status": "missing", "reason": "strategy_analysis_not_run"}
+        summary = output.get("summary") if isinstance(output.get("summary"), dict) else {}
+        return {
+            "status": "summarized",
+            "research_runs": int(summary.get("research_runs") or 0),
+            "human_review_ready": int(summary.get("human_review_ready") or 0),
+            "needs_iteration": int(summary.get("needs_iteration") or 0),
+            "degraded": int(summary.get("degraded") or 0),
+            "proposal_not_applied": bool(summary.get("proposal_not_applied", True)),
+            "paper_only": bool(summary.get("paper_only", True)),
+        }
+
+    @staticmethod
     def _build_correction_reviews(*, failed_count: int) -> list[dict[str, Any]]:
         verdict = "warn" if failed_count else "pass"
-        base_issue = (
-            [] if failed_count == 0 else ["task_failures_need_review_before_next_trade"]
-        )
+        base_issue = [] if failed_count == 0 else ["task_failures_need_review_before_next_trade"]
         return [
             {
                 "role": "trade_auditor",
@@ -320,9 +565,7 @@ class TaskChainService:
                 "role": "strategy_reviewer",
                 "verdict": verdict,
                 "major_issues": base_issue,
-                "correction_actions": [
-                    "compare_candidate_against_champion_and_backtest"
-                ],
+                "correction_actions": ["compare_candidate_against_champion_and_backtest"],
             },
             {
                 "role": "risk_reviewer",
@@ -348,10 +591,17 @@ class TaskChainService:
 
     @staticmethod
     def _next(
-        task_type: str, due_at: datetime, payload: dict[str, Any]
+        task_type: str,
+        due_at: datetime,
+        payload: dict[str, Any],
+        *,
+        priority: int = 100,
     ) -> NextTaskSpec:
         return NextTaskSpec(
-            task_type=task_type, due_at=_format_dt(due_at), payload=payload
+            task_type=task_type,
+            due_at=_format_dt(due_at),
+            payload=payload,
+            priority=int(priority),
         )
 
     @staticmethod

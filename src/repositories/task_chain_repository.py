@@ -174,7 +174,9 @@ class SqliteTaskChainRepository:
 
     def list_tasks(self, *, status: str | None = None) -> list[dict[str, Any]]:
         if status:
-            sql = "SELECT * FROM task_chain_tasks WHERE status = ? ORDER BY due_at ASC, priority ASC"
+            sql = (
+                "SELECT * FROM task_chain_tasks WHERE status = ? ORDER BY due_at ASC, priority ASC"
+            )
             params: tuple[Any, ...] = (status,)
         else:
             sql = "SELECT * FROM task_chain_tasks ORDER BY due_at ASC, priority ASC"
@@ -312,16 +314,54 @@ class SqliteTaskChainRepository:
             raise RuntimeError("completed task cannot be loaded")
         return task
 
+    def supersede_pending_tasks(
+        self,
+        *,
+        task_types: list[str],
+        due_before: str,
+        updated_at: str,
+        reason: str,
+    ) -> int:
+        normalized_types = [
+            str(task_type).strip() for task_type in task_types if str(task_type).strip()
+        ]
+        if not normalized_types:
+            return 0
+        placeholders = ", ".join("?" for _ in normalized_types)
+        result = {
+            "status": "superseded",
+            "reason": str(reason or "superseded"),
+            "superseded_at": updated_at,
+        }
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE task_chain_tasks
+                SET status = 'completed',
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    result_json = ?,
+                    error = NULL,
+                    updated_at = ?
+                WHERE status = 'pending'
+                  AND task_type IN ({placeholders})
+                  AND due_at <= ?
+                """,
+                (
+                    _json_dumps(result),
+                    updated_at,
+                    *normalized_types,
+                    due_before,
+                ),
+            )
+        return int(cursor.rowcount or 0)
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM task_chain_runs WHERE id = ?", (run_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM task_chain_runs WHERE id = ?", (run_id,)).fetchone()
         return self._run_from_row(row) if row is not None else None
 
-    def list_runs_between(
-        self, *, period_start: str, period_end: str
-    ) -> list[dict[str, Any]]:
+    def list_runs_between(self, *, period_start: str, period_end: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
                 """
@@ -370,11 +410,11 @@ class SqliteTaskChainRepository:
             ).fetchone()
         return self._summary_from_row(row) if row is not None else None
 
-    def list_summaries(
-        self, *, summary_type: str | None = None
-    ) -> list[dict[str, Any]]:
+    def list_summaries(self, *, summary_type: str | None = None) -> list[dict[str, Any]]:
         if summary_type:
-            sql = "SELECT * FROM task_chain_summaries WHERE summary_type = ? ORDER BY period_end ASC"
+            sql = (
+                "SELECT * FROM task_chain_summaries WHERE summary_type = ? ORDER BY period_end ASC"
+            )
             params: tuple[Any, ...] = (summary_type,)
         else:
             sql = "SELECT * FROM task_chain_summaries ORDER BY period_end ASC"

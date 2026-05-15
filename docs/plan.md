@@ -163,6 +163,11 @@
   - 当前只做元调度和结构化报告；真实 subagents review 后续由 Cli Claw / Agent 层接入。
   - 本地已安装并启动 `com.ryan.stock-analysis-task-chain` LaunchAgent；RunAtLoad / StartInterval 路径已验证，`launchd-task-chain` 自动把 `alpha_mine` 推进到 `judge_review`。
   - 已初始化 `.cache/task_chain.sqlite` 的模拟盘自迭代链路，当前只读 / paper-only。
+- 已修正 task-chain 执行节奏：
+  - 盘中 `hourly_report` 继续按 1h 排下一轮观察；盘后不再等待 1h。
+  - 盘后时段 `hourly_report` 会在 1 分钟后进入 `post_market_research`，随后按分钟级连续执行 `sector_review`、`strategy_analysis`、`daily_report`。
+  - `strategy_analysis` 已接入 `AlphaResearchLoopService`，串联 alpha daily report 与 judge gate；只输出候选/阻断结论，不写 registry、不 approve、不 activate、不触发 broker。
+  - `daily_report` 会汇总本轮盘后市场/KOL热点、板块复盘和策略分析状态，避免日终报告仍是空壳。
 - 已启动第一轮真实港股 alpha research loop：
   - run id：`research-loop-20260515T0424189834140000`
   - 范围：`HK.00700,HK.09988,HK.03690,HK.00005`
@@ -216,9 +221,9 @@
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
-- `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，只负责 due task、lease、run log、summary 和 next task；不触发真实下单，不直接持有策略逻辑。
+- `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> sector_review -> strategy_analysis -> daily_report`，不触发真实下单、不 approve、不 activate。
 - `ops/com.ryan.stock-analysis-task-chain.plist` 当前只作为高频轻量 tick 的 launchd 配置；真实执行节奏由 task-chain 的 task `due_at` 决定。
-- 当前 task-chain 本地状态：LaunchAgent 已启动，下一颗自动任务为 `judge_review`；真实 alpha 挖掘已单独跑通并落 registry，但尚未把真实 `alpha_research_loop.py` 直接挂入 task-chain executor。
+- 当前 task-chain 本地状态：LaunchAgent 已启动；`strategy_analysis` 已把真实 `AlphaResearchLoopService` 挂入 task-chain executor，但仍是只读 / paper-only，候选策略不会自动写 registry 或生效。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
 - Alpha 研究闭环 P0 contract 已完成：
   - `AlphaCandidate`：候选信号、因子值、分数、排名、原因和数据质量。
@@ -295,7 +300,8 @@
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
 - 后续如需更真实的回测，再补交易成本、滑点、成交量约束和分钟线 / tick 级执行模型
 - 按 `PLAN/ROADMAP.md` 继续推进 P3 快速回测引擎升级；native MVP 已落地，后续补参数搜索、滑点 / 成交约束和模拟盘 ledger 对照；保持默认只读或 dry-run，不允许真实交易
-- task-chain 下一步把 `alpha_mine` 接入真实 `alpha_research_loop.py --record-to-registry`，而不是仅写结构化占位结果；`judge_review` / `daily_report` 后续接入 Cli Claw subagents 的独立 review 汇总。
+- task-chain 下一步需要把 `post_market_research` 接入真实新闻/KOL provider，并让 `sector_review` 输出可跟踪股票方向及典型标的/ETF。
+- `judge_review` / `daily_report` 后续接入 Cli Claw subagents 的独立 review 汇总。
 - 小时汇报下一步需要改成用户报告形态：本小时操作、持仓现状、板块观点和下一步计划。
 - 将 blocked run 的 `next_research_actions` 反向生成下一颗探索任务，优先扩 universe / 因子方向，而不是重复同一批因子。
 

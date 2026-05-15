@@ -221,6 +221,89 @@ def test_hourly_report_records_summary_and_schedules_next_observation(tmp_path):
     assert summaries[0]["summary"]["report_type"] == "hourly"
 
 
+def test_hourly_report_enters_post_market_research_pipeline_after_close(tmp_path):
+    task_db = str(tmp_path / "task_chain.sqlite")
+    _run_cli(
+        "--task-db",
+        task_db,
+        "bootstrap",
+        "--task-type",
+        "hourly_report",
+        "--due-at",
+        "2026-05-15T08:40:00+00:00",
+        "--payload-json",
+        '{"market":"hk_us"}',
+    )
+
+    exit_code, payload = _run_cli(
+        "--task-db",
+        task_db,
+        "tick",
+        "--now",
+        "2026-05-15T08:40:00+00:00",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["result"]["summary"]["next_focus"] == "post_market_research"
+    assert payload["next_tasks"][0]["task_type"] == "post_market_research"
+    assert payload["next_tasks"][0]["due_at"] == "2026-05-15T08:41:00+00:00"
+    assert payload["next_tasks"][0]["priority"] == 20
+
+
+def test_post_market_pipeline_drains_without_hourly_wait(tmp_path):
+    task_db = str(tmp_path / "task_chain.sqlite")
+    repository = SqliteTaskChainRepository(task_db)
+    _run_cli(
+        "--task-db",
+        task_db,
+        "bootstrap",
+        "--task-type",
+        "post_market_research",
+        "--due-at",
+        "2026-05-15T08:41:00+00:00",
+        "--payload-json",
+        '{"market":"hk_us"}',
+    )
+    stale_observe = repository.create_task(
+        task_type="market_observe",
+        due_at="2026-05-15T08:46:00+00:00",
+        payload={"market": "hk_us"},
+        created_at="2026-05-15T08:40:00+00:00",
+    )
+
+    expected = [
+        ("2026-05-15T08:41:00+00:00", "post_market_research", "sector_review"),
+        ("2026-05-15T08:43:00+00:00", "sector_review", "strategy_analysis"),
+        ("2026-05-15T08:45:00+00:00", "strategy_analysis", "daily_report"),
+        ("2026-05-15T08:47:00+00:00", "daily_report", "market_observe"),
+    ]
+
+    for now, task_type, next_task_type in expected:
+        exit_code, payload = _run_cli(
+            "--task-db",
+            task_db,
+            "tick",
+            "--now",
+            now,
+            "--owner-id",
+            "worker-a",
+        )
+        assert exit_code == 0
+        assert payload["status"] == "ok"
+        assert payload["task"]["task_type"] == task_type
+        assert payload["next_tasks"][0]["task_type"] == next_task_type
+        if next_task_type != "market_observe":
+            assert payload["next_tasks"][0]["priority"] == 20
+
+    assert payload["result"]["report_type"] == "daily"
+    assert payload["result"]["superseded_pending_tasks"]["market_observe"] == 1
+    assert payload["result"]["market_research"]["status"] == "summarized"
+    assert payload["result"]["sector_view"]["status"] == "summarized"
+    assert payload["result"]["strategy_analysis"]["status"] == "summarized"
+    assert repository.get_task(stale_observe["id"])["result"]["status"] == "superseded"
+
+
 def test_daily_report_contains_correction_reviews_and_next_day_plan(tmp_path):
     task_db = str(tmp_path / "task_chain.sqlite")
     _run_cli(
@@ -252,8 +335,7 @@ def test_daily_report_contains_correction_reviews_and_next_day_plan(tmp_path):
         "contrarian_reviewer",
     ]
     assert all(
-        review["verdict"] in {"pass", "warn", "fail"}
-        for review in result["correction_reviews"]
+        review["verdict"] in {"pass", "warn", "fail"} for review in result["correction_reviews"]
     )
     assert payload["next_tasks"][0]["task_type"] == "market_observe"
 
