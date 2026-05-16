@@ -388,8 +388,44 @@ def test_kol_scan_does_not_treat_assistant_prompt_as_final_report(tmp_path, monk
     assert result["status"] == "agent_required"
     assert result["reason"] == "stock_kol_intel_returns_assistant_prompt"
     assert "summary_markdown" not in result
-    assert next_specs[0].task_type == "kol_scan"
-    assert next_specs[1].task_type == "strategy_iteration"
+    assert [spec.task_type for spec in next_specs] == ["kol_scan"]
+
+
+def test_kol_scan_with_final_report_can_trigger_strategy_iteration(tmp_path, monkeypatch):
+    skill_root = tmp_path / "stock-kol-intel"
+    command_dir = skill_root / "commands"
+    command_dir.mkdir(parents=True)
+    (command_dir / "kol.py").write_text("print('unused')", encoding="utf-8")
+    monkeypatch.setenv("STOCK_KOL_INTEL_ROOT", str(skill_root))
+
+    monkeypatch.setattr(
+        TaskChainService,
+        "_run_external_command",
+        staticmethod(
+            lambda *args, **kwargs: {
+                "status": "ok",
+                "stdout": json.dumps(
+                    {
+                        "reply": {
+                            "final_markdown": "KOL 共识：AI 算力链继续占优，跟踪半导体与云厂商。",
+                        }
+                    }
+                ),
+                "stderr": "",
+                "returncode": 0,
+            }
+        ),
+    )
+    service = TaskChainService(SqliteTaskChainRepository(tmp_path / "task_chain.sqlite"))
+
+    result, next_specs = service._execute_task(
+        {"task_type": "kol_scan", "payload": {"market": "hk_us"}},
+        now="2026-05-15T10:00:00+00:00",
+    )
+
+    assert result["status"] == "collected"
+    assert result["content_chars"] > 0
+    assert [spec.task_type for spec in next_specs] == ["kol_scan", "strategy_iteration"]
     assert next_specs[1].priority == 45
 
 

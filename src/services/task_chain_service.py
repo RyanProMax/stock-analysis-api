@@ -279,15 +279,15 @@ class TaskChainService:
 
         if task_type == "kol_scan":
             result = self._build_kol_scan(now_dt, payload=payload)
-            return result, [
-                *self._next_recurring_scan(
+            next_specs = self._next_recurring_scan(
                 "kol_scan",
                 now_dt,
                 payload,
                 interval_minutes=KOL_SCAN_INTERVAL_MINUTES,
-                ),
-                *self._next_strategy_iteration(now_dt, payload),
-            ]
+            )
+            if self._is_actionable_kol_scan(result):
+                next_specs.extend(self._next_strategy_iteration(now_dt, payload))
+            return result, next_specs
 
         if task_type == "sector_review":
             result = self._build_sector_review(now_dt, payload=payload)
@@ -923,6 +923,12 @@ class TaskChainService:
                 priority=45,
             )
         ]
+
+    @staticmethod
+    def _is_actionable_kol_scan(result: dict[str, Any]) -> bool:
+        if result.get("status") != "collected":
+            return False
+        return int(result.get("content_chars") or 0) > 0
 
     def _has_pending_or_running_task(self, task_types: list[str]) -> bool:
         wanted = set(task_types)

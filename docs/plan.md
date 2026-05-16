@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-15
+更新时间：2026-05-16
 
 ## 当前目标
 
@@ -27,6 +27,7 @@
 - 本轮补齐 `/otc` skill 调用所需的 API contract：`grey_market_watch.py --once` 支持暗盘时段内单次查询，不受 scheduler tick 节流状态影响；默认 tick 模式继续服务 `--loop=300s` 这类定时轮询。
 - 本轮开始补齐更真实市场规则：新增 `futu_market_data.py symbol-rules`，从 Futu snapshot 暴露逐标的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值。
 - 本轮开始落实 Alpha / 模拟盘自迭代任务链：新增持久化 task-chain worker，先跑通 due task、lease、防重入、append-only run log、小时汇报和日终纠偏 review 结构。
+- 本轮收紧 task-chain 策略迭代门槛：KOL 预检返回 `agent_required` 时只代表需要 Agent 生成最终报告，不能触发 `strategy_iteration`；策略迭代必须等到 KOL 情报正文落地后才消费新闻 / KOL / 板块输入。
 
 ## 最近完成项
 
@@ -183,6 +184,9 @@
   - 因子：`momentum_5d,momentum_20d,volatility_5d,volume_change_5d`
   - 结果：`needs_iteration`，4 个候选因子全部被 judge gate 阻断，未产生可人工审核策略。
   - 已落入 `.cache/strategy_registry.sqlite`，用于后续 drift / 对比复盘。
+- 已修正 KOL 预检误触发策略迭代的问题：
+  - `kol_scan status=agent_required` 不再排出 `strategy_iteration`，避免把 assistant prompt 当作策略输入。
+  - 只有 `kol_scan status=collected` 且已有正文内容时，才会在主线 drain 完成后触发后续策略迭代。
 
 ## 当前状态
 
@@ -231,6 +235,7 @@
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
 - `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，并在后续 KOL 扫描后追加 `strategy_iteration`；不触发真实下单、不 approve、不 activate。
+- `strategy_iteration` 当前只接受可行动 KOL 情报作为触发输入；`agent_required` / degraded / skipped KOL 结果会暂停策略迭代，避免在没有真实策略输入时重复扫描和复跑。
 - `ops/com.ryan.stock-analysis-task-chain.plist` 当前只作为高频轻量 tick 的 launchd 配置；真实执行节奏由 task-chain 的 task `due_at` 决定。
 - 当前 task-chain 本地状态：LaunchAgent 已启动；`strategy_analysis` 已把真实 `AlphaResearchLoopService` 挂入 task-chain executor，但仍是只读 / paper-only，候选策略不会自动写 registry 或生效。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。
@@ -313,6 +318,7 @@
 - `judge_review` / `daily_report` 后续接入 Cli Claw subagents 的独立 review 汇总。
 - 小时汇报下一步需要改成用户报告形态：本小时操作、持仓现状、板块观点和下一步计划。
 - 将 blocked run 的 `next_research_actions` 反向生成下一颗探索任务，优先扩 universe / 因子方向，而不是重复同一批因子。
+- 接入 Cli Claw / Agent 层执行 `stock-kol-intel` 返回的 assistant prompt，把 `agent_required` 转成可落库的 KOL 情报报告；否则策略迭代应继续暂停。
 
 ## 已知风险与阻塞
 
@@ -323,6 +329,7 @@
 - Futu/OpenD 依赖本机 OpenD 进程、端口和权限；单元测试必须使用 fake gateway / broker，不能依赖真实网络或真实账户。
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
+- KOL 预检不是 KOL 情报本身；`agent_required` 期间继续触发策略迭代只会重复消费占位输入，必须先由 Agent 生成最终 KOL 报告。
 - SQLite ledger 已能跨进程复用 `idempotency_key` 去重，`trading_run_once.py` 默认调度锁已覆盖单机并发 worker；后续若多机部署，需要替换为共享锁或集中式调度。
 - P1 `alpha_scan.py` 的 score 只是首批确定性因子排序；P2 `alpha_evaluate.py` 也只是历史样本统计，不代表策略已可生效。P6 `alpha_daily_report.py` 只生成候选 proposal，不写 registry、不生效策略；P5 worker 当前只读 active strategy 和生成 watch summary。`alpha_research_loop.py` 只做离线编排，不等于真实多 Agent 运行时。Judge verdict passed 只代表可进入人工审核，不等于 approval；策略进入 active 前仍必须经过 P4 人工审批记录。
 - MarketSpec 当前成本仍是估算默认值，不等于券商真实费率、完整滑点模型或交易所完整规则；生产回测前需要补逐标的 HK lot size、tick ladder、费用明细、交易日历和 corporate action。

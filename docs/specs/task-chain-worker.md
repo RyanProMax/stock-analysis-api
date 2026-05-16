@@ -122,6 +122,13 @@ daily_report
 -> market_observe
 ```
 
+盘后新闻 / KOL / 策略迭代的调度规则：
+
+- `news_scan` 可以按 15 分钟自续，用于保留外部市场热点证据。
+- `kol_scan` 可以按 30 分钟自续，但只有产出最终 KOL 情报正文（`status=collected` 且 `content_chars > 0`）时，才能在主线 drain 完成后排出 `strategy_iteration`。
+- `kol_scan status=agent_required` 只表示 `stock-kol-intel` 返回了 Agent prompt，不能当作最终情报报告，也不能触发策略迭代。
+- `strategy_iteration` 只读消费最新新闻、KOL、板块和上一轮策略分析摘要，不写 registry、不 approve、不 activate、不触发 broker。
+
 `daily_report` 必须包含纠偏 review 结构：
 
 - `trade_auditor`
