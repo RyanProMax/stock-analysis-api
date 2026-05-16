@@ -115,12 +115,30 @@ class SqliteTaskChainRepository:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS task_chain_agent_handoffs (
+                    id TEXT PRIMARY KEY,
+                    source_task_id TEXT,
+                    source_run_id TEXT,
+                    task_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    prompt_json TEXT NOT NULL,
+                    prompt_text TEXT NOT NULL,
+                    result_json TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    claimed_by TEXT,
+                    claimed_at TEXT
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_task_chain_tasks_due
                     ON task_chain_tasks(status, due_at, priority);
                 CREATE INDEX IF NOT EXISTS idx_task_chain_runs_task
                     ON task_chain_runs(task_id, started_at);
                 CREATE INDEX IF NOT EXISTS idx_task_chain_summaries_type
                     ON task_chain_summaries(summary_type, period_end);
+                CREATE INDEX IF NOT EXISTS idx_task_chain_agent_handoffs_status
+                    ON task_chain_agent_handoffs(status, created_at);
             """)
 
     def create_task(
@@ -423,6 +441,148 @@ class SqliteTaskChainRepository:
             rows = conn.execute(sql, params).fetchall()
         return [self._summary_from_row(row) for row in rows]
 
+    def create_agent_handoff(
+        self,
+        *,
+        source_task_id: str | None,
+        source_run_id: str | None,
+        task_type: str,
+        prompt_text: str,
+        prompt_json: dict[str, Any] | None = None,
+        created_at: str | None = None,
+        handoff_id: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_task_type = str(task_type or "").strip()
+        if not normalized_task_type:
+            raise ValueError("task_type must not be empty")
+        handoff_id = handoff_id or str(uuid.uuid4())
+        now = created_at or _utc_now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_chain_agent_handoffs (
+                    id, source_task_id, source_run_id, task_type, status,
+                    prompt_json, prompt_text, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (
+                    handoff_id,
+                    source_task_id,
+                    source_run_id,
+                    normalized_task_type,
+                    _json_dumps(prompt_json or {}),
+                    str(prompt_text or ""),
+                    now,
+                    now,
+                ),
+            )
+        handoff = self.get_agent_handoff(handoff_id)
+        if handoff is None:
+            raise RuntimeError("created agent handoff cannot be loaded")
+        return handoff
+
+    def get_agent_handoff(self, handoff_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM task_chain_agent_handoffs WHERE id = ?",
+                (handoff_id,),
+            ).fetchone()
+        return self._agent_handoff_from_row(row) if row is not None else None
+
+    def list_agent_handoffs(self, *, status: str | None = None) -> list[dict[str, Any]]:
+        if status:
+            sql = (
+                "SELECT * FROM task_chain_agent_handoffs "
+                "WHERE status = ? ORDER BY created_at ASC"
+            )
+            params: tuple[Any, ...] = (status,)
+        else:
+            sql = "SELECT * FROM task_chain_agent_handoffs ORDER BY created_at ASC"
+            params = ()
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._agent_handoff_from_row(row) for row in rows]
+
+    def claim_agent_handoff(
+        self,
+        *,
+        handoff_id: str,
+        claimed_by: str,
+        claimed_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        claimant = str(claimed_by or "").strip()
+        if not claimant:
+            raise ValueError("claimed_by must not be empty")
+        now = claimed_at or _utc_now()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.execute(
+                """
+                UPDATE task_chain_agent_handoffs
+                SET status = 'claimed',
+                    claimed_by = ?,
+                    claimed_at = ?,
+                    updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (claimant, now, now, handoff_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = conn.execute(
+                "SELECT * FROM task_chain_agent_handoffs WHERE id = ?",
+                (handoff_id,),
+            ).fetchone()
+        return self._agent_handoff_from_row(row) if row is not None else None
+
+    def complete_agent_handoff(
+        self,
+        *,
+        handoff_id: str,
+        result: dict[str, Any] | None = None,
+        completed_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        now = completed_at or _utc_now()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE task_chain_agent_handoffs
+                SET status = 'completed',
+                    result_json = ?,
+                    error = NULL,
+                    updated_at = ?
+                WHERE id = ? AND status IN ('pending', 'claimed')
+                """,
+                (_json_dumps(result or {}), now, handoff_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_agent_handoff(handoff_id)
+
+    def fail_agent_handoff(
+        self,
+        *,
+        handoff_id: str,
+        error: str,
+        failed_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        now = failed_at or _utc_now()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE task_chain_agent_handoffs
+                SET status = 'failed',
+                    error = ?,
+                    updated_at = ?
+                WHERE id = ? AND status IN ('pending', 'claimed')
+                """,
+                (str(error or ""), now, handoff_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_agent_handoff(handoff_id)
+
     @staticmethod
     def _task_from_row(row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -465,4 +625,22 @@ class SqliteTaskChainRepository:
             "period_end": row["period_end"],
             "summary": _json_loads(row["summary_json"]),
             "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _agent_handoff_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "source_task_id": row["source_task_id"],
+            "source_run_id": row["source_run_id"],
+            "task_type": row["task_type"],
+            "status": row["status"],
+            "prompt_json": _json_loads(row["prompt_json"]),
+            "prompt_text": row["prompt_text"],
+            "result_json": _json_loads(row["result_json"]),
+            "error": row["error"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "claimed_by": row["claimed_by"],
+            "claimed_at": row["claimed_at"],
         }

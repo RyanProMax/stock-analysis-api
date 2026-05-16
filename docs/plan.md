@@ -28,6 +28,8 @@
 - 本轮开始补齐更真实市场规则：新增 `futu_market_data.py symbol-rules`，从 Futu snapshot 暴露逐标的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值。
 - 本轮开始落实 Alpha / 模拟盘自迭代任务链：新增持久化 task-chain worker，先跑通 due task、lease、防重入、append-only run log、小时汇报和日终纠偏 review 结构。
 - 本轮收紧 task-chain 策略迭代门槛：KOL 预检返回 `agent_required` 时只代表需要 Agent 生成最终报告，不能触发 `strategy_iteration`；策略迭代必须等到 KOL 情报正文落地后才消费新闻 / KOL / 板块输入。
+- 本轮将 `PLAN/ROADMAP.md` 从旧 Alpha / 回测路线图更新为 agentic strategy loop 路线图：P0 当前事实核查、P1 agent handoff queue、P2 Cli Claw scheduled-agent bridge、P3 KOL / news / sector / daily report semantic review、P4 strategy proposal human review / registry gate、P5 de-hardcode watchlist / thresholds、P6 observability / replay / eval。
+- 本轮新增 `docs/specs/agentic-strategy-loop.md`，明确第一阶段只做可审计 handoff queue 和 CLI contract；不自动运行 agent、不自动下单、不自动 approve、不自动 activate。
 
 ## 最近完成项
 
@@ -187,6 +189,15 @@
 - 已修正 KOL 预检误触发策略迭代的问题：
   - `kol_scan status=agent_required` 不再排出 `strategy_iteration`，避免把 assistant prompt 当作策略输入。
   - 只有 `kol_scan status=collected` 且已有正文内容时，才会在主线 drain 完成后触发后续策略迭代。
+- 已补齐 agentic strategy loop 文档规划：
+  - `PLAN/ROADMAP.md` 现在聚焦从确定性 task-chain 升级到 agent handoff / review / 回写 / human registry gate 的闭环。
+  - 新增 `docs/specs/agentic-strategy-loop.md`，定义 `AgentHandoffItem`、`AgentHandoffEvent`、`AgentHandoffOutput`、role policy、CLI contract、validation rules 和第一阶段验收。
+  - 明确 `agent_required` 不是 agent 执行结果，不能当作 KOL 正文、策略输入或 approval evidence。
+- 已完成 agent handoff queue P1a MVP：
+  - 新增 `task_chain_agent_handoffs` 持久化表与 repository 方法。
+  - `kol_scan` 收到 `assistant_prompt` 时创建 pending handoff，并返回 `handoff_id`、`prompt_chars`、`prompt_preview`；完整 prompt 只保存在 handoff 表，不把 prompt preview 当正文。
+  - `scripts/task_chain.py handoff list|claim|complete|fail` 输出严格 JSON，供后续 Cli Claw bridge 消费。
+  - 当前仍不自动运行 agent、不写 registry、不 approve、不 activate；P1b 继续补 input hash、role policy、lease TTL、append-only event、schema validation 和 replay。
 
 ## 当前状态
 
@@ -236,6 +247,7 @@
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
 - `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，并在后续 KOL 扫描后追加 `strategy_iteration`；不触发真实下单、不 approve、不 activate。
 - `strategy_iteration` 当前只接受可行动 KOL 情报作为触发输入；`agent_required` / degraded / skipped KOL 结果会暂停策略迭代，避免在没有真实策略输入时重复扫描和复跑。
+- 当前 agentic strategy loop 第一阶段已落地 P1a handoff queue MVP：`kol_scan status=agent_required` 会创建 `task_chain_agent_handoffs` pending 记录，`scripts/task_chain.py handoff list|claim|complete|fail` 可供外部 Cli Claw / scheduled agent 审计消费；仍不自动调用 agent、不自动写 registry、不自动 approve / activate。P1b 还需补 input hash、role policy、lease TTL、append-only handoff events、schema validation 和 replay。
 - `ops/com.ryan.stock-analysis-task-chain.plist` 当前只作为高频轻量 tick 的 launchd 配置；真实执行节奏由 task-chain 的 task `due_at` 决定。
 - 当前 task-chain 本地状态：LaunchAgent 已启动；`strategy_analysis` 已把真实 `AlphaResearchLoopService` 挂入 task-chain executor，但仍是只读 / paper-only，候选策略不会自动写 registry 或生效。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。

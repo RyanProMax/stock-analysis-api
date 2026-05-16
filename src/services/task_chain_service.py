@@ -278,7 +278,12 @@ class TaskChainService:
             )
 
         if task_type == "kol_scan":
-            result = self._build_kol_scan(now_dt, payload=payload)
+            result = self._build_kol_scan(
+                now_dt,
+                payload=payload,
+                source_task_id=task.get("id"),
+                source_run_id=current_run_id,
+            )
             next_specs = self._next_recurring_scan(
                 "kol_scan",
                 now_dt,
@@ -443,6 +448,8 @@ class TaskChainService:
         now: datetime,
         *,
         payload: dict[str, Any],
+        source_task_id: str | None = None,
+        source_run_id: str | None = None,
     ) -> dict[str, Any]:
         days = int(payload.get("kol_days") or payload.get("days") or 1)
         if payload.get("disable_external_collectors") is True:
@@ -502,6 +509,14 @@ class TaskChainService:
         reply = parsed.get("reply") if isinstance(parsed, dict) else {}
         if isinstance(reply, dict) and reply.get("type") == "assistant_prompt":
             prompt = str(reply.get("content") or "").strip()
+            handoff = self.repository.create_agent_handoff(
+                source_task_id=source_task_id,
+                source_run_id=source_run_id,
+                task_type="kol_scan",
+                prompt_text=prompt,
+                prompt_json=parsed if isinstance(parsed, dict) else {"reply": reply},
+                created_at=_format_dt(now),
+            )
             return {
                 "task_type": "kol_scan",
                 "report_type": "kol_scan",
@@ -510,6 +525,7 @@ class TaskChainService:
                 "cadence_minutes": KOL_SCAN_INTERVAL_MINUTES,
                 "days": days,
                 "status": "agent_required",
+                "handoff_id": handoff["id"],
                 "source": "stock-kol-intel",
                 "ack": reply.get("ack"),
                 "prompt_chars": len(prompt),
