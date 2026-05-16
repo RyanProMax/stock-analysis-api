@@ -281,7 +281,7 @@ src/
   - 可选 champion/challenger 对比：当提供 active champion verdict 时，challenger 除了满足绝对阈值，还必须相对 champion 达到配置的 RankIC / quantile spread 增量
 - task-chain workflow 固定为元调度链路：
   - `task_chain.py tick` 每次最多获取并执行一颗 due task
-  - `task_chain.py handoff ...` 只管理内部 agent handoff queue，P1a 只提供 list / claim / complete / fail，不自动运行 agent、不验证完整 role policy、不替代独立 judge 或人工审批
+  - `task_chain.py handoff ...` 只管理内部 agent handoff queue；当前 P1b 支持 enqueue、claim-next、list、complete、fail、replay、role policy、input hash、lease TTL、append-only event 和 output schema validation，但不自动运行 agent、不把 output 自动升级为策略输入、不替代独立 judge 或人工审批
   - active lease 未过期时不能重入；lease 过期后允许恢复
   - 每轮 task / run / summary 必须可回溯
   - 盘中观察任务可以按 1h 节奏排下一轮；盘后研究任务必须连续排分钟级 next task，直到日终复盘完成

@@ -197,7 +197,11 @@
   - 新增 `task_chain_agent_handoffs` 持久化表与 repository 方法。
   - `kol_scan` 收到 `assistant_prompt` 时创建 pending handoff，并返回 `handoff_id`、`prompt_chars`、`prompt_preview`；完整 prompt 只保存在 handoff 表，不把 prompt preview 当正文。
   - `scripts/task_chain.py handoff list|claim|complete|fail` 输出严格 JSON，供后续 Cli Claw bridge 消费。
-  - 当前仍不自动运行 agent、不写 registry、不 approve、不 activate；P1b 继续补 input hash、role policy、lease TTL、append-only event、schema validation 和 replay。
+- 已完成 agent handoff queue P1b 最小 contract：
+  - `task_chain_agent_handoffs` 补齐 role、input payload、`input_hash`、`idempotency_key`、allowed / forbidden actions 和 `lease_expires_at`。
+  - 新增 `task_chain_agent_handoff_events` 和 `task_chain_agent_handoff_outputs`，记录 enqueued / claimed / reclaimed / completed / failed 审计事件和结构化 agent output。
+  - `scripts/task_chain.py handoff enqueue` 支持幂等；`claim-next` 支持 role filter、owner 和 lease TTL；新 handoff 的 `complete/fail` 必须带 owner；`complete` 校验 owner、lease、input hash、role、schema、forbidden actions 和 allowed actions；`fail` 支持 error type / message / retryable；`replay` 可回放输入、events 和 outputs。
+  - 当前仍不自动运行 agent、不写 registry、不 approve、不 activate；P2 才接 Cli Claw scheduled-agent bridge，P3 才把 completed output 转为 validated semantic evidence。
 
 ## 当前状态
 
@@ -247,7 +251,7 @@
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
 - `scripts/task_chain.py` 当前作为 Alpha / 模拟盘自迭代元调度入口，负责 due task、lease、run log、summary 和 next task；盘中按小时节奏观察，盘后按分钟级 drain `post_market_research -> news_scan / kol_scan / sector_review -> strategy_analysis -> daily_report`，并在后续 KOL 扫描后追加 `strategy_iteration`；不触发真实下单、不 approve、不 activate。
 - `strategy_iteration` 当前只接受可行动 KOL 情报作为触发输入；`agent_required` / degraded / skipped KOL 结果会暂停策略迭代，避免在没有真实策略输入时重复扫描和复跑。
-- 当前 agentic strategy loop 第一阶段已落地 P1a handoff queue MVP：`kol_scan status=agent_required` 会创建 `task_chain_agent_handoffs` pending 记录，`scripts/task_chain.py handoff list|claim|complete|fail` 可供外部 Cli Claw / scheduled agent 审计消费；仍不自动调用 agent、不自动写 registry、不自动 approve / activate。P1b 还需补 input hash、role policy、lease TTL、append-only handoff events、schema validation 和 replay。
+- 当前 agentic strategy loop 第一阶段已落地 P1b handoff queue contract：`kol_scan status=agent_required` 会创建带 role / hash / policy 的 pending handoff，外部 Cli Claw / scheduled agent 后续应通过 `handoff claim-next -> complete/fail -> replay` 审计消费；仍不自动调用 agent、不自动写 registry、不自动 approve / activate。下一步是 P2 bridge：幂等创建 Cli Claw once agent task，并让 agent 用 owner/lease/hash contract 回写结果。
 - `ops/com.ryan.stock-analysis-task-chain.plist` 当前只作为高频轻量 tick 的 launchd 配置；真实执行节奏由 task-chain 的 task `due_at` 决定。
 - 当前 task-chain 本地状态：LaunchAgent 已启动；`strategy_analysis` 已把真实 `AlphaResearchLoopService` 挂入 task-chain executor，但仍是只读 / paper-only，候选策略不会自动写 registry 或生效。
 - `scripts/trading_daily_summary.py` 当前仅做只读盘后汇总，不进入实时交易链路；默认 summary-only，明细输出需显式 opt-in。

@@ -265,7 +265,7 @@ class TaskChainService:
                     now_dt + timedelta(minutes=3),
                     payload,
                     priority=30,
-                )
+                ),
             ]
 
         if task_type == "news_scan":
@@ -425,10 +425,7 @@ class TaskChainService:
                 "queries": queries,
             }
 
-        results = [
-            self._run_news_query(provider=provider, query=query)
-            for query in queries
-        ]
+        results = [self._run_news_query(provider=provider, query=query) for query in queries]
         ok_count = sum(1 for result in results if result.get("status") == "ok")
         return {
             "task_type": "news_scan",
@@ -465,8 +462,7 @@ class TaskChainService:
             }
 
         skill_root = Path(
-            os.environ.get("STOCK_KOL_INTEL_ROOT")
-            or "/Users/ryan/projects/stock-kol-intel"
+            os.environ.get("STOCK_KOL_INTEL_ROOT") or "/Users/ryan/projects/stock-kol-intel"
         )
         script_path = skill_root / "commands" / "kol.py"
         if not script_path.exists():
@@ -513,8 +509,17 @@ class TaskChainService:
                 source_task_id=source_task_id,
                 source_run_id=source_run_id,
                 task_type="kol_scan",
+                role="kol_researcher",
                 prompt_text=prompt,
                 prompt_json=parsed if isinstance(parsed, dict) else {"reply": reply},
+                input_payload={
+                    "market": payload.get("market", "cn"),
+                    "days": days,
+                    "prompt_text": prompt,
+                    "prompt_json": parsed if isinstance(parsed, dict) else {"reply": reply},
+                    "source": "stock-kol-intel",
+                },
+                market=str(payload.get("market", "cn")),
                 created_at=_format_dt(now),
             )
             return {
@@ -534,10 +539,7 @@ class TaskChainService:
             }
 
         final_markdown = (
-            reply.get("final_markdown")
-            or reply.get("content")
-            if isinstance(reply, dict)
-            else ""
+            reply.get("final_markdown") or reply.get("content") if isinstance(reply, dict) else ""
         )
         final_markdown = str(final_markdown or "").strip()
         return {
@@ -949,7 +951,9 @@ class TaskChainService:
     def _has_pending_or_running_task(self, task_types: list[str]) -> bool:
         wanted = set(task_types)
         for status in ["pending", "running"]:
-            if any(task["task_type"] in wanted for task in self.repository.list_tasks(status=status)):
+            if any(
+                task["task_type"] in wanted for task in self.repository.list_tasks(status=status)
+            ):
                 return True
         return False
 

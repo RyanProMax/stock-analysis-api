@@ -132,28 +132,34 @@ P1a 当前交付：
 - `scripts/task_chain.py handoff fail <handoff_id> --error ...` 可标记失败。
 - stdout 严格 JSON。
 
-P1b 目标输出：
+P1b 当前交付：
 
-- 新 queue 表或独立 SQLite store：
-  - `agent_handoff_items`
-  - `agent_handoff_events`
-  - `agent_handoff_outputs`
+- `task_chain_agent_handoffs` 在 P1a 表上补齐 role、priority、market、symbols、as_of、input payload、`input_hash`、`idempotency_key`、allowed / forbidden actions、`lease_expires_at`。
+- 新增 append-only 审计表：
+  - `task_chain_agent_handoff_events`
+  - `task_chain_agent_handoff_outputs`
 - CLI：
   - `scripts/task_chain.py handoff enqueue`
-  - `scripts/task_chain.py handoff claim`
-  - `scripts/task_chain.py handoff complete`
-  - `scripts/task_chain.py handoff fail`
-  - `scripts/task_chain.py handoff list`
-  - `scripts/task_chain.py handoff replay`
-- 每条 handoff item 固定包含 `handoff_id`、`source_task_id`、`source_run_id`、`role`、`status`、`input_hash`、`idempotency_key`、`allowed_actions`、`forbidden_actions`。
+  - `scripts/task_chain.py handoff claim-next`
+  - `scripts/task_chain.py handoff claim` 兼容 P1a 指定 id claim
+- `scripts/task_chain.py handoff complete`
+- `scripts/task_chain.py handoff fail`
+- `scripts/task_chain.py handoff list`
+- `scripts/task_chain.py handoff replay`
+- 每条 handoff item 固定包含 `id` / `handoff_id`、`source_task_id`、`source_run_id`、`role`、`status`、`input_hash`、`idempotency_key`、`allowed_actions`、`forbidden_actions`。
 
-验收：
+已验收：
 
 - 同一个 source run 重复 enqueue 必须幂等。
 - claim 必须有 lease 和 owner id。
-- complete 必须校验 `input_hash`、`role`、JSON schema 和 forbidden action。
-- failed / completed / superseded 都要 append-only event。
+- 新 handoff 的 complete / fail 必须带 owner id；complete 必须校验 owner、lease、`input_hash`、`role`、JSON schema、forbidden action 和 allowed action。
+- enqueue / claimed / reclaimed / completed / failed 都要 append-only event；superseded / quarantined 留到后续扩展。
 - `agent_required` KOL item 能被队列表示，但不会被当作 collected content。
+
+仍待 P2 / P3：
+
+- P2 才接 Cli Claw scheduled-agent bridge，不在 P1b 自动运行 agent。
+- P3 才把 completed handoff output 转成 validated semantic evidence，供后续 strategy iteration 消费。
 
 不可做：
 

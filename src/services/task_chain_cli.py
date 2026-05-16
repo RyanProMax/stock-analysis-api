@@ -8,7 +8,10 @@ import sys
 from typing import Any, Optional, Sequence, TextIO
 import uuid
 
-from ..repositories.task_chain_repository import SqliteTaskChainRepository
+from ..repositories.task_chain_repository import (
+    AGENT_HANDOFF_ROLES,
+    SqliteTaskChainRepository,
+)
 from .task_chain_service import TASK_TYPES, TaskChainService
 
 
@@ -18,9 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pretty", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    bootstrap = subparsers.add_parser(
-        "bootstrap", help="Create an initial pending task"
-    )
+    bootstrap = subparsers.add_parser("bootstrap", help="Create an initial pending task")
     bootstrap.add_argument("--task-type", required=True, choices=sorted(TASK_TYPES))
     bootstrap.add_argument("--due-at")
     bootstrap.add_argument("--payload-json", default="{}")
@@ -40,25 +41,52 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         choices=["pending", "claimed", "completed", "failed"],
     )
+    handoff_list.add_argument("--role", choices=AGENT_HANDOFF_ROLES)
+
+    handoff_enqueue = handoff_subparsers.add_parser("enqueue", help="Enqueue an agent handoff")
+    handoff_enqueue.add_argument("--source-task-id")
+    handoff_enqueue.add_argument("--source-run-id")
+    handoff_enqueue.add_argument("--source-task-type", required=True)
+    handoff_enqueue.add_argument("--role", required=True, choices=AGENT_HANDOFF_ROLES)
+    handoff_enqueue.add_argument("--input-json", required=True)
+    handoff_enqueue.add_argument("--idempotency-key")
+    handoff_enqueue.add_argument("--now")
+
+    handoff_claim_next = handoff_subparsers.add_parser(
+        "claim-next", help="Claim the next pending handoff for a role"
+    )
+    handoff_claim_next.add_argument("--role", required=True, choices=AGENT_HANDOFF_ROLES)
+    handoff_claim_next.add_argument("--owner-id", required=True)
+    handoff_claim_next.add_argument("--lease-ttl-seconds", type=int, default=900)
+    handoff_claim_next.add_argument("--now")
 
     handoff_claim = handoff_subparsers.add_parser("claim", help="Claim a pending handoff")
     handoff_claim.add_argument("handoff_id")
     handoff_claim.add_argument("--claimed-by", required=True)
+    handoff_claim.add_argument("--lease-ttl-seconds", type=int)
     handoff_claim.add_argument("--now")
 
-    handoff_complete = handoff_subparsers.add_parser(
-        "complete", help="Complete a handoff"
-    )
+    handoff_complete = handoff_subparsers.add_parser("complete", help="Complete a handoff")
     handoff_complete.add_argument("handoff_id")
     result_group = handoff_complete.add_mutually_exclusive_group(required=True)
-    result_group.add_argument("--result-json")
-    result_group.add_argument("--result-file")
+    result_group.add_argument("--result-json", "--output-json", dest="result_json")
+    result_group.add_argument("--result-file", "--output-file", dest="result_file")
+    handoff_complete.add_argument("--owner-id")
     handoff_complete.add_argument("--now")
 
     handoff_fail = handoff_subparsers.add_parser("fail", help="Mark a handoff failed")
     handoff_fail.add_argument("handoff_id")
-    handoff_fail.add_argument("--error", required=True)
+    handoff_fail.add_argument("--owner-id")
+    handoff_fail.add_argument("--error")
+    handoff_fail.add_argument("--error-type")
+    handoff_fail.add_argument("--error-message")
+    handoff_fail.add_argument("--retryable", choices=["true", "false"], default="false")
     handoff_fail.add_argument("--now")
+
+    handoff_replay = handoff_subparsers.add_parser(
+        "replay", help="Replay handoff input and audit events"
+    )
+    handoff_replay.add_argument("--handoff-id", required=True)
     return parser
 
 
@@ -70,6 +98,15 @@ def _parse_payload(raw: str) -> dict[str, Any]:
     payload = json.loads(raw or "{}")
     if not isinstance(payload, dict):
         raise ValueError("--payload-json must be a JSON object")
+    return payload
+
+
+def _parse_json_arg(raw: str) -> dict[str, Any]:
+    path = Path(raw)
+    text = path.read_text(encoding="utf-8") if path.exists() else raw
+    payload = json.loads(text or "{}")
+    if not isinstance(payload, dict):
+        raise ValueError("JSON argument must be an object")
     return payload
 
 
@@ -97,9 +134,7 @@ def _emit(payload: dict[str, Any], pretty: bool, writer: Optional[TextIO]) -> No
     target.write("\n")
 
 
-def main(
-    argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = None
-) -> int:
+def main(argv: Optional[Sequence[str]] = None, *, writer: Optional[TextIO] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     repository = SqliteTaskChainRepository(args.task_db)
@@ -122,7 +157,57 @@ def main(
                     {
                         "status": "ok",
                         "source": "task_chain_handoff",
-                        "handoffs": repository.list_agent_handoffs(status=args.status),
+                        "handoffs": repository.list_agent_handoffs(
+                            status=args.status,
+                            role=args.role,
+                        ),
+                    },
+                    args.pretty,
+                    writer,
+                )
+                return 0
+
+            if args.handoff_command == "enqueue":
+                handoff, idempotent = repository.enqueue_agent_handoff(
+                    source_task_id=args.source_task_id,
+                    source_run_id=args.source_run_id,
+                    task_type=args.source_task_type,
+                    role=args.role,
+                    input_payload=_parse_json_arg(args.input_json),
+                    created_at=args.now or _now_iso(),
+                    idempotency_key=args.idempotency_key,
+                )
+                _emit(
+                    {
+                        "status": "ok",
+                        "source": "agent_handoff_enqueue",
+                        "handoff": handoff,
+                        "idempotent": idempotent,
+                    },
+                    args.pretty,
+                    writer,
+                )
+                return 0
+
+            if args.handoff_command == "claim-next":
+                handoff = repository.claim_next_agent_handoff(
+                    role=args.role,
+                    owner_id=args.owner_id,
+                    lease_ttl_seconds=args.lease_ttl_seconds,
+                    now=args.now or _now_iso(),
+                )
+                if handoff is None:
+                    _emit(
+                        {"status": "skipped", "reason": "no_pending_handoff"},
+                        args.pretty,
+                        writer,
+                    )
+                    return 0
+                _emit(
+                    {
+                        "status": "ok",
+                        "source": "agent_handoff_claim",
+                        "handoff": handoff,
                     },
                     args.pretty,
                     writer,
@@ -134,6 +219,7 @@ def main(
                     handoff_id=args.handoff_id,
                     claimed_by=args.claimed_by,
                     claimed_at=args.now or _now_iso(),
+                    lease_ttl_seconds=args.lease_ttl_seconds,
                 )
                 if handoff is None:
                     raise ValueError("handoff is not pending or does not exist")
@@ -153,6 +239,7 @@ def main(
                     handoff_id=args.handoff_id,
                     result=_parse_result(args),
                     completed_at=args.now or _now_iso(),
+                    owner_id=args.owner_id,
                 )
                 if handoff is None:
                     raise ValueError("handoff cannot be completed or does not exist")
@@ -168,10 +255,16 @@ def main(
                 return 0
 
             if args.handoff_command == "fail":
+                if not args.error and not args.error_message:
+                    raise ValueError("handoff fail requires --error or --error-message")
                 handoff = repository.fail_agent_handoff(
                     handoff_id=args.handoff_id,
                     error=args.error,
+                    error_type=args.error_type,
+                    error_message=args.error_message,
+                    retryable=args.retryable == "true",
                     failed_at=args.now or _now_iso(),
+                    owner_id=args.owner_id,
                 )
                 if handoff is None:
                     raise ValueError("handoff cannot be failed or does not exist")
@@ -180,6 +273,21 @@ def main(
                         "status": "ok",
                         "source": "task_chain_handoff",
                         "handoff": handoff,
+                    },
+                    args.pretty,
+                    writer,
+                )
+                return 0
+
+            if args.handoff_command == "replay":
+                payload = repository.replay_agent_handoff(args.handoff_id)
+                if payload is None:
+                    raise ValueError("handoff does not exist")
+                _emit(
+                    {
+                        "status": "ok",
+                        "source": "agent_handoff_replay",
+                        **payload,
                     },
                     args.pretty,
                     writer,

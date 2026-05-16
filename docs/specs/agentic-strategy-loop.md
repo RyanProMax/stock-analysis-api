@@ -133,7 +133,7 @@ Append-only 审计事件：
 
 ## CLI Contract
 
-第一阶段新增 CLI 只做 handoff queue，不自动运行 agent。P1a 先复用现有 `scripts/task_chain.py handoff ...` 子命令；P1b 再补完整 role、hash、event、replay 和 schema validation contract。
+第一阶段新增 CLI 只做 handoff queue，不自动运行 agent。P1a 先复用现有 `scripts/task_chain.py handoff ...` 子命令；P1b 已补最小 role、hash、event、lease、replay 和 schema validation contract。
 
 ### P1a implemented contract
 
@@ -166,9 +166,9 @@ P1a output shape:
 }
 ```
 
-P1a intentionally does not yet enforce input hash, role policy, lease TTL, append-only handoff events, replay, or output schema validation. Those are P1b requirements.
+P1a list / claim compatibility commands remain available. P1a-style `complete/fail` without owner is restricted to legacy migrated rows; newly enqueued P1b handoffs must use `claim-next` and owner-scoped `complete/fail` so owner、lease、hash、role、schema 和 policy validation cannot be bypassed.
 
-### P1b target contract
+### P1b implemented contract
 
 ### enqueue
 
@@ -226,9 +226,9 @@ uv run python scripts/task_chain.py handoff claim-next \
 
 ```bash
 uv run python scripts/task_chain.py handoff complete \
-  --handoff-id ah_... \
+  ah_... \
   --owner-id cli-claw-kol-1 \
-  --output-json output.json \
+  --output-file output.json \
   --pretty
 ```
 
@@ -245,7 +245,7 @@ complete 必须校验：
 
 ```bash
 uv run python scripts/task_chain.py handoff fail \
-  --handoff-id ah_... \
+  ah_... \
   --owner-id cli-claw-kol-1 \
   --error-type schema_validation_failed \
   --error-message "missing evidence_refs" \
@@ -258,6 +258,13 @@ uv run python scripts/task_chain.py handoff fail \
 ```bash
 uv run python scripts/task_chain.py handoff replay --handoff-id ah_... --pretty
 ```
+
+P1b 当前刻意保留的限制：
+
+- `claim-next` 内部状态仍沿用 P1a 的 `claimed`，但必须携带 owner 和 `lease_expires_at`。
+- 对新 handoff，`complete/fail` 必须带 `--owner-id`；无 owner 只允许处理旧 P1a schema 迁移出来的 legacy handoff。
+- handoff item JSON 同时包含 `id` 和 `handoff_id`，用于兼容现有内部调用和 P1b 外部 agent contract。
+- P1b 只落 handoff output 和 audit event，不把 output 自动升级为 KOL 正文、策略 proposal、registry approval 或 active strategy。
 
 replay 只返回原始 input、hash、role policy 和 source refs，不调用 agent、不改状态。
 
@@ -353,14 +360,23 @@ P1a 已实现：
 - completed handoff 不会被二次 claim。
 - CLI stdout 严格 JSON。
 
-P1b 验收项：
+P1b 已实现：
 
 - `scripts/task_chain.py handoff enqueue` 幂等。
 - `scripts/task_chain.py handoff claim-next` 支持 lease、防重入、owner id。
 - `scripts/task_chain.py handoff complete` 校验 owner、lease、input hash、role、schema 和 forbidden actions。
-- `scripts/task_chain.py handoff fail` 写 append-only event。
-- `scripts/task_chain.py handoff replay` 可重放输入。
+- `scripts/task_chain.py handoff fail` 支持 owner、error type、message、retryable，并写 append-only event。
+- `scripts/task_chain.py handoff replay` 可重放输入、events 和 outputs。
+- `task_chain_agent_handoff_events` 保存 enqueued / claimed / reclaimed / completed / failed 事件。
+- `task_chain_agent_handoff_outputs` 保存完成后的结构化 agent output。
+- `complete` 会拒绝 wrong owner、expired lease、wrong hash、wrong role、schema 缺字段、forbidden actions 和非 allowed actions。
 - KOL `agent_required` 可以被表示为 handoff item，但不会自动变成 collected content。
+
+P1b 后续可增强：
+
+- `superseded` / `quarantined` 状态和事件。
+- 更严格的 role separation 校验。
+- completed output 转 validated semantic evidence 的 P3 消费入口。
 
 不验收：
 
