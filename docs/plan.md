@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-16
+更新时间：2026-05-17
 
 ## 当前目标
 
@@ -30,6 +30,7 @@
 - 本轮收紧 task-chain 策略迭代门槛：KOL 预检返回 `agent_required` 时只代表需要 Agent 生成最终报告，不能触发 `strategy_iteration`；策略迭代必须等到 KOL 情报正文落地后才消费新闻 / KOL / 板块输入。
 - 本轮将 `PLAN/ROADMAP.md` 从旧 Alpha / 回测路线图更新为 agentic strategy loop 路线图：P0 当前事实核查、P1 agent handoff queue、P2 Cli Claw scheduled-agent bridge、P3 KOL / news / sector / daily report semantic review、P4 strategy proposal human review / registry gate、P5 de-hardcode watchlist / thresholds、P6 observability / replay / eval。
 - 本轮新增 `docs/specs/agentic-strategy-loop.md`，明确第一阶段只做可审计 handoff queue 和 CLI contract；不自动运行 agent、不自动下单、不自动 approve、不自动 activate。
+- 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。
 
 ## 最近完成项
 
@@ -202,6 +203,11 @@
   - 新增 `task_chain_agent_handoff_events` 和 `task_chain_agent_handoff_outputs`，记录 enqueued / claimed / reclaimed / completed / failed 审计事件和结构化 agent output。
   - `scripts/task_chain.py handoff enqueue` 支持幂等；`claim-next` 支持 role filter、owner 和 lease TTL；新 handoff 的 `complete/fail` 必须带 owner；`complete` 校验 owner、lease、input hash、role、schema、forbidden actions 和 allowed actions；`fail` 支持 error type / message / retryable；`replay` 可回放输入、events 和 outputs。
   - 当前仍不自动运行 agent、不写 registry、不 approve、不 activate；P2 才接 Cli Claw scheduled-agent bridge，P3 才把 completed output 转为 validated semantic evidence。
+- 已新增 `scripts/hkipo_heat_scan.py`、`src/services/hkipo_heat_scan_cli.py` 与 `src/services/hkipo_heat_scan_service.py`：
+  - 接收 `--date`、`--ipos-json`、`--include-closed` 和 `--json`。
+  - 输出严格 JSON `status/source/report_date/summary/data/errors`。
+  - 每条 heat evidence 要求 `source/source_family/field/value/unit/url/confidence/published_at 或 updated_at/staleness_status`；缺失归因时自动降级为“热度未达当日核验门槛”。
+  - CI 通过 fake service / fixture contract 测试，不依赖真实网页。
 
 ## 当前状态
 
@@ -210,6 +216,7 @@
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
   - `scripts/futu_market_data.py`
+  - `scripts/hkipo_heat_scan.py`
   - `scripts/grey_market_watch.py`
   - `scripts/task_chain.py`
   - `scripts/trading_run_once.py`
