@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 import json
+import threading
 
 from src.services.hkipo_heat_scan_cli import main as hkipo_heat_scan_main
 from src.services.hkipo_heat_scan_service import HkIpoHeatScanService
@@ -210,3 +211,58 @@ def test_hkipo_heat_scan_service_degrades_scraped_value_without_source_time():
     assert all(
         entry["staleness_status"] == "invalid_missing_attribution" for entry in item["evidence"]
     )
+
+
+def test_hkipo_heat_scan_service_fetches_sources_concurrently():
+    lock = threading.Lock()
+    two_sources_started = threading.Event()
+    started_urls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        with lock:
+            started_urls.append(url)
+            if len(started_urls) >= 2:
+                two_sources_started.set()
+        if not two_sources_started.wait(0.5):
+            raise AssertionError("source fetches did not overlap")
+        return "更新时间：2026年5月17日 孖展 128.5倍 公开认购 55.2倍"
+
+    service = HkIpoHeatScanService(fetcher=fetcher)
+
+    payload = service.scan(
+        report_date="2026-05-17",
+        ipos=[{"code": "HK.01234", "name": "示例机器人"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    assert len(started_urls) >= 2
+    assert item["source_errors"] == []
+    assert item["heat_status"] == "same_day_verified"
+
+
+def test_hkipo_heat_scan_service_keeps_usable_evidence_when_one_source_fails():
+    def fetcher(url: str) -> str:
+        if "futunn.com" in url:
+            raise TimeoutError("source timed out")
+        return "更新时间：2026年5月17日 孖展 128.5倍 公开认购 55.2倍"
+
+    service = HkIpoHeatScanService(fetcher=fetcher)
+
+    payload = service.scan(
+        report_date="2026-05-17",
+        ipos=[{"code": "HK.01234", "name": "示例机器人"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    assert item["heat_status"] == "same_day_verified"
+    assert item["source_errors"] == [
+        {
+            "source": "Futu/Niuniu",
+            "source_family": "futu_niuniu",
+            "url": "https://www.futunn.com/stock/01234-HK",
+            "error": "source timed out",
+        }
+    ]
+    assert any(entry["field"] == "margin_multiple" for entry in item["evidence"])

@@ -18,6 +18,13 @@ uv run python scripts/hkipo_heat_scan.py \
 - `--include-closed`：允许已截止认购但未上市 IPO 参与扫描。
 - `--json` / `--pretty`：输出严格 JSON；`--pretty` 仅改变缩进。
 
+## 执行预算
+
+- 单只 IPO 内部按来源做有界并发抓取，默认最多 10 个 worker，避免 10 个公开来源逐个超时把 workflow 拖到分钟级。
+- 每个公开来源默认 6 秒超时；可用 `HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS` 调整。
+- worker 数可用 `HKIPO_HEAT_SCAN_MAX_WORKERS` 调整；不要设置为无限并发，避免对公开网站造成不必要压力。
+- 单个来源失败只写入 `data[].source_errors[]`，不阻断其他来源证据，也不让 CLI 因网页结构变化直接失败。
+
 ## 输出 Contract
 
 顶层字段：

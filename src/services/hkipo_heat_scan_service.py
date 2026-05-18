@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import concurrent.futures
 from dataclasses import dataclass
 from datetime import date, datetime
+import os
 import re
 from typing import Any, Callable, Iterable
 import urllib.parse
@@ -9,6 +11,8 @@ import urllib.request
 
 SOURCE = "hkipo_heat_scan"
 USER_AGENT = "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
+DEFAULT_FETCH_TIMEOUT_SECONDS = 6.0
+DEFAULT_MAX_WORKERS = 10
 SOURCE_FAMILIES = (
     "futu_niuniu",
     "multi_broker_aggregate",
@@ -43,6 +47,25 @@ def _safe_float(value: Any) -> float | None:
     if result != result or result in (float("inf"), float("-inf")):
         return None
     return result
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    parsed = _safe_float(value)
+    return parsed if parsed is not None and parsed > 0 else default
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _source_time(evidence: dict[str, Any]) -> str:
@@ -159,7 +182,26 @@ class SourceCandidate:
 
 
 class HkIpoHeatScanService:
-    def __init__(self, fetcher: Callable[[str], str] | None = None):
+    def __init__(
+        self,
+        fetcher: Callable[[str], str] | None = None,
+        *,
+        fetch_timeout_seconds: float | None = None,
+        max_workers: int | None = None,
+    ):
+        self.fetch_timeout_seconds = float(
+            fetch_timeout_seconds
+            if fetch_timeout_seconds is not None
+            else _env_float(
+                "HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS",
+                DEFAULT_FETCH_TIMEOUT_SECONDS,
+            )
+        )
+        self.max_workers = int(
+            max_workers
+            if max_workers is not None
+            else _env_int("HKIPO_HEAT_SCAN_MAX_WORKERS", DEFAULT_MAX_WORKERS)
+        )
         self.fetcher = fetcher or self._default_fetch
 
     def _default_fetch(self, url: str) -> str:
@@ -171,7 +213,7 @@ class HkIpoHeatScanService:
                 "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
             },
         )
-        with urllib.request.urlopen(request, timeout=12) as response:
+        with urllib.request.urlopen(request, timeout=self.fetch_timeout_seconds) as response:
             content_type = response.headers.get_content_charset()
             raw = response.read(2_000_000)
         for encoding in [content_type, "utf-8", "big5", "gb18030"]:
@@ -214,26 +256,39 @@ class HkIpoHeatScanService:
         evidence: list[dict[str, Any]] = []
         source_errors: list[dict[str, Any]] = []
 
-        for candidate in candidates:
-            try:
-                html = self.fetcher(candidate.url)
-                evidence.extend(
-                    self._extract_evidence(
-                        html,
-                        candidate=candidate,
-                        report_date=report_date,
+        worker_count = max(1, min(self.max_workers, len(candidates)))
+        evidence_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
+        errors_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(self.fetcher, candidate.url): (index, candidate)
+                for index, candidate in enumerate(candidates)
+            }
+            completed = concurrent.futures.as_completed(futures)
+            for future in completed:
+                index, candidate = futures[future]
+                try:
+                    html = future.result()
+                    evidence_by_index[index].extend(
+                        self._extract_evidence(
+                            html,
+                            candidate=candidate,
+                            report_date=report_date,
+                        )
                     )
-                )
-            except Exception as exc:  # pragma: no cover - network fallback only
-                source_errors.append(
-                    {
-                        "source": candidate.source,
-                        "source_family": candidate.source_family,
-                        "url": candidate.url,
-                        "error": str(exc),
-                    }
-                )
-
+                except Exception as exc:  # pragma: no cover - network fallback only
+                    errors_by_index[index].append(
+                        {
+                            "source": candidate.source,
+                            "source_family": candidate.source_family,
+                            "url": candidate.url,
+                            "error": str(exc),
+                        }
+                    )
+        for rows in evidence_by_index:
+            evidence.extend(rows)
+        for rows in errors_by_index:
+            source_errors.extend(rows)
         return {
             "code": code,
             "name": name,

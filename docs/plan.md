@@ -31,6 +31,7 @@
 - 本轮将 `PLAN/ROADMAP.md` 从旧 Alpha / 回测路线图更新为 agentic strategy loop 路线图：P0 当前事实核查、P1 agent handoff queue、P2 Cli Claw scheduled-agent bridge、P3 KOL / news / sector / daily report semantic review、P4 strategy proposal human review / registry gate、P5 de-hardcode watchlist / thresholds、P6 observability / replay / eval。
 - 本轮新增 `docs/specs/agentic-strategy-loop.md`，明确第一阶段只做可审计 handoff queue 和 CLI contract；不自动运行 agent、不自动下单、不自动 approve、不自动 activate。
 - 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。
+- 本轮修复 `/hkipo` workflow 线上超时暴露的 heat scan 执行预算问题：单只 IPO 的公开来源采集改为有界并发，默认每来源 6 秒超时，单来源失败只写入 `source_errors` 并保留其他来源证据。
 
 ## 最近完成项
 
@@ -207,6 +208,7 @@
   - 接收 `--date`、`--ipos-json`、`--include-closed` 和 `--json`。
   - 输出严格 JSON `status/source/report_date/summary/data/errors`。
   - 每条 heat evidence 要求 `source/source_family/field/value/unit/url/confidence/published_at 或 updated_at/staleness_status`；缺失归因时自动降级为“热度未达当日核验门槛”。
+  - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=6`；单个来源超时或结构变化只降级该来源。
   - CI 通过 fake service / fixture contract 测试，不依赖真实网页。
 
 ## 当前状态
