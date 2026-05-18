@@ -32,6 +32,7 @@
 - 本轮新增 `docs/specs/agentic-strategy-loop.md`，明确第一阶段只做可审计 handoff queue 和 CLI contract；不自动运行 agent、不自动下单、不自动 approve、不自动 activate。
 - 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。
 - 本轮修复 `/hkipo` workflow 线上超时暴露的 heat scan 执行预算问题：单只 IPO 的公开来源采集改为有界并发，默认每来源 6 秒超时，单来源失败只写入 `source_errors` 并保留其他来源证据。
+- 本轮修复 `/hkipo` workflow 报告中文名缺失问题：Futu/OpenD IPO 池仍保留原始英文 `name`，但对当前港股 IPO 池补充 `display_name`、`name_zh`、`name_zh_hant`、`name_en` 和 `name_source=hkipo_alias_map`，供 workflow 节点和热度采集优先使用中文展示名。
 
 ## 最近完成项
 
@@ -207,6 +208,7 @@
 - 已新增 `scripts/hkipo_heat_scan.py`、`src/services/hkipo_heat_scan_cli.py` 与 `src/services/hkipo_heat_scan_service.py`：
   - 接收 `--date`、`--ipos-json`、`--include-closed` 和 `--json`。
   - 输出严格 JSON `status/source/report_date/summary/data/errors`。
+  - IPO 名称优先使用 `display_name` / `name_zh` 生成热度检索 query plan，同时保留 `name_en` 作为英文别名，避免 Futu 英文简称污染最终报告主标题。
   - 每条 heat evidence 要求 `source/source_family/field/value/unit/url/confidence/published_at 或 updated_at/staleness_status`；缺失归因时自动降级为“热度未达当日核验门槛”。
   - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=6`；单个来源超时或结构变化只降级该来源。
   - CI 通过 fake service / fixture contract 测试，不依赖真实网页。

@@ -10,7 +10,9 @@ import urllib.parse
 import urllib.request
 
 SOURCE = "hkipo_heat_scan"
-USER_AGENT = "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
+USER_AGENT = (
+    "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
+)
 DEFAULT_FETCH_TIMEOUT_SECONDS = 6.0
 DEFAULT_MAX_WORKERS = 10
 SOURCE_FAMILIES = (
@@ -107,7 +109,9 @@ def normalize_heat_evidence(raw: dict[str, Any], report_date: str) -> dict[str, 
     evidence["unit"] = _safe_str(evidence.get("unit"))
     evidence["url"] = _safe_str(evidence.get("url"))
     confidence = _safe_float(evidence.get("confidence"))
-    evidence["confidence"] = max(0.0, min(1.0, confidence if confidence is not None else 0.0))
+    evidence["confidence"] = max(
+        0.0, min(1.0, confidence if confidence is not None else 0.0)
+    )
     evidence["staleness_status"] = _safe_str(
         evidence.get("staleness_status")
     ) or classify_staleness(_source_time(evidence), report_date)
@@ -146,7 +150,9 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         if usable:
             same_day_count += 1
             item.setdefault("heat_status", "same_day_verified")
-            item.setdefault("evidence_quality", "high" if len(usable) >= 2 else "medium")
+            item.setdefault(
+                "evidence_quality", "high" if len(usable) >= 2 else "medium"
+            )
             item.setdefault("subscription_heat", {"status": "usable"})
         else:
             degraded_count += 1
@@ -164,7 +170,9 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         normalized_rows.append(item)
 
     normalized["data"] = normalized_rows
-    summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
+    summary = (
+        normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
+    )
     normalized["summary"] = {
         "ipo_count": len(normalized_rows),
         "same_day_heat_count": same_day_count,
@@ -213,7 +221,9 @@ class HkIpoHeatScanService:
                 "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
             },
         )
-        with urllib.request.urlopen(request, timeout=self.fetch_timeout_seconds) as response:
+        with urllib.request.urlopen(
+            request, timeout=self.fetch_timeout_seconds
+        ) as response:
             content_type = response.headers.get_content_charset()
             raw = response.read(2_000_000)
         for encoding in [content_type, "utf-8", "big5", "gb18030"]:
@@ -251,15 +261,26 @@ class HkIpoHeatScanService:
 
     def _scan_one(self, *, report_date: str, ipo: dict[str, Any]) -> dict[str, Any]:
         code = _safe_str(ipo.get("code"))
-        name = _safe_str(ipo.get("name"))
-        candidates = self._source_candidates(code=code, name=name)
+        name = _safe_str(
+            ipo.get("display_name")
+            or ipo.get("name_zh")
+            or ipo.get("cn_name")
+            or ipo.get("stock_name")
+            or ipo.get("name")
+        )
+        name_en = _safe_str(
+            ipo.get("name_en") or ipo.get("english_name") or ipo.get("name")
+        )
+        candidates = self._source_candidates(code=code, name=name, name_en=name_en)
         evidence: list[dict[str, Any]] = []
         source_errors: list[dict[str, Any]] = []
 
         worker_count = max(1, min(self.max_workers, len(candidates)))
         evidence_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
         errors_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=worker_count
+        ) as executor:
             futures = {
                 executor.submit(self.fetcher, candidate.url): (index, candidate)
                 for index, candidate in enumerate(candidates)
@@ -292,6 +313,7 @@ class HkIpoHeatScanService:
         return {
             "code": code,
             "name": name,
+            "name_en": name_en,
             "stage": ipo.get("stage"),
             "query_plan": [
                 {
@@ -305,8 +327,12 @@ class HkIpoHeatScanService:
             "source_errors": source_errors,
         }
 
-    def _source_candidates(self, *, code: str, name: str) -> list[SourceCandidate]:
-        raw_query = " ".join(part for part in [code.replace("HK.", ""), name, "孖展"] if part)
+    def _source_candidates(
+        self, *, code: str, name: str, name_en: str = ""
+    ) -> list[SourceCandidate]:
+        raw_query = " ".join(
+            part for part in [code.replace("HK.", ""), name, name_en, "孖展"] if part
+        )
         query = urllib.parse.quote(raw_query)
         compact_code_value = code.replace("HK.", "")
         compact_code = urllib.parse.quote(compact_code_value)
@@ -374,7 +400,10 @@ class HkIpoHeatScanService:
         text = re.sub(r"\s+", " ", html)
         source_time = self._extract_source_time(text, report_date)
         patterns = [
-            ("margin_multiple", r"(?:孖展|融资).{0,24}?([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)"),
+            (
+                "margin_multiple",
+                r"(?:孖展|融资).{0,24}?([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)",
+            ),
             (
                 "subscription_multiple",
                 r"(?:公开认购|认购).{0,24}?([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)",
@@ -397,13 +426,17 @@ class HkIpoHeatScanService:
                 "source_family": candidate.source_family,
                 "field": field,
                 "value": value,
-                "unit": "%" if field in {"grey_change_pct", "one_lot_success_rate"} else "x",
+                "unit": (
+                    "%" if field in {"grey_change_pct", "one_lot_success_rate"} else "x"
+                ),
                 "url": candidate.url,
                 "confidence": 0.55,
             }
             if source_time:
                 evidence["published_at"] = source_time
-                evidence["staleness_status"] = classify_staleness(source_time, report_date)
+                evidence["staleness_status"] = classify_staleness(
+                    source_time, report_date
+                )
             yield evidence
 
     def _extract_source_time(self, text: str, report_date: str) -> str | None:

@@ -32,8 +32,8 @@ class FakeFutuGateway:
         assert market == "HK"
         return [
             {
-                "code": "HK.01234",
-                "name": "Demo Robotics",
+                "code": "HK.02723",
+                "name": "DEEPZERO",
                 "is_subscribe_status": True,
                 "list_time": "2026-05-12",
             }
@@ -144,7 +144,9 @@ class FakeReadonlyTradeGateway:
         self.calls.append("get_positions")
         return [{"code": "HK.00700", "qty": 100, "market_val": 41000.0}]
 
-    def get_orders(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
+    def get_orders(
+        self, *, code: str = "", start: str = "", end: str = "", history: bool = False
+    ):
         assert code == "HK.00700"
         assert start == "2026-05-01"
         assert end == "2026-05-07"
@@ -152,7 +154,9 @@ class FakeReadonlyTradeGateway:
         self.calls.append("get_orders")
         return [{"order_id": "O-1", "code": "HK.00700", "order_status": "FILLED_ALL"}]
 
-    def get_deals(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
+    def get_deals(
+        self, *, code: str = "", start: str = "", end: str = "", history: bool = False
+    ):
         assert code == "HK.00700"
         assert start == "2026-05-01"
         assert end == "2026-05-07"
@@ -259,7 +263,12 @@ def test_ipo_list_cli_contract():
     assert exit_code == 0
     assert payload["status"] == "ok"
     assert payload["market"] == "HK"
-    assert payload["data"][0]["code"] == "HK.01234"
+    assert payload["data"][0]["code"] == "HK.02723"
+    assert payload["data"][0]["name"] == "DEEPZERO"
+    assert payload["data"][0]["name_zh"] == "深演智能"
+    assert payload["data"][0]["display_name"] == "深演智能"
+    assert payload["data"][0]["name_en"] == "DEEPZERO"
+    assert payload["data"][0]["name_source"] == "hkipo_alias_map"
 
 
 def test_history_kline_cli_contract():
@@ -331,7 +340,9 @@ def test_symbol_rules_cli_extracts_lot_size_and_tick_from_futu_snapshot():
 
 
 def test_order_book_ticker_rt_data_cli_contracts():
-    exit_code, order_book = _run_cli("order-book", "--code", "HK.00700", "--num", "3", "--json")
+    exit_code, order_book = _run_cli(
+        "order-book", "--code", "HK.00700", "--num", "3", "--json"
+    )
     assert exit_code == 0
     assert order_book["status"] == "ok"
     assert order_book["request"] == {"code": "HK.00700", "num": 3}
@@ -351,7 +362,9 @@ def test_order_book_ticker_rt_data_cli_contracts():
 
 
 def test_option_expirations_and_chain_cli_contracts():
-    exit_code, expirations = _run_cli("option-expirations", "--code", "US.AAPL", "--json")
+    exit_code, expirations = _run_cli(
+        "option-expirations", "--code", "US.AAPL", "--json"
+    )
     assert exit_code == 0
     assert expirations["status"] == "ok"
     assert expirations["request"] == {"code": "US.AAPL", "index_option_type": "NORMAL"}

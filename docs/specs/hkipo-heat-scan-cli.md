@@ -4,6 +4,8 @@
 
 `scripts/hkipo_heat_scan.py` 是内部 agent / skill workflow 使用的只读数据采集入口，不属于公共 HTTP API。它接收 Futu/OpenD 已发现的港股 IPO 池，补充二级热度证据：孖展 / 融资倍数、公开认购倍数、一手中签率、暗盘、来源时间和来源冲突。
 
+输入 IPO 若带有 `display_name` / `name_zh` / `cn_name`，CLI 生成检索计划和输出 `data[].name` 时必须优先使用中文展示名；`name_en` / `english_name` / 原始 `name` 只作为英文别名保留，避免最终 workflow 报告主标题退回英文简称。
+
 ## 输入
 
 ```bash
@@ -35,6 +37,13 @@ uv run python scripts/hkipo_heat_scan.py \
 - `summary`
 - `data`
 - `errors`
+
+`data[]` 名称字段：
+
+- `code`
+- `name`：中文展示名优先
+- `name_en`：Futu/OpenD 原始英文简称或英文名
+- `query_plan`
 
 `data[].evidence[]` 每条证据必须包含：
 

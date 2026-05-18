@@ -77,4 +77,5 @@ uv run python scripts/futu_market_data.py <command> --json
 - stdout 必须是可被严格 JSON parser 解析的标准 JSON，不允许混入 Futu SDK 连接日志。
 - 成功路径不向 stderr 输出 Futu SDK warning / log 噪声。
 - Futu 原始数据里的 `NaN` / `Infinity` 等非有限数值统一归一化为 `null`。
+- `ipo-list --market HK` 保留 Futu/OpenD 原始英文 `name`，同时可补充 `display_name`、`name_zh`、`name_zh_hant`、`name_en`、`english_name` 和 `name_source`，供上层 workflow 使用中文展示名与英文别名分离。
 - 账户、持仓、订单、成交和流水查询固定使用 Futu `TrdEnv.SIMULATE`，且只读展示最小必要信息；不得触发 `place_order`、`modify_order`、`cancel_order`、`unlock_trade`、`subscribe` 或其他写操作。

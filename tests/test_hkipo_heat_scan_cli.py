@@ -209,8 +209,35 @@ def test_hkipo_heat_scan_service_degrades_scraped_value_without_source_time():
     assert item["heat_status"] == "heat_threshold_not_met"
     assert item["subscription_heat"]["status"] == "热度未达当日核验门槛"
     assert all(
-        entry["staleness_status"] == "invalid_missing_attribution" for entry in item["evidence"]
+        entry["staleness_status"] == "invalid_missing_attribution"
+        for entry in item["evidence"]
     )
+
+
+def test_hkipo_heat_scan_service_prefers_display_name_for_query_plan():
+    service = HkIpoHeatScanService(fetcher=lambda _url: "")
+
+    payload = service.scan(
+        report_date="2026-05-17",
+        ipos=[
+            {
+                "code": "HK.02723",
+                "name": "DEEPZERO",
+                "display_name": "深演智能",
+                "name_en": "DEEPZERO",
+            }
+        ],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    query_urls = json.dumps(item["query_plan"], ensure_ascii=False)
+    assert item["name"] == "深演智能"
+    assert item["name_en"] == "DEEPZERO"
+    assert (
+        "深演智能" in query_urls or "%E6%B7%B1%E6%BC%94%E6%99%BA%E8%83%BD" in query_urls
+    )
+    assert "DEEPZERO" in query_urls
 
 
 def test_hkipo_heat_scan_service_fetches_sources_concurrently():
