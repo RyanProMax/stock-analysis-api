@@ -2,7 +2,7 @@
 
 ## 目标
 
-`scripts/hkipo_heat_scan.py` 是内部 agent / skill workflow 使用的只读数据采集入口，不属于公共 HTTP API。它接收 Futu/OpenD 已发现的港股 IPO 池，补充二级热度证据：孖展 / 融资倍数、公开认购倍数、一手中签率、暗盘、来源时间和来源冲突。
+`scripts/hkipo_heat_scan.py` 是内部 agent / skill workflow 使用的只读数据采集入口，不属于公共 HTTP API。它接收 Futu/OpenD 已发现的港股 IPO 池，补充三类核心证据：二级热度证据（孖展 / 融资倍数、公开认购倍数、一手中签率、暗盘、来源时间和来源冲突）、发行结构证据（绿鞋 / 超额配股权、稳定价格操作人、基石投资者与占比、保荐人、公开发售比例、回拨机制）和估值证据（主营业务、核心能力、行业、发行市值、同类股票 PE/PS/PB、合理估值区间）。
 
 输入 IPO 若带有 `display_name` / `name_zh` / `cn_name`，CLI 生成检索计划和输出 `data[].name` 时必须优先使用中文展示名；`name_en` / `english_name` / 原始 `name` 只作为英文别名保留，避免最终 workflow 报告主标题退回英文简称。
 
@@ -62,6 +62,32 @@ uv run python scripts/hkipo_heat_scan.py \
 - `heat_status = heat_threshold_not_met`
 - `evidence_quality = low`
 - `subscription_heat.status = 热度未达当日核验门槛`
+
+`data[].structure_evidence[]` 与 `data[].valuation_evidence[]` 使用同一归因字段 contract，并额外允许 `peer`、`value.low/value.high` 等结构化字段。状态字段：
+
+- `structure_status = core_structure_verified | partial_structure_verified | core_structure_not_verified`
+- `valuation_status = valuation_context_verified | partial_valuation_verified | valuation_context_not_verified`
+
+结构字段最少覆盖：
+
+- `greenshoe_pct`
+- `cornerstone_investor_count`
+- `cornerstone_offer_pct`
+- `sponsor`
+- `stabilizing_manager`
+- `public_float_pct`
+- `clawback_max_pct`
+
+估值字段最少覆盖：
+
+- `core_business`
+- `core_capability`
+- `industry`
+- `peer_pe` / `peer_ps` / `peer_pb`
+- `offer_market_cap`
+- `fair_value_market_cap_range` 或 `fair_value_price_range`
+
+拿不到字段时不得编造；必须保留 `source_errors[]` 或输出缺失状态，供 workflow 最终报告写“多源未取到”。
 
 ## 安全边界
 

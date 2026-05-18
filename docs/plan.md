@@ -210,6 +210,7 @@
   - 输出严格 JSON `status/source/report_date/summary/data/errors`。
   - IPO 名称优先使用 `display_name` / `name_zh` 生成热度检索 query plan，同时保留 `name_en` 作为英文别名，避免 Futu 英文简称污染最终报告主标题。
   - 每条 heat evidence 要求 `source/source_family/field/value/unit/url/confidence/published_at 或 updated_at/staleness_status`；缺失归因时自动降级为“热度未达当日核验门槛”。
+  - 本轮扩展同一只读 scanner 输出 `structure_evidence` 与 `valuation_evidence`：绿鞋/超额配股权、稳定价格操作人、基石投资者与占比、保荐人、回拨/公开发售比例、主营业务、核心能力、行业、同类股票 PE/PS/PB、发行市值和合理估值区间。缺少来源时间、URL 或 confidence 的字段不得进入核心判断，只能降级。
   - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=6`；单个来源超时或结构变化只降级该来源。
   - CI 通过 fake service / fixture contract 测试，不依赖真实网页。
 

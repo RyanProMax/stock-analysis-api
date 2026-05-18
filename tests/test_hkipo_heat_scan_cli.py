@@ -128,6 +128,71 @@ def test_hkipo_heat_scan_cli_emits_multisource_evidence_schema(tmp_path):
     }
 
 
+def test_hkipo_heat_scan_cli_normalizes_structure_and_valuation_evidence(tmp_path):
+    ipos_json = tmp_path / "ipos.json"
+    ipos_json.write_text(
+        json.dumps([{"code": "HK.01234", "name": "示例智能"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    service = FakeHkIpoHeatScanService(
+        {
+            "status": "ok",
+            "source": "hkipo_heat_scan",
+            "report_date": "2026-05-17",
+            "summary": {"ipo_count": 1},
+            "data": [
+                {
+                    "code": "HK.01234",
+                    "name": "示例智能",
+                    "structure_evidence": [
+                        {
+                            "source": "HKEX",
+                            "source_family": "official_document",
+                            "field": "greenshoe_pct",
+                            "value": 15,
+                            "unit": "%",
+                            "published_at": "2026-05-16",
+                            "url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0516/demo.pdf",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    "valuation_evidence": [
+                        {
+                            "source": "AAStocks",
+                            "source_family": "finance_portal",
+                            "field": "peer_pe",
+                            "value": 12.3,
+                            "unit": "x",
+                            "published_at": "2026-05-17",
+                            "url": "https://example.test/ipo/valuation",
+                            "confidence": 0.7,
+                            "peer": "同业科技",
+                        }
+                    ],
+                }
+            ],
+            "errors": [],
+        }
+    )
+
+    exit_code, payload = _run_cli(
+        "--date",
+        "2026-05-17",
+        "--ipos-json",
+        str(ipos_json),
+        "--json",
+        service=service,
+    )
+
+    assert exit_code == 0
+    item = payload["data"][0]
+    assert item["structure_status"] == "partial_structure_verified"
+    assert item["valuation_status"] == "partial_valuation_verified"
+    assert item["structure_evidence"][0]["staleness_status"] == "stale"
+    assert item["valuation_evidence"][0]["staleness_status"] == "same_day"
+    assert item["valuation_evidence"][0]["peer"] == "同业科技"
+
+
 def test_hkipo_heat_scan_cli_degrades_evidence_without_required_attribution(tmp_path):
     ipos_json = tmp_path / "ipos.json"
     ipos_json.write_text(
@@ -293,3 +358,65 @@ def test_hkipo_heat_scan_service_keeps_usable_evidence_when_one_source_fails():
         }
     ]
     assert any(entry["field"] == "margin_multiple" for entry in item["evidence"])
+
+
+def test_hkipo_heat_scan_service_extracts_structure_and_valuation_evidence():
+    html = (
+        "更新时间：2026年5月17日 "
+        "孖展 128.5倍 公开认购 55.2倍 "
+        "绿鞋 15% 超额配股权 基石投资者3名 基石占发售40% "
+        "保荐人 高盛 稳定价格操作人 中金 公开发售比例 10% 回拨后最高 50% "
+        "主营业务 AI营销平台 核心能力 数据智能投放 行业 SaaS营销科技 "
+        "同类股票 商汤 PE 8.5倍 第四范式 PE 12.3倍 "
+        "发行市值 HK$100亿 合理估值区间 HK$80亿-HK$120亿"
+    )
+    service = HkIpoHeatScanService(fetcher=lambda _url: html)
+
+    payload = service.scan(
+        report_date="2026-05-17",
+        ipos=[{"code": "HK.01234", "name": "示例智能"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    structure_fields = {entry["field"] for entry in item["structure_evidence"]}
+    valuation_fields = {entry["field"] for entry in item["valuation_evidence"]}
+    assert {
+        "greenshoe_pct",
+        "cornerstone_investor_count",
+        "cornerstone_offer_pct",
+        "sponsor",
+        "stabilizing_manager",
+        "public_float_pct",
+        "clawback_max_pct",
+    }.issubset(structure_fields)
+    assert {
+        "core_capability",
+        "industry",
+        "peer_pe",
+        "offer_market_cap",
+        "fair_value_market_cap_range",
+    }.issubset(valuation_fields)
+    assert item["structure_status"] == "core_structure_verified"
+    assert item["valuation_status"] == "valuation_context_verified"
+
+
+def test_hkipo_heat_scan_service_ignores_unqualified_peer_pe_fragments():
+    html = (
+        "更新时间：2026年5月17日 "
+        "页面脚本 fragment PE 0x random PE 5x widget PE 57x "
+        "主营业务 AI营销平台 核心能力 数据智能投放 行业 SaaS营销科技"
+    )
+    service = HkIpoHeatScanService(fetcher=lambda _url: html)
+
+    payload = service.scan(
+        report_date="2026-05-17",
+        ipos=[{"code": "HK.01234", "name": "示例智能"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    peer_pe_rows = [
+        entry for entry in item["valuation_evidence"] if entry["field"] == "peer_pe"
+    ]
+    assert peer_pe_rows == []
