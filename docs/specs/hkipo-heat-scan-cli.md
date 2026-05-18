@@ -23,9 +23,10 @@ uv run python scripts/hkipo_heat_scan.py \
 ## 执行预算
 
 - 单只 IPO 内部按来源做有界并发抓取，默认最多 10 个 worker，避免 10 个公开来源逐个超时把 workflow 拖到分钟级。
-- 每个公开来源默认 6 秒超时；可用 `HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS` 调整。
+- 每个公开来源默认 12 秒超时；可用 `HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS` 调整。香港券商站点首包经常超过 6 秒，不要把可恢复慢源误判为无数据。
 - worker 数可用 `HKIPO_HEAT_SCAN_MAX_WORKERS` 调整；不要设置为无限并发，避免对公开网站造成不必要压力。
 - 单个来源失败只写入 `data[].source_errors[]`，不阻断其他来源证据，也不让 CLI 因网页结构变化直接失败。
+- 当前 source-specific parser 覆盖致富证券新股详情页：若页面招股窗口覆盖报告日，可把页面 live snapshot 标记为 `updated_at=<report_date>`、`source_time_mode=active_subscription_window`，并解析 `subscription_multiple`、`sponsor`、`core_business`、`offer_market_cap`、`pe_ratio`。
 
 ## 输出 Contract
 
@@ -62,6 +63,8 @@ uv run python scripts/hkipo_heat_scan.py \
 - `heat_status = heat_threshold_not_met`
 - `evidence_quality = low`
 - `subscription_heat.status = 热度未达当日核验门槛`
+- `subscription_heat.score = 0`
+- `subscription_heat.score_status = not_scorable`
 
 `data[].structure_evidence[]` 与 `data[].valuation_evidence[]` 使用同一归因字段 contract，并额外允许 `peer`、`value.low/value.high` 等结构化字段。状态字段：
 

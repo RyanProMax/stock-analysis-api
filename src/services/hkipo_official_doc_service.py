@@ -651,12 +651,21 @@ class HkIpoOfficialDocService:
         source_time: str | None,
         url: str,
     ) -> Iterable[dict[str, Any]]:
+        greenshoe = self._extract_greenshoe_pct(text)
+        if greenshoe:
+            value, snippet = greenshoe
+            yield self._make_evidence(
+                url=url,
+                report_date=report_date,
+                source_time=source_time,
+                field="greenshoe_pct",
+                value=value,
+                unit="%",
+                confidence=0.92,
+                snippet=snippet,
+            )
+
         numeric_patterns = [
-            (
-                "greenshoe_pct",
-                r"(?:绿鞋|綠鞋|超额配股权|超額配股權|over-allotment).{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%",
-                "%",
-            ),
             (
                 "cornerstone_investor_count",
                 r"(?:基石投资者|基石投資者).{0,20}?([0-9]+)\s*(?:名|家|位)",
@@ -683,6 +692,15 @@ class HkIpoOfficialDocService:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if not match:
                 continue
+            snippet = match.group(0)
+            if field == "cornerstone_offer_pct" and self._is_false_cornerstone_snippet(
+                snippet
+            ):
+                continue
+            if field == "public_float_pct" and self._is_false_public_float_snippet(
+                snippet
+            ):
+                continue
             value = _safe_float(match.group(1))
             if value is None:
                 continue
@@ -694,7 +712,7 @@ class HkIpoOfficialDocService:
                 value=value,
                 unit=unit,
                 confidence=0.9,
-                snippet=match.group(0),
+                snippet=snippet,
             )
 
         offer_share_match = re.search(
@@ -725,15 +743,15 @@ class HkIpoOfficialDocService:
             ),
             (
                 "stabilizing_manager",
-                r"(?:稳定价格操作人|穩定價格操作人|稳定价格经办人|穩定價格經辦人)\s*(?:为|為|是|[:：])?\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，\s-]{1,60})",
+                r"(?:「(?:稳定价格操作人|穩定價格操作人|稳定价格经办人|穩定價格經辦人)」\s*指|(?:稳定价格操作人|穩定價格操作人|稳定价格经办人|穩定價格經辦人)\s*(?:为|為|是|[:：]))\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，\s-]{1,60})",
             ),
         ]
         for field, pattern in text_patterns:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if not match:
                 continue
-            value = re.split(r"[。；;]", match.group(1).strip())[0].strip(" ，,")
-            if not value:
+            value = self._clean_role_value(match.group(1).strip())
+            if not value or self._is_false_role_value(value):
                 continue
             yield self._make_evidence(
                 url=url,
@@ -745,6 +763,97 @@ class HkIpoOfficialDocService:
                 confidence=0.88,
                 snippet=match.group(0),
             )
+
+    def _extract_greenshoe_pct(self, text: str) -> tuple[float, str] | None:
+        patterns = [
+            r"超額配股權[^。；;]{0,260}?不超過全球發售[^。；;]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"超额配股权[^。；;]{0,260}?不超过全球发售[^。；;]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"授予[^。；;]{0,50}?超額配股權[^。；;]{0,90}?(?:額外發行|不超過)[^。；;]{0,40}?([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"授予[^。；;]{0,50}?超额配股权[^。；;]{0,90}?(?:额外发行|不超过)[^。；;]{0,40}?([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"授予包銷商不超過[^。；;]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%[^。；;]{0,40}?超額配股權",
+            r"授予包销商不超过[^。；;]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%[^。；;]{0,40}?超额配股权",
+            r"可超額分配的股份數目[^。；;]{0,180}?佔全球發售[^。；;]{0,80}?約?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"可超额分配的股份数目[^。；;]{0,180}?占全球发售[^。；;]{0,80}?约?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"根據超額配股權可(?:出售|發行)[^。；;]{0,120}?佔全球發售[^。；;]{0,80}?約?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+            r"根据超额配股权可(?:出售|发行)[^。；;]{0,120}?占全球发售[^。；;]{0,80}?约?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                snippet = match.group(0)
+                if self._is_false_greenshoe_snippet(snippet):
+                    continue
+                value = _safe_float(match.group(1))
+                if value is not None:
+                    return value, snippet
+        return None
+
+    def _is_false_greenshoe_snippet(self, snippet: str) -> bool:
+        return any(
+            token in snippet
+            for token in [
+                "經紀",
+                "经纪",
+                "佣金",
+                "交易徵費",
+                "交易征费",
+                "會財局",
+                "会财局",
+                "聯交所交易費",
+                "联交所交易费",
+            ]
+        )
+
+    def _is_false_role_value(self, value: str) -> bool:
+        normalized = value.strip()
+        if normalized in {"收件人", "任何人士", "任何人士除外"}:
+            return True
+        return any(
+            token in normalized
+            for token in [
+                "除外",
+                "合理認為",
+                "合理认为",
+                "全權",
+                "全权",
+                "代其行事",
+                "上市規則",
+                "上市规则",
+                "本公司",
+            ]
+        )
+
+    def _clean_role_value(self, value: str) -> str:
+        return re.split(
+            r"(?:[。；;]|釋\s*義|释\s*义|附屬公司|附属公司|主要股東|主要股东|收購守則|收购守则)",
+            value,
+            maxsplit=1,
+        )[0].strip(" ，,")
+
+    def _is_false_cornerstone_snippet(self, snippet: str) -> bool:
+        return any(
+            token in snippet
+            for token in [
+                "生物科技公司10%",
+                "指南",
+                "上市規則",
+                "上市规则",
+                "現有股東",
+                "现有股东",
+            ]
+        )
+
+    def _is_false_public_float_snippet(self, snippet: str) -> bool:
+        return any(
+            token in snippet
+            for token in [
+                "超額配股權",
+                "超额配股权",
+                "30日",
+                "最多",
+                "穩定價格",
+                "稳定价格",
+            ]
+        )
 
     def _extract_valuation_evidence(
         self,

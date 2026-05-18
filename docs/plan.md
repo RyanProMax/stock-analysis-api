@@ -34,6 +34,8 @@
 - 本轮修复 `/hkipo` workflow 线上超时暴露的 heat scan 执行预算问题：单只 IPO 的公开来源采集改为有界并发，默认每来源 6 秒超时，单来源失败只写入 `source_errors` 并保留其他来源证据。
 - 本轮修复 `/hkipo` workflow 报告中文名缺失问题：Futu/OpenD IPO 池仍保留原始英文 `name`，但对当前港股 IPO 池补充 `display_name`、`name_zh`、`name_zh_hant`、`name_en` 和 `name_source=hkipo_alias_map`，供 workflow 节点和热度采集优先使用中文展示名。
 - 本轮新增 `/hkipo` 官方数据源文件解析内部 CLI：`scripts/hkipo_official_docs.py`，从 IPO pool 定位 HKEX 招股章程、配发结果、定价公告、稳定价格公告等文件，标题搜索无静态结果时回退解析 HKEX “新上市资料” Main Board / GEM 表格，下载并解析正文，输出绿鞋/超额配股权、稳定价格操作人、基石投资者、保荐人、公开发售/回拨、发行后市值、所得款用途与核心业务 evidence。该入口只服务内部 workflow，不新增公共 HTTP API。
+- 本轮修复 `/hkipo` 核心因子可用性：`hkipo_heat_scan.py` 改用 `requests` 获取公开网页、默认每来源 12 秒超时，并新增致富证券新股详情页解析，能从真实页面补齐同日 `subscription_multiple`、保荐人、主营业务、发行市值和 PE；无同日认购/孖展 evidence 时 `subscription_heat.score=0`、`score_status=not_scorable`，禁止后续报告输出虚假的热度分。
+- 本轮收紧 `/hkipo` 官方文件结构解析：绿鞋只从高置信超额配股权语境提取，过滤 `1.0%` 经纪佣金、发行前股本比例、规则豁免和角色标签误报；拿不准时保留缺失，不把费用或免责声明误写成绿鞋/基石/稳价人。
 
 ## 最近完成项
 
@@ -212,7 +214,8 @@
   - IPO 名称优先使用 `display_name` / `name_zh` 生成热度检索 query plan，同时保留 `name_en` 作为英文别名，避免 Futu 英文简称污染最终报告主标题。
   - 每条 heat evidence 要求 `source/source_family/field/value/unit/url/confidence/published_at 或 updated_at/staleness_status`；缺失归因时自动降级为“热度未达当日核验门槛”。
   - 本轮扩展同一只读 scanner 输出 `structure_evidence` 与 `valuation_evidence`：绿鞋/超额配股权、稳定价格操作人、基石投资者与占比、保荐人、回拨/公开发售比例、主营业务、核心能力、行业、同类股票 PE/PS/PB、发行市值和合理估值区间。缺少来源时间、URL 或 confidence 的字段不得进入核心判断，只能降级。
-  - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=6`；单个来源超时或结构变化只降级该来源。
+  - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=12`；单个来源超时或结构变化只降级该来源。
+  - 真实致富证券新股详情页已覆盖当前池的认购倍数、保荐、主营业务、发行市值和 PE；仅有单一券商来源时报告必须标注证据质量和来源，不能等同多源热度共识。
   - CI 通过 fake service / fixture contract 测试，不依赖真实网页。
 
 ## 当前状态

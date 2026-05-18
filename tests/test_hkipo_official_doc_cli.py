@@ -44,6 +44,100 @@ def _run_cli(*args: str, service: FakeOfficialDocService) -> tuple[int, dict]:
     return exit_code, _strict_json_loads(writer.getvalue())
 
 
+def test_hkipo_official_doc_parser_avoids_fee_and_cap_false_greenshoe():
+    text = (
+        "全球發售發售股份數目: 8,280,550股H股（視乎發售量調整權及超額配股權而定） "
+        "發售價: 每股H股75.70港元，另加1.0%經紀佣金、0.0027%證監會交易徵費。 "
+        "於超額配股權獲行使前，將予發行的H股數目不得超過全球發售完成後本公司經擴大股本25%，"
+        "並視乎市況授予包銷商不超過上述將予發行H股數目15%的超額配股權。 "
+        "可超額分配的股份數目將不可超過根據超額配股權可出售的股份數目，"
+        "佔全球發售項下初步可供認購的發售股份約15.0%。"
+    )
+    service = HkIpoOfficialDocService()
+
+    rows = list(
+        service._extract_structure_evidence(
+            text,
+            report_date="2026-05-18",
+            source_time="2026-05-18",
+            url="https://example.test/prospectus.pdf",
+        )
+    )
+
+    greenshoe_rows = [row for row in rows if row["field"] == "greenshoe_pct"]
+    assert [row["value"] for row in greenshoe_rows] == [15.0]
+    assert "經紀佣金" not in greenshoe_rows[0]["snippet"]
+
+
+def test_hkipo_official_doc_parser_rejects_role_label_false_positives():
+    text = (
+        "聯席保薦人為收件人。 "
+        "包銷團成員（穩定價格操作人或代其行事的任何人士除外）一概不得於公開市場交易。 "
+        "「穩定價格操作人」 指 中信里昂證券有限公司 "
+        "「附屬公司」 指 具有上市規則所賦予該詞的涵義"
+    )
+    service = HkIpoOfficialDocService()
+
+    rows = list(
+        service._extract_structure_evidence(
+            text,
+            report_date="2026-05-18",
+            source_time="2026-05-18",
+            url="https://example.test/prospectus.pdf",
+        )
+    )
+
+    fields = {row["field"]: row["value"] for row in rows}
+    assert "sponsor" not in fields
+    assert fields["stabilizing_manager"] == "中信里昂證券有限公司"
+
+
+def test_hkipo_official_doc_parser_does_not_treat_greenshoe_as_public_float():
+    text = (
+        "香港公開發售：初步提呈發售5,286,000股H股，佔全球發售初步可供認購發售股份總數的約10.0%。 "
+        "超額配股權可由整體協調人於香港公開發售申請截止日期後30日內全部或部分行使，"
+        "以要求本公司根據國際發售按發售價發行及配發合共最多7,928,800股H股，"
+        "相當於不超過全球發售項下初步可供認購發售股份的15%。"
+    )
+    service = HkIpoOfficialDocService()
+
+    rows = list(
+        service._extract_structure_evidence(
+            text,
+            report_date="2026-05-18",
+            source_time="2026-05-18",
+            url="https://example.test/prospectus.pdf",
+        )
+    )
+
+    values_by_field = {
+        row["field"]: row["value"]
+        for row in rows
+        if row["field"] in {"greenshoe_pct", "public_float_pct"}
+    }
+    assert values_by_field == {"public_float_pct": 10.0, "greenshoe_pct": 15.0}
+
+
+def test_hkipo_official_doc_parser_rejects_biotech_rule_as_cornerstone_pct():
+    text = (
+        "根據《指南》第2.3章第18段，持有生物科技公司10%以下股份的現有股東，"
+        "可作為基石投資者或承配人認購擬上市股份，而持有生物科技公司10%或以上股份的現有股東，"
+        "須作為基石投資者認購擬上市股份。"
+    )
+    service = HkIpoOfficialDocService()
+
+    rows = list(
+        service._extract_structure_evidence(
+            text,
+            report_date="2026-05-18",
+            source_time="2026-05-18",
+            url="https://example.test/prospectus.pdf",
+        )
+    )
+
+    assert [row for row in rows if row["field"] == "cornerstone_offer_pct"] == []
+
+
 def test_hkipo_official_doc_cli_emits_structured_artifact(tmp_path):
     ipos_json = tmp_path / "ipos.json"
     cache_dir = tmp_path / "cache"

@@ -6,6 +6,7 @@ import threading
 
 from src.services.hkipo_heat_scan_cli import main as hkipo_heat_scan_main
 from src.services.hkipo_heat_scan_service import HkIpoHeatScanService
+import src.services.hkipo_heat_scan_service as heat_scan_service
 
 
 def _strict_json_loads(raw: str) -> dict:
@@ -241,6 +242,8 @@ def test_hkipo_heat_scan_cli_degrades_evidence_without_required_attribution(tmp_
     assert item["heat_status"] == "heat_threshold_not_met"
     assert item["evidence_quality"] == "low"
     assert item["subscription_heat"]["status"] == "热度未达当日核验门槛"
+    assert item["subscription_heat"]["score"] == 0
+    assert item["subscription_heat"]["score_status"] == "not_scorable"
     assert item["evidence"][0]["staleness_status"] == "invalid_missing_attribution"
 
 
@@ -277,6 +280,89 @@ def test_hkipo_heat_scan_service_degrades_scraped_value_without_source_time():
         entry["staleness_status"] == "invalid_missing_attribution"
         for entry in item["evidence"]
     )
+
+
+def test_hkipo_heat_scan_service_extracts_chief_broker_detail_snapshot():
+    def fetcher(url: str) -> str:
+        if "chiefgroup.com.hk" not in url:
+            return ""
+        return """
+        <h3>华曦达 (00901.HK)</h3>
+        <table>
+          <tr><td>股票编号</td><td>00901.HK</td></tr>
+          <tr><td>股票名称</td><td>华曦达</td></tr>
+          <tr><td>保荐人</td><td><span>中信建投(国际)融资有限公司</span><br /></td></tr>
+          <tr><td>招股日期</td><td>2026-05-18 - 2026-05-21</td></tr>
+          <tr><td>入场费</td><td>港元 3313.08</td></tr>
+          <tr><td>认购倍数</td><td><span>14.2</span></td></tr>
+          <tr><td>市价</td><td><span>68.73亿</span></td></tr>
+          <tr><td>市盈率</td><td><span>26.01</span></td></tr>
+          <tr><td>主要业务</td><td>公司是面向企业客户的智慧家庭解决方案提供商，致力推动AI技术在家庭空间场景的落地应用。</td></tr>
+        </table>
+        """
+
+    service = HkIpoHeatScanService(fetcher=fetcher)
+
+    payload = service.scan(
+        report_date="2026-05-18",
+        ipos=[{"code": "HK.00901", "display_name": "华曦达", "name": "SDMC"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    heat_fields = {entry["field"]: entry for entry in item["evidence"]}
+    structure_fields = {entry["field"]: entry for entry in item["structure_evidence"]}
+    valuation_fields = {entry["field"]: entry for entry in item["valuation_evidence"]}
+    assert item["heat_status"] == "same_day_verified"
+    assert item["subscription_heat"]["score"] > 0
+    assert item["subscription_heat"]["score_status"] == "scored"
+    assert heat_fields["subscription_multiple"]["value"] == 14.2
+    assert heat_fields["subscription_multiple"]["source"] == "致富证券 IPO"
+    assert heat_fields["subscription_multiple"]["updated_at"] == "2026-05-18"
+    assert (
+        heat_fields["subscription_multiple"]["source_time_mode"]
+        == "active_subscription_window"
+    )
+    assert structure_fields["sponsor"]["value"] == "中信建投(国际)融资有限公司"
+    assert valuation_fields["core_business"]["value"].startswith(
+        "公司是面向企业客户的智慧家庭解决方案提供商"
+    )
+    assert valuation_fields["offer_market_cap"]["value"] == "68.73亿"
+    assert valuation_fields["pe_ratio"]["value"] == 26.01
+
+
+def test_hkipo_heat_scan_default_fetch_uses_requests_session(monkeypatch):
+    calls: list[dict] = []
+
+    class FakeResponse:
+        content = "招股日期 2026-05-18 - 2026-05-21 认购倍数 14.2".encode()
+        encoding = "utf-8"
+        apparent_encoding = "utf-8"
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url: str, *, headers: dict, timeout: float) -> FakeResponse:
+        calls.append({"url": url, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setattr(heat_scan_service.requests, "get", fake_get)
+    service = HkIpoHeatScanService(fetch_timeout_seconds=3.5)
+
+    html = service._default_fetch("https://example.test/ipo")
+
+    assert "认购倍数 14.2" in html
+    assert calls == [
+        {
+            "url": "https://example.test/ipo",
+            "headers": {
+                "User-Agent": heat_scan_service.USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
+            },
+            "timeout": 3.5,
+        }
+    ]
 
 
 def test_hkipo_heat_scan_service_prefers_display_name_for_query_plan():
@@ -366,7 +452,7 @@ def test_hkipo_heat_scan_service_extracts_structure_and_valuation_evidence():
         "孖展 128.5倍 公开认购 55.2倍 "
         "绿鞋 15% 超额配股权 基石投资者3名 基石占发售40% "
         "保荐人 高盛 稳定价格操作人 中金 公开发售比例 10% 回拨后最高 50% "
-        "主营业务 AI营销平台 核心能力 数据智能投放 行业 SaaS营销科技 "
+        "主营业务 AI营销平台 核心能力 数据智能投放 所属行业 SaaS营销科技 "
         "同类股票 商汤 PE 8.5倍 第四范式 PE 12.3倍 "
         "发行市值 HK$100亿 合理估值区间 HK$80亿-HK$120亿"
     )

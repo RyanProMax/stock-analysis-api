@@ -3,17 +3,19 @@ from __future__ import annotations
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import date, datetime
+import html as html_parser
 import os
 import re
 from typing import Any, Callable, Iterable
 import urllib.parse
-import urllib.request
+
+import requests
 
 SOURCE = "hkipo_heat_scan"
 USER_AGENT = (
     "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
 )
-DEFAULT_FETCH_TIMEOUT_SECONDS = 6.0
+DEFAULT_FETCH_TIMEOUT_SECONDS = 12.0
 DEFAULT_MAX_WORKERS = 10
 SOURCE_FAMILIES = (
     "futu_niuniu",
@@ -69,6 +71,15 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return parsed if parsed > 0 else default
+
+
+def _html_to_text(raw_html: str) -> str:
+    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", raw_html)
+    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?i)<br\s*/?>", " ", text)
+    text = re.sub(r"(?i)</(?:td|th|tr|p|div|li|h[1-6])>", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html_parser.unescape(text)).strip()
 
 
 def _source_time(evidence: dict[str, Any]) -> str:
@@ -166,7 +177,14 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
             item.setdefault(
                 "evidence_quality", "high" if len(usable) >= 2 else "medium"
             )
-            item.setdefault("subscription_heat", {"status": "usable"})
+            item["subscription_heat"] = {
+                **(
+                    item.get("subscription_heat")
+                    if isinstance(item.get("subscription_heat"), dict)
+                    else {}
+                ),
+                **_score_subscription_heat(usable),
+            }
         else:
             degraded_count += 1
             item["heat_status"] = "heat_threshold_not_met"
@@ -179,6 +197,9 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
             item["subscription_heat"] = {
                 **heat,
                 "status": "热度未达当日核验门槛",
+                "score": 0,
+                "score_status": "not_scorable",
+                "usable_evidence_count": 0,
             }
         normalized_rows.append(item)
 
@@ -193,6 +214,45 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         **summary,
     }
     return normalized
+
+
+def _score_subscription_heat(evidence: list[dict[str, Any]]) -> dict[str, Any]:
+    multiples = [
+        float(entry["value"])
+        for entry in evidence
+        if entry.get("field") in {"margin_multiple", "subscription_multiple"}
+        and _safe_float(entry.get("value")) is not None
+    ]
+    best_multiple = max(multiples) if multiples else None
+    if best_multiple is None:
+        score = 4
+    elif best_multiple >= 100:
+        score = 20
+    elif best_multiple >= 50:
+        score = 17
+    elif best_multiple >= 20:
+        score = 14
+    elif best_multiple >= 10:
+        score = 10
+    else:
+        score = 6
+    return {
+        "status": "same_day_verified",
+        "score": score,
+        "score_status": "scored",
+        "max_multiple": best_multiple,
+        "usable_evidence_count": len(evidence),
+        "source_family_count": len(
+            {
+                entry.get("source_family")
+                for entry in evidence
+                if entry.get("source_family")
+            }
+        ),
+        "fields": sorted(
+            {str(entry.get("field")) for entry in evidence if entry.get("field")}
+        ),
+    }
 
 
 def _normalize_auxiliary_evidence(value: Any, report_date: str) -> list[dict[str, Any]]:
@@ -244,6 +304,7 @@ class SourceCandidate:
     source: str
     source_family: str
     url: str
+    live_snapshot: bool = False
 
 
 class HkIpoHeatScanService:
@@ -270,20 +331,25 @@ class HkIpoHeatScanService:
         self.fetcher = fetcher or self._default_fetch
 
     def _default_fetch(self, url: str) -> str:
-        request = urllib.request.Request(
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
+        }
+        response = requests.get(
             url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
-            },
+            headers=headers,
+            timeout=self.fetch_timeout_seconds,
         )
-        with urllib.request.urlopen(
-            request, timeout=self.fetch_timeout_seconds
-        ) as response:
-            content_type = response.headers.get_content_charset()
-            raw = response.read(2_000_000)
-        for encoding in [content_type, "utf-8", "big5", "gb18030"]:
+        response.raise_for_status()
+        raw = response.content[:2_000_000]
+        for encoding in [
+            getattr(response, "encoding", None),
+            getattr(response, "apparent_encoding", None),
+            "utf-8",
+            "big5",
+            "gb18030",
+        ]:
             if not encoding:
                 continue
             try:
@@ -403,6 +469,7 @@ class HkIpoHeatScanService:
         )
         query = urllib.parse.quote(raw_query)
         compact_code_value = code.replace("HK.", "")
+        symbol = compact_code_value.lstrip("0") or compact_code_value
         compact_code = urllib.parse.quote(compact_code_value)
         quoted_name = urllib.parse.quote(name)
         return [
@@ -452,6 +519,12 @@ class HkIpoHeatScanService:
                 f"https://www.poems.com.hk/zh-hk/product-and-service/ipo/?keyword={quoted_name or compact_code}",
             ),
             SourceCandidate(
+                "致富证券 IPO",
+                "broker_margin_table",
+                f"https://www.chiefgroup.com.hk/cn/securities/hk-ipo-detail/dp?symbol={symbol}",
+                live_snapshot=True,
+            ),
+            SourceCandidate(
                 "Tiger Brokers IPO",
                 "broker_margin_table",
                 f"https://www.itiger.com/hk/ipo?keyword={query}",
@@ -473,6 +546,8 @@ class HkIpoHeatScanService:
         value: Any,
         unit: str,
         confidence: float,
+        source_time_field: str = "published_at",
+        source_time_mode: str | None = None,
         **extra: Any,
     ) -> dict[str, Any]:
         evidence = {
@@ -486,8 +561,10 @@ class HkIpoHeatScanService:
             **extra,
         }
         if source_time:
-            evidence["published_at"] = source_time
+            evidence[source_time_field] = source_time
             evidence["staleness_status"] = classify_staleness(source_time, report_date)
+        if source_time_mode:
+            evidence["source_time_mode"] = source_time_mode
         return evidence
 
     def _extract_page_evidence(
@@ -497,8 +574,10 @@ class HkIpoHeatScanService:
         candidate: SourceCandidate,
         report_date: str,
     ) -> dict[str, list[dict[str, Any]]]:
-        text = re.sub(r"\s+", " ", html)
-        source_time = self._extract_source_time(text, report_date)
+        text = _html_to_text(html)
+        source_time, source_time_field, source_time_mode = self._extract_source_time(
+            text, report_date, candidate=candidate
+        )
         return {
             "evidence": list(
                 self._extract_heat_evidence(
@@ -506,6 +585,8 @@ class HkIpoHeatScanService:
                     candidate=candidate,
                     report_date=report_date,
                     source_time=source_time,
+                    source_time_field=source_time_field,
+                    source_time_mode=source_time_mode,
                 )
             ),
             "structure_evidence": list(
@@ -514,6 +595,8 @@ class HkIpoHeatScanService:
                     candidate=candidate,
                     report_date=report_date,
                     source_time=source_time,
+                    source_time_field=source_time_field,
+                    source_time_mode=source_time_mode,
                 )
             ),
             "valuation_evidence": list(
@@ -522,6 +605,8 @@ class HkIpoHeatScanService:
                     candidate=candidate,
                     report_date=report_date,
                     source_time=source_time,
+                    source_time_field=source_time_field,
+                    source_time_mode=source_time_mode,
                 )
             ),
         }
@@ -533,15 +618,17 @@ class HkIpoHeatScanService:
         candidate: SourceCandidate,
         report_date: str,
         source_time: str | None,
+        source_time_field: str,
+        source_time_mode: str | None,
     ) -> Iterable[dict[str, Any]]:
         patterns = [
             (
                 "margin_multiple",
-                r"(?:孖展|融资).{0,24}?([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)",
+                r"(?:孖展|融资)(?:倍数|认购)?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)?",
             ),
             (
                 "subscription_multiple",
-                r"(?:公开认购|认购).{0,24}?([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)",
+                r"(?:公开认购|认购)(?:倍数)?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:倍|x)?",
             ),
             (
                 "one_lot_success_rate",
@@ -560,6 +647,8 @@ class HkIpoHeatScanService:
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field=field,
                 value=value,
                 unit=(
@@ -575,6 +664,8 @@ class HkIpoHeatScanService:
         candidate: SourceCandidate,
         report_date: str,
         source_time: str | None,
+        source_time_field: str,
+        source_time_mode: str | None,
     ) -> Iterable[dict[str, Any]]:
         numeric_patterns = [
             (
@@ -614,6 +705,8 @@ class HkIpoHeatScanService:
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field=field,
                 value=value,
                 unit=unit,
@@ -625,24 +718,26 @@ class HkIpoHeatScanService:
         text_patterns = [
             (
                 "sponsor",
-                r"(?:独家保荐人|联席保荐人|保荐人|Sponsor)\s*[:：]?\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，\s-]{1,40})",
+                r"(?:独家保荐人|联席保荐人|保荐人|Sponsor)\s*[:：]?\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，（）()\s-]{1,80})",
             ),
             (
                 "stabilizing_manager",
-                r"(?:稳定价格操作人|稳定价格经办人)\s*[:：]?\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，\s-]{1,40})",
+                r"(?:稳定价格操作人|稳定价格经办人)\s*[:：]?\s*([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·&、,，（）()\s-]{1,80})",
             ),
         ]
         for field, pattern in text_patterns:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if not match:
                 continue
-            value = re.split(r"[。；;]", match.group(1).strip())[0].strip(" ，,")
+            value = self._clean_label_value(match.group(1).strip())
             if not value:
                 continue
             yield self._make_evidence(
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field=field,
                 value=value,
                 unit="text",
@@ -658,11 +753,16 @@ class HkIpoHeatScanService:
         candidate: SourceCandidate,
         report_date: str,
         source_time: str | None,
+        source_time_field: str,
+        source_time_mode: str | None,
     ) -> Iterable[dict[str, Any]]:
         text_patterns = [
             ("core_business", r"(?:主营业务|主要业务)\s*[:：]?\s*([^。；;，,]{2,50})"),
             ("core_capability", r"核心能力\s*[:：]?\s*([^。；;，,]{2,50})"),
-            ("industry", r"(?:所属行业|行业)\s*[:：]?\s*([^。；;，,]{2,40})"),
+            (
+                "industry",
+                r"(?:所属行业|行业分类|行业板块|所属板块)\s*[:：]?\s*([^。；;，,]{2,40})",
+            ),
         ]
         for field, pattern in text_patterns:
             match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -673,6 +773,8 @@ class HkIpoHeatScanService:
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field=field,
                 value=value,
                 unit="text",
@@ -703,6 +805,8 @@ class HkIpoHeatScanService:
                     candidate=candidate,
                     report_date=report_date,
                     source_time=source_time,
+                    source_time_field=source_time_field,
+                    source_time_mode=source_time_mode,
                     field="peer_pe",
                     value=value,
                     unit="x",
@@ -711,7 +815,7 @@ class HkIpoHeatScanService:
                 )
 
         cap_match = re.search(
-            r"(?:发行市值|上市市值|发售市值|估值)\s*[:：]?\s*(HK\$?\s*[0-9]+(?:\.[0-9]+)?\s*(?:亿|萬|万)?)",
+            r"(?:发行市值|上市市值|发售市值|市价|估值)\s*[:：]?\s*((?:HK\$?\s*)?[0-9]+(?:\.[0-9]+)?\s*(?:亿|億|萬|万)?)",
             text,
             flags=re.IGNORECASE,
         )
@@ -720,11 +824,33 @@ class HkIpoHeatScanService:
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field="offer_market_cap",
                 value=cap_match.group(1).strip(),
                 unit="text",
                 confidence=0.58,
             )
+
+        pe_match = re.search(
+            r"(?:市盈率|PE)\s*[:：]?\s*(-?[0-9]+(?:\.[0-9]+)?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if pe_match:
+            value = _safe_float(pe_match.group(1))
+            if value is not None:
+                yield self._make_evidence(
+                    candidate=candidate,
+                    report_date=report_date,
+                    source_time=source_time,
+                    source_time_field=source_time_field,
+                    source_time_mode=source_time_mode,
+                    field="pe_ratio",
+                    value=value,
+                    unit="x",
+                    confidence=0.58,
+                )
 
         range_match = re.search(
             r"合理(?:估值|市值)?区间\s*[:：]?\s*(HK\$?\s*[0-9]+(?:\.[0-9]+)?\s*(?:亿|萬|万)?)\s*[-–—至到]+\s*(HK\$?\s*[0-9]+(?:\.[0-9]+)?\s*(?:亿|萬|万)?)",
@@ -736,6 +862,8 @@ class HkIpoHeatScanService:
                 candidate=candidate,
                 report_date=report_date,
                 source_time=source_time,
+                source_time_field=source_time_field,
+                source_time_mode=source_time_mode,
                 field="fair_value_market_cap_range",
                 value={
                     "low": range_match.group(1).strip(),
@@ -745,8 +873,15 @@ class HkIpoHeatScanService:
                 confidence=0.55,
             )
 
-    def _extract_source_time(self, text: str, report_date: str) -> str | None:
+    def _extract_source_time(
+        self, text: str, report_date: str, *, candidate: SourceCandidate
+    ) -> tuple[str | None, str, str | None]:
         normalized_report_date = report_date[:10]
+        if candidate.live_snapshot and self._active_subscription_window_contains(
+            text, normalized_report_date
+        ):
+            return normalized_report_date, "updated_at", "active_subscription_window"
+
         date_patterns = [
             r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})日?",
             r"(\d{1,2})月(\d{1,2})日",
@@ -762,5 +897,53 @@ class HkIpoHeatScanService:
                     month, day = groups
                     candidate = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
                 if candidate == normalized_report_date:
-                    return candidate
-        return None
+                    return candidate, "published_at", None
+        return None, "published_at", None
+
+    def _active_subscription_window_contains(self, text: str, report_date: str) -> bool:
+        patterns = [
+            r"招股日期\s*(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\s*[-–—至到]+\s*(20\d{2})[-/](\d{1,2})[-/](\d{1,2})",
+            r"招股日期\s*(20\d{2})年(\d{1,2})月(\d{1,2})日?\s*[-–—至到]+\s*(20\d{2})年(\d{1,2})月(\d{1,2})日?",
+        ]
+        try:
+            report = date.fromisoformat(report_date)
+        except ValueError:
+            return False
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            groups = [int(part) for part in match.groups()]
+            start = date(groups[0], groups[1], groups[2])
+            end = date(groups[3], groups[4], groups[5])
+            if start <= report <= end:
+                return True
+        return False
+
+    def _clean_label_value(self, value: str) -> str:
+        stop_labels = [
+            "包销商",
+            "账簿管理人",
+            "全球协调",
+            "招股价",
+            "上市价",
+            "每手股数",
+            "全球发售",
+            "公开发售",
+            "国际发售",
+            "招股日期",
+            "上市日期",
+            "入场费",
+            "认购倍数",
+            "市价",
+            "市盈率",
+            "一手中籤率",
+            "一手中签率",
+            "申请人数",
+            "招股文件",
+            "公司概况",
+            "主要业务",
+        ]
+        pattern = "|".join(re.escape(label) for label in stop_labels)
+        cleaned = re.split(rf"(?:[。；;]|\s+(?:{pattern}))", value, maxsplit=1)[0]
+        return cleaned.strip(" ，,")
