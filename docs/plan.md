@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-17
+更新时间：2026-05-18
 
 ## 当前目标
 
@@ -33,6 +33,7 @@
 - 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。
 - 本轮修复 `/hkipo` workflow 线上超时暴露的 heat scan 执行预算问题：单只 IPO 的公开来源采集改为有界并发，默认每来源 6 秒超时，单来源失败只写入 `source_errors` 并保留其他来源证据。
 - 本轮修复 `/hkipo` workflow 报告中文名缺失问题：Futu/OpenD IPO 池仍保留原始英文 `name`，但对当前港股 IPO 池补充 `display_name`、`name_zh`、`name_zh_hant`、`name_en` 和 `name_source=hkipo_alias_map`，供 workflow 节点和热度采集优先使用中文展示名。
+- 本轮新增 `/hkipo` 官方数据源文件解析内部 CLI：`scripts/hkipo_official_docs.py`，从 IPO pool 定位 HKEX 招股章程、配发结果、定价公告、稳定价格公告等文件，标题搜索无静态结果时回退解析 HKEX “新上市资料” Main Board / GEM 表格，下载并解析正文，输出绿鞋/超额配股权、稳定价格操作人、基石投资者、保荐人、公开发售/回拨、发行后市值、所得款用途与核心业务 evidence。该入口只服务内部 workflow，不新增公共 HTTP API。
 
 ## 最近完成项
 

@@ -493,6 +493,10 @@ pymongo==4.16.0
     # via pyqlib
 pyparsing==3.3.2
     # via matplotlib
+pypdf==6.11.0
+    # via stock-analysis-api (pyproject.toml)
+pymupdf==1.27.2.3
+    # via stock-analysis-api (pyproject.toml)
 pyqlib==0.9.7
     # via stock-analysis-api (pyproject.toml)
 pytdx==1.72

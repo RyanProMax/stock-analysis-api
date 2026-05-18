@@ -24,6 +24,8 @@ dependencies = [
     "efinance (>=0.5.5.2,<0.6.0.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
     "futu-api>=10.4.6408",
+    "pypdf>=6.11.0",
+    "pymupdf>=1.27.2.3",
 ]
 
 [dependency-groups]
