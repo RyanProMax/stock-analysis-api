@@ -331,6 +331,43 @@ def test_hkipo_heat_scan_service_extracts_chief_broker_detail_snapshot():
     assert valuation_fields["pe_ratio"]["value"] == 26.01
 
 
+def test_hkipo_heat_scan_service_extracts_tradesmart_margin_pulse():
+    html = r"""
+    <script>
+    self.__next_f.push([1,"15:[\"$\",\"$L16\",null,{\"locale\":\"zh\",\"data\":{\"margin\":{\"generated_at\":\"2026-05-19T02:02:05.223Z\",\"source\":\"AiPO (myiqdii.com)\",\"source_url\":\"https://aipo.myiqdii.com/trasaction/index\",\"records\":[{\"symbol\":\"02723\",\"symbol_hk\":\"02723.HK\",\"name\":\"深演智能\",\"margin_total_hkd_yi\":66.8769,\"oversubscription_ratio\":131.385,\"broker_top_text\":\"华泰国际: 1.4758亿\",\"observed_at\":\"2026-05-19T01:02:10.000Z\",\"scraped_at\":\"2026-05-19T01:05:43.724Z\",\"source_url\":\"https://aipo.myiqdii.com/Trasaction/MarginDetails?symbol=02723\u0026updateTime=2026/05/19%2009:02:10\"}]}}}]\n"])
+    </script>
+    """
+
+    def fetcher(url: str) -> str:
+        if "lowrisktradesmart.org" in url:
+            return html
+        return ""
+
+    service = HkIpoHeatScanService(fetcher=fetcher)
+
+    payload = service.scan(
+        report_date="2026-05-19",
+        ipos=[{"code": "HK.02723", "display_name": "深演智能"}],
+        include_closed=False,
+    )
+
+    item = payload["data"][0]
+    heat_fields = {entry["field"]: entry for entry in item["evidence"]}
+    assert item["heat_status"] == "same_day_verified"
+    assert item["subscription_heat"]["score"] == 20
+    assert heat_fields["margin_multiple"]["value"] == 131.385
+    assert heat_fields["margin_multiple"]["source"] == "TradeSmart IPO Tracker"
+    assert heat_fields["margin_multiple"]["source_family"] == "multi_broker_aggregate"
+    assert heat_fields["margin_multiple"]["updated_at"] == "2026-05-19T01:02:10.000Z"
+    assert heat_fields["margin_multiple"]["staleness_status"] == "same_day"
+    assert heat_fields["margin_multiple"]["upstream_source"] == "AiPO (myiqdii.com)"
+    assert heat_fields["margin_amount_hkd_yi"]["value"] == 66.8769
+    assert (
+        "updateTime=2026/05/19%2009:02:10"
+        in heat_fields["margin_multiple"]["upstream_url"]
+    )
+
+
 def test_hkipo_heat_scan_default_fetch_uses_requests_session(monkeypatch):
     calls: list[dict] = []
 

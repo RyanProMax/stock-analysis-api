@@ -216,6 +216,7 @@
   - 本轮扩展同一只读 scanner 输出 `structure_evidence` 与 `valuation_evidence`：绿鞋/超额配股权、稳定价格操作人、基石投资者与占比、保荐人、回拨/公开发售比例、主营业务、核心能力、行业、同类股票 PE/PS/PB、发行市值和合理估值区间。缺少来源时间、URL 或 confidence 的字段不得进入核心判断，只能降级。
   - 每只 IPO 的多来源扫描为有界并发，默认 `HKIPO_HEAT_SCAN_MAX_WORKERS=10`、`HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS=12`；单个来源超时或结构变化只降级该来源。
   - 真实致富证券新股详情页已覆盖当前池的认购倍数、保荐、主营业务、发行市值和 PE；仅有单一券商来源时报告必须标注证据质量和来源，不能等同多源热度共识。
+  - 新增 TradeSmart IPO Tracker 公开孖展脉搏解析：从其页面内嵌的 AiPO margin records 读取 `margin_multiple`、`margin_amount_hkd_yi`、`observed_at` 和上游详情 URL，作为 `multi_broker_aggregate` 证据进入热度核验。该源不是 HKEX 官方数据，且 AiPO 页面提示服务将关闭，因此后续仍需继续观察稳定性并补更多券商/财经站 fallback。
   - CI 通过 fake service / fixture contract 测试，不依赖真实网页。
 
 ## 当前状态

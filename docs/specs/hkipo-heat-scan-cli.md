@@ -26,7 +26,9 @@ uv run python scripts/hkipo_heat_scan.py \
 - 每个公开来源默认 12 秒超时；可用 `HKIPO_HEAT_SCAN_FETCH_TIMEOUT_SECONDS` 调整。香港券商站点首包经常超过 6 秒，不要把可恢复慢源误判为无数据。
 - worker 数可用 `HKIPO_HEAT_SCAN_MAX_WORKERS` 调整；不要设置为无限并发，避免对公开网站造成不必要压力。
 - 单个来源失败只写入 `data[].source_errors[]`，不阻断其他来源证据，也不让 CLI 因网页结构变化直接失败。
-- 当前 source-specific parser 覆盖致富证券新股详情页：若页面招股窗口覆盖报告日，可把页面 live snapshot 标记为 `updated_at=<report_date>`、`source_time_mode=active_subscription_window`，并解析 `subscription_multiple`、`sponsor`、`core_business`、`offer_market_cap`、`pe_ratio`。
+- 当前 source-specific parser 覆盖：
+  - 致富证券新股详情页：若页面招股窗口覆盖报告日，可把页面 live snapshot 标记为 `updated_at=<report_date>`、`source_time_mode=active_subscription_window`，并解析 `subscription_multiple`、`sponsor`、`core_business`、`offer_market_cap`、`pe_ratio`。
+  - TradeSmart IPO Tracker 公开孖展脉搏：解析 `margin_multiple`（页面 `oversubscription_ratio`）、`margin_amount_hkd_yi`、`observed_at` 和上游 AiPO 详情 URL。该源属于 `multi_broker_aggregate`，但底层声明来自 AiPO / 券商公开数据，报告必须保留来源与时间，不得当作官方发行数据。
 
 ## 输出 Contract
 
@@ -57,6 +59,12 @@ uv run python scripts/hkipo_heat_scan.py \
 - `url`
 - `confidence`
 - `staleness_status`
+
+字段口径：
+
+- `margin_multiple`：融资/孖展超额倍数，来自多券商孖展聚合或明确写作“孖展/融资”的来源。
+- `subscription_multiple`：认购倍数，来自券商新股详情或公开认购字段；不能改名为 `margin_multiple`。
+- `margin_amount_hkd_yi`：孖展/融资认购总额，单位为亿港元，只作为热度解释和来源交叉核验，不单独等同超额倍数。
 
 缺少来源时间、URL 或 confidence 时，不得进入主热度评分；CLI 会把该 IPO 降级为：
 

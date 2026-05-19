@@ -4,6 +4,7 @@ import concurrent.futures
 from dataclasses import dataclass
 from datetime import date, datetime
 import html as html_parser
+import json
 import os
 import re
 from typing import Any, Callable, Iterable
@@ -421,6 +422,8 @@ class HkIpoHeatScanService:
                         html,
                         candidate=candidate,
                         report_date=report_date,
+                        code=code,
+                        name=name,
                     )
                     evidence_by_index[index].extend(extracted["evidence"])
                     structure_by_index[index].extend(extracted["structure_evidence"])
@@ -487,6 +490,11 @@ class HkIpoHeatScanService:
                 "AAStocks",
                 "finance_portal",
                 "https://www.aastocks.com/tc/stocks/market/ipo/mainpage.aspx",
+            ),
+            SourceCandidate(
+                "TradeSmart IPO Tracker",
+                "multi_broker_aggregate",
+                "https://www.lowrisktradesmart.org/zh/tools/ipo-tracker",
             ),
             SourceCandidate(
                 "ETNet",
@@ -573,7 +581,24 @@ class HkIpoHeatScanService:
         *,
         candidate: SourceCandidate,
         report_date: str,
+        code: str = "",
+        name: str = "",
     ) -> dict[str, list[dict[str, Any]]]:
+        if candidate.source == "TradeSmart IPO Tracker":
+            return {
+                "evidence": list(
+                    self._extract_tradesmart_margin_evidence(
+                        html,
+                        candidate=candidate,
+                        report_date=report_date,
+                        code=code,
+                        name=name,
+                    )
+                ),
+                "structure_evidence": [],
+                "valuation_evidence": [],
+            }
+
         text = _html_to_text(html)
         source_time, source_time_field, source_time_mode = self._extract_source_time(
             text, report_date, candidate=candidate
@@ -656,6 +681,134 @@ class HkIpoHeatScanService:
                 ),
                 confidence=0.55,
             )
+
+    def _extract_tradesmart_margin_evidence(
+        self,
+        html: str,
+        *,
+        candidate: SourceCandidate,
+        report_date: str,
+        code: str,
+        name: str,
+    ) -> Iterable[dict[str, Any]]:
+        compact_code = code.replace("HK.", "")
+        if not compact_code:
+            return
+
+        record = self._find_tradesmart_margin_record(
+            html, compact_code=compact_code, name=name
+        )
+        if record is None:
+            return
+
+        observed_at = record.get("observed_at")
+        upstream_url = record.get("source_url")
+        extra = {
+            "upstream_source": "AiPO (myiqdii.com)",
+            "upstream_url": upstream_url,
+        }
+        broker_top_text = record.get("broker_top_text")
+        if broker_top_text:
+            extra["top_broker"] = broker_top_text
+
+        margin_multiple = _safe_float(record.get("oversubscription_ratio"))
+        if margin_multiple is not None:
+            yield self._make_evidence(
+                candidate=candidate,
+                report_date=report_date,
+                source_time=observed_at,
+                source_time_field="updated_at",
+                field="margin_multiple",
+                value=margin_multiple,
+                unit="x",
+                confidence=0.62,
+                **extra,
+            )
+
+        margin_total = _safe_float(record.get("margin_total_hkd_yi"))
+        if margin_total is not None:
+            yield self._make_evidence(
+                candidate=candidate,
+                report_date=report_date,
+                source_time=observed_at,
+                source_time_field="updated_at",
+                field="margin_amount_hkd_yi",
+                value=margin_total,
+                unit="HKD_yi",
+                confidence=0.58,
+                **extra,
+            )
+
+    def _find_tradesmart_margin_record(
+        self, html: str, *, compact_code: str, name: str
+    ) -> dict[str, Any] | None:
+        margin_section_start = html.find(r"\"margin\"")
+        search_space = (
+            html[margin_section_start:] if margin_section_start >= 0 else html
+        )
+        record_pattern = re.compile(
+            r"\{\\\"symbol\\\":\\\"(?P<symbol>\d{5})\\\"(?P<body>.*?)(?=\},\{\\\"symbol\\\"|\}\]\})",
+            flags=re.DOTALL,
+        )
+        for match in record_pattern.finditer(search_space):
+            if match.group("symbol") != compact_code:
+                continue
+            raw_record = match.group(0)
+            if r"margin_total_hkd_yi" not in raw_record:
+                continue
+            record = {
+                "symbol": match.group("symbol"),
+                "name": self._extract_tradesmart_string(raw_record, "name"),
+                "broker_top_text": self._extract_tradesmart_string(
+                    raw_record, "broker_top_text"
+                ),
+                "observed_at": self._extract_tradesmart_string(
+                    raw_record, "observed_at"
+                ),
+                "source_url": self._extract_tradesmart_string(raw_record, "source_url"),
+                "margin_total_hkd_yi": self._extract_tradesmart_float(
+                    raw_record, "margin_total_hkd_yi"
+                ),
+                "oversubscription_ratio": self._extract_tradesmart_float(
+                    raw_record, "oversubscription_ratio"
+                ),
+            }
+            if (
+                name
+                and record["name"]
+                and not self._names_likely_match(name, str(record["name"]))
+            ):
+                continue
+            return record
+        return None
+
+    def _extract_tradesmart_string(self, raw_record: str, key: str) -> str | None:
+        match = re.search(
+            rf"\\\"{re.escape(key)}\\\":\\\"(.*?)(?=\\\",\\\"|\\\"$)",
+            raw_record,
+        )
+        if not match:
+            return None
+        try:
+            return str(json.loads(f'"{match.group(1)}"'))
+        except json.JSONDecodeError:
+            return match.group(1).replace(r"\u0026", "&")
+
+    def _extract_tradesmart_float(self, raw_record: str, key: str) -> float | None:
+        match = re.search(
+            rf"\\\"{re.escape(key)}\\\":([0-9]+(?:\.[0-9]+)?)", raw_record
+        )
+        return _safe_float(match.group(1) if match else None)
+
+    def _names_likely_match(self, left: str, right: str) -> bool:
+        normalize = lambda value: re.sub(r"[\s\-－—·・]", "", value).lower()
+        left_norm = normalize(left)
+        right_norm = normalize(right)
+        return bool(
+            left_norm
+            and right_norm
+            and (left_norm in right_norm or right_norm in left_norm)
+        )
 
     def _extract_structure_evidence(
         self,
