@@ -36,7 +36,31 @@ class FakeFutuGateway:
                 "name": "DEEPZERO",
                 "is_subscribe_status": True,
                 "list_time": "2026-05-12",
-            }
+            },
+            {
+                "code": "HK.01779",
+                "name": "LONGBIO-B",
+                "is_subscribe_status": True,
+                "list_time": "2026-06-05",
+            },
+            {
+                "code": "HK.02290",
+                "name": "LUNG FUNG GROUP",
+                "is_subscribe_status": True,
+                "list_time": "2026-06-05",
+            },
+            {
+                "code": "HK.01081",
+                "name": "DAJIN",
+                "is_subscribe_status": True,
+                "list_time": "2026-06-05",
+            },
+            {
+                "code": "HK.02553",
+                "name": "SHOUGANG LANZA",
+                "is_subscribe_status": False,
+                "list_time": "2026-06-03",
+            },
         ]
 
     def request_history_kline(
@@ -269,6 +293,20 @@ def test_ipo_list_cli_contract():
     assert payload["data"][0]["display_name"] == "深演智能"
     assert payload["data"][0]["name_en"] == "DEEPZERO"
     assert payload["data"][0]["name_source"] == "hkipo_alias_map"
+
+    by_code = {row["code"]: row for row in payload["data"]}
+    assert by_code["HK.01779"]["name_zh"] == "天辰生物-B"
+    assert by_code["HK.01779"]["display_name"] == "天辰生物-B"
+    assert by_code["HK.01779"]["name_en"] == "LONGBIO-B"
+    assert by_code["HK.02290"]["name_zh"] == "龙丰集团"
+    assert by_code["HK.02290"]["display_name"] == "龙丰集团"
+    assert by_code["HK.02290"]["name_en"] == "LUNG FUNG GROUP"
+    assert by_code["HK.01081"]["name_zh"] == "大金重工"
+    assert by_code["HK.01081"]["display_name"] == "大金重工"
+    assert by_code["HK.01081"]["name_en"] == "DAJIN"
+    assert by_code["HK.02553"]["name_zh"] == "首钢朗泽"
+    assert by_code["HK.02553"]["display_name"] == "首钢朗泽"
+    assert by_code["HK.02553"]["name_en"] == "SHOUGANG LANZA"
 
 
 def test_history_kline_cli_contract():

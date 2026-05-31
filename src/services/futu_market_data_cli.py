@@ -47,6 +47,22 @@ HK_IPO_NAME_ALIASES: dict[str, dict[str, str]] = {
         "name_zh": "拓璞数控",
         "name_zh_hant": "拓璞數控",
     },
+    "HK.01779": {
+        "name_zh": "天辰生物-B",
+        "name_zh_hant": "天辰生物-B",
+    },
+    "HK.02290": {
+        "name_zh": "龙丰集团",
+        "name_zh_hant": "龍豐集團",
+    },
+    "HK.01081": {
+        "name_zh": "大金重工",
+        "name_zh_hant": "大金重工",
+    },
+    "HK.02553": {
+        "name_zh": "首钢朗泽",
+        "name_zh_hant": "首鋼朗澤",
+    },
 }
 
 

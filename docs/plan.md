@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-18
+更新时间：2026-05-31
 
 ## 当前目标
 
@@ -33,6 +33,7 @@
 - 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。
 - 本轮修复 `/hkipo` workflow 线上超时暴露的 heat scan 执行预算问题：单只 IPO 的公开来源采集改为有界并发，默认每来源 6 秒超时，单来源失败只写入 `source_errors` 并保留其他来源证据。
 - 本轮修复 `/hkipo` workflow 报告中文名缺失问题：Futu/OpenD IPO 池仍保留原始英文 `name`，但对当前港股 IPO 池补充 `display_name`、`name_zh`、`name_zh_hant`、`name_en` 和 `name_source=hkipo_alias_map`，供 workflow 节点和热度采集优先使用中文展示名。
+- 本轮继续修复 `/hkipo` 当前池中文名缺失问题：补齐 01779 天辰生物-B、02290 龙丰集团、01081 大金重工，以及 `/hkipo --all` 可能覆盖的 02553 首钢朗泽 alias，避免 Futu/OpenD 只返回英文简称时最终报告显示“中文名待核”。
 - 本轮新增 `/hkipo` 官方数据源文件解析内部 CLI：`scripts/hkipo_official_docs.py`，从 IPO pool 定位 HKEX 招股章程、配发结果、定价公告、稳定价格公告等文件，标题搜索无静态结果时回退解析 HKEX “新上市资料” Main Board / GEM 表格，下载并解析正文，输出绿鞋/超额配股权、稳定价格操作人、基石投资者、保荐人、公开发售/回拨、发行后市值、所得款用途与核心业务 evidence。该入口只服务内部 workflow，不新增公共 HTTP API。
 - 本轮修复 `/hkipo` 核心因子可用性：`hkipo_heat_scan.py` 改用 `requests` 获取公开网页、默认每来源 12 秒超时，并新增致富证券新股详情页解析，能从真实页面补齐同日 `subscription_multiple`、保荐人、主营业务、发行市值和 PE；无同日认购/孖展 evidence 时 `subscription_heat.score=0`、`score_status=not_scorable`，禁止后续报告输出虚假的热度分。
 - 本轮收紧 `/hkipo` 官方文件结构解析：绿鞋只从高置信超额配股权语境提取，过滤 `1.0%` 经纪佣金、发行前股本比例、规则豁免和角色标签误报；拿不准时保留缺失，不把费用或免责声明误写成绿鞋/基石/稳价人。
