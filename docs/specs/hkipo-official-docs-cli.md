@@ -16,7 +16,7 @@ PDF 正文抽取优先使用 `PyMuPDF`，并以 `pypdf` 兜底；抽取阶段必
 uv run python scripts/hkipo_official_docs.py \
   --date 2026-05-17 \
   --ipos-json /path/to/ipos.json \
-  --cache-dir ~/.cli-claw/cache/hkipo-official-docs \
+  --cache-dir ~/.agent-fabric/cache/hkipo-official-docs \
   --json
 ```
 

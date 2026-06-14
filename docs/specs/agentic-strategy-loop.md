@@ -78,7 +78,7 @@ Append-only 审计事件：
   "event_id": "ahe_...",
   "handoff_id": "ah_...",
   "event_type": "claimed",
-  "owner_id": "cli-claw-daily-1",
+  "owner_id": "agent-fabric-daily-1",
   "created_at": "2026-05-16T00:01:00+00:00",
   "payload": {
     "lease_ttl_seconds": 900
@@ -139,7 +139,7 @@ Append-only 审计事件：
 
 ```bash
 uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite handoff list pending
-uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite handoff claim <handoff_id> --claimed-by cli-claw-bridge
+uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite handoff claim <handoff_id> --claimed-by agent-fabric-bridge
 uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite handoff complete <handoff_id> --result-json '{"final_markdown":"..."}'
 uv run python scripts/task_chain.py --task-db .cache/task_chain.sqlite handoff fail <handoff_id> --error "agent unavailable"
 ```
@@ -198,7 +198,7 @@ uv run python scripts/task_chain.py handoff enqueue \
 ```bash
 uv run python scripts/task_chain.py handoff claim-next \
   --role kol_researcher \
-  --owner-id cli-claw-kol-1 \
+  --owner-id agent-fabric-kol-1 \
   --lease-ttl-seconds 900 \
   --pretty
 ```
@@ -227,7 +227,7 @@ uv run python scripts/task_chain.py handoff claim-next \
 ```bash
 uv run python scripts/task_chain.py handoff complete \
   ah_... \
-  --owner-id cli-claw-kol-1 \
+  --owner-id agent-fabric-kol-1 \
   --output-file output.json \
   --pretty
 ```
@@ -246,7 +246,7 @@ complete 必须校验：
 ```bash
 uv run python scripts/task_chain.py handoff fail \
   ah_... \
-  --owner-id cli-claw-kol-1 \
+  --owner-id agent-fabric-kol-1 \
   --error-type schema_validation_failed \
   --error-message "missing evidence_refs" \
   --retryable true \
