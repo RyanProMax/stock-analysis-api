@@ -5,7 +5,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 import warnings
+
+import pytest
 
 from src.services.futu_market_data_cli import (
     _build_parser,
@@ -211,6 +214,20 @@ class NoisyFutuGateway(FakeFutuGateway):
         return super().get_global_state()
 
 
+class HangingFutuGateway(FakeFutuGateway):
+    def get_ipo_list(self, market: str):
+        time.sleep(1)
+        return super().get_ipo_list(market)
+
+
+class CleanupHangingFutuGateway(FakeFutuGateway):
+    def get_ipo_list(self, market: str):
+        try:
+            time.sleep(1)
+        finally:
+            time.sleep(1)
+
+
 def _run_cli(*args: str) -> tuple[int, dict]:
     writer = StringIO()
     exit_code = futu_market_data_cli_main(
@@ -307,6 +324,67 @@ def test_ipo_list_cli_contract():
     assert by_code["HK.02553"]["name_zh"] == "首钢朗泽"
     assert by_code["HK.02553"]["display_name"] == "首钢朗泽"
     assert by_code["HK.02553"]["name_en"] == "SHOUGANG LANZA"
+
+
+def test_ipo_list_cli_times_out_hanging_opend_call(monkeypatch):
+    monkeypatch.setenv("FUTU_OPEND_CALL_TIMEOUT_SECONDS", "0.05")
+    writer = StringIO()
+
+    exit_code = futu_market_data_cli_main(
+        ["ipo-list", "--market", "HK", "--json"],
+        writer=writer,
+        gateway=HangingFutuGateway(),
+    )
+
+    payload = _strict_json_loads(writer.getvalue())
+
+    assert exit_code == 1
+    assert payload["status"] == "failed"
+    assert "timed out after 0.05s" in payload["error"]
+
+
+def test_stdout_cli_force_exits_after_hanging_opend_call(monkeypatch, capsys):
+    monkeypatch.setenv("FUTU_OPEND_CALL_TIMEOUT_SECONDS", "0.05")
+    exit_codes: list[int] = []
+
+    def fake_exit(code: int) -> None:
+        exit_codes.append(code)
+        raise SystemExit(code)
+
+    monkeypatch.setattr("src.services.futu_market_data_cli.os._exit", fake_exit)
+
+    with pytest.raises(SystemExit) as exc_info:
+        futu_market_data_cli_main(
+            ["ipo-list", "--market", "HK", "--json"],
+            gateway=HangingFutuGateway(),
+        )
+
+    payload = _strict_json_loads(capsys.readouterr().out)
+
+    assert exc_info.value.code == 1
+    assert exit_codes == [1]
+    assert payload["status"] == "failed"
+    assert "timed out after 0.05s" in payload["error"]
+
+
+def test_ipo_list_cli_bounds_cleanup_after_hanging_opend_call(monkeypatch):
+    monkeypatch.setenv("FUTU_OPEND_CALL_TIMEOUT_SECONDS", "0.05")
+    writer = StringIO()
+
+    started = time.monotonic()
+    exit_code = futu_market_data_cli_main(
+        ["ipo-list", "--market", "HK", "--json"],
+        writer=writer,
+        gateway=CleanupHangingFutuGateway(),
+    )
+    elapsed = time.monotonic() - started
+
+    payload = _strict_json_loads(writer.getvalue())
+
+    assert exit_code == 1
+    assert elapsed < 0.3
+    assert payload["status"] == "failed"
+    assert "timed out after 0.05s" in payload["error"]
 
 
 def test_history_kline_cli_contract():

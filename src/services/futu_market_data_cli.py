@@ -5,6 +5,8 @@ import contextlib
 import io
 import json
 import math
+import os
+import signal
 import sys
 from typing import Any, Callable, Iterable, TextIO, TypeVar
 import warnings
@@ -21,6 +23,11 @@ from ..model.trading import MarketSnapshot
 
 SOURCE = "futu_opend"
 T = TypeVar("T")
+
+
+class FutuOpenDTimeoutError(TimeoutError):
+    pass
+
 
 HK_IPO_NAME_ALIASES: dict[str, dict[str, str]] = {
     "HK.02723": {
@@ -69,6 +76,7 @@ HK_IPO_NAME_ALIASES: dict[str, dict[str, str]] = {
 def _write_payload(writer: TextIO, payload: dict[str, Any]) -> None:
     writer.write(json.dumps(to_jsonable(payload), ensure_ascii=False, allow_nan=False))
     writer.write("\n")
+    writer.flush()
 
 
 def _parse_codes(raw_codes: str | Iterable[str]) -> list[str]:
@@ -199,9 +207,46 @@ def _symbol_rule_from_snapshot(snapshot: MarketSnapshot) -> dict[str, Any]:
 
 
 def _call_suppressing_stdout(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+    timeout_seconds = _futu_call_timeout_seconds()
+    with (
+        _futu_call_deadline(timeout_seconds),
+        contextlib.redirect_stdout(io.StringIO()),
+        warnings.catch_warnings(),
+    ):
         warnings.simplefilter("ignore", DeprecationWarning)
         return func(*args, **kwargs)
+
+
+def _futu_call_timeout_seconds() -> float:
+    raw_value = os.environ.get("FUTU_OPEND_CALL_TIMEOUT_SECONDS", "30").strip()
+    if not raw_value:
+        return 30.0
+    try:
+        timeout = float(raw_value)
+    except ValueError:
+        return 30.0
+    return max(0.0, timeout)
+
+
+@contextlib.contextmanager
+def _futu_call_deadline(timeout_seconds: float):
+    if timeout_seconds <= 0 or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def _raise_timeout(_signum: int, _frame: Any) -> None:
+        raise FutuOpenDTimeoutError(
+            f"Futu OpenD call timed out after {timeout_seconds:g}s"
+        )
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -660,6 +705,18 @@ def main(
             },
         )
         return 2
+    except FutuOpenDTimeoutError as exc:
+        _write_payload(
+            writer,
+            {
+                "status": "failed",
+                "source": SOURCE,
+                "error": str(exc),
+            },
+        )
+        if writer is sys.stdout:
+            os._exit(1)
+        return 1
     except Exception as exc:
         _write_payload(
             writer,

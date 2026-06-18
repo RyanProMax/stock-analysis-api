@@ -94,6 +94,7 @@ black --line-length 100 .
 | `TRADING_LEDGER_DB_PATH` | 模拟盘 trading ledger SQLite 文件路径，可选 |
 | `FUTU_OPEND_HOST` | Futu OpenD 地址，默认 `127.0.0.1` |
 | `FUTU_OPEND_PORT` | Futu OpenD 端口，默认 `11111` |
+| `FUTU_OPEND_CALL_TIMEOUT_SECONDS` | 单次 Futu/OpenD CLI 查询超时，默认 `30` 秒；设为 `0` 可禁用内部超时 |
 
 ## 使用级注意事项
 

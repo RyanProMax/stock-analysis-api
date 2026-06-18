@@ -2,7 +2,7 @@
 name = "stock-analysis-api"
 version = "0.1.0"
 description = ""
-authors = [{ name = "Ryan", email = "627311610@qq.com" }]
+authors = [{ name = "Ryan", email = "ryan.pro.1024@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.12,<4.0"
 dependencies = [

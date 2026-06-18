@@ -41,6 +41,7 @@ uv run python scripts/futu_market_data.py <command> --json
 
 - API 仓库声明 `futu-api>=10.4.6408` 依赖，内部 CLI 必须在 `uv run` 环境中可直接 `import futu`。
 - OpenD 默认地址为 `127.0.0.1:11111`，可通过 `FUTU_OPEND_HOST` / `FUTU_OPEND_PORT` 覆盖。
+- 内部 CLI 单次 Futu/OpenD 查询默认 30 秒超时，可通过 `FUTU_OPEND_CALL_TIMEOUT_SECONDS` 覆盖；deadline 覆盖 SDK 查询与清理阶段，设为 `0` 时禁用内部 deadline。
 - skill 侧只解析 API root 与绝对 `uv`，不再调用外部 `futuapi` skill 脚本或其 Python venv。
 
 ## 非范围

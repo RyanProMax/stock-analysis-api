@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-05-31
+更新时间：2026-06-18
 
 ## 当前目标
 
@@ -37,9 +37,15 @@
 - 本轮新增 `/hkipo` 官方数据源文件解析内部 CLI：`scripts/hkipo_official_docs.py`，从 IPO pool 定位 HKEX 招股章程、配发结果、定价公告、稳定价格公告等文件，标题搜索无静态结果时回退解析 HKEX “新上市资料” Main Board / GEM 表格，下载并解析正文，输出绿鞋/超额配股权、稳定价格操作人、基石投资者、保荐人、公开发售/回拨、发行后市值、所得款用途与核心业务 evidence。该入口只服务内部 workflow，不新增公共 HTTP API。
 - 本轮修复 `/hkipo` 核心因子可用性：`hkipo_heat_scan.py` 改用 `requests` 获取公开网页、默认每来源 12 秒超时，并新增致富证券新股详情页解析，能从真实页面补齐同日 `subscription_multiple`、保荐人、主营业务、发行市值和 PE；无同日认购/孖展 evidence 时 `subscription_heat.score=0`、`score_status=not_scorable`，禁止后续报告输出虚假的热度分。
 - 本轮收紧 `/hkipo` 官方文件结构解析：绿鞋只从高置信超额配股权语境提取，过滤 `1.0%` 经纪佣金、发行前股本比例、规则豁免和角色标签误报；拿不准时保留缺失，不把费用或免责声明误写成绿鞋/基石/稳价人。
+- 本轮修复 `/hkipo` IPO 池发现阶段的 Futu/OpenD 静默挂起问题：`scripts/futu_market_data.py` 的 Futu 调用默认 30 秒内部超时，超时后输出结构化 failed JSON；Agent Fabric 可展示真实超时原因，不再只记录空 stderr 的 generic command failure。
 
 ## 最近完成项
 
+- 已修复 Futu/OpenD CLI 超时 contract：
+  - `FUTU_OPEND_CALL_TIMEOUT_SECONDS` 控制单次 Futu/OpenD 查询 deadline，默认 30 秒，覆盖 SDK 查询与清理阶段；设为 `0` 可禁用内部 deadline。
+  - OpenD/Futu API 无响应时，CLI 输出 `status=failed / source=futu_opend / error="Futu OpenD call timed out after ..."` 并可靠退出，避免外层 workflow 等到 120 秒进程超时。
+  - `futu_market_data_cli` 增加 hanging gateway 回归测试，覆盖 timeout JSON 与 stdout CLI 强制退出路径。
+  - package author metadata 已从旧邮箱更新为 `ryan.pro.1024@gmail.com`，tracked 文件中不再残留旧邮箱。
 - 已保留并稳定运行：
   - `POST /stock/analyze`
   - `POST /watch/poll`
@@ -264,6 +270,7 @@
   - 已新增 `src/services/futu_market_data_cli.py`
   - 已新增 `scripts/futu_market_data.py`
   - 已覆盖 `global-state` / `ipo-list` / `kline` / `snapshot` / `symbol-rules` / `order-book` / `ticker` / `rt-data` / `option-expirations` / `option-chain` / `account` / `positions` / `orders` / `deals` / `cash-flow` JSON contract
+- Futu/OpenD 内部 CLI 当前对每次 Futu API 调用和 SDK 清理阶段有内部 deadline：默认 30 秒，OpenD 无响应时输出 failed JSON 并退出；这属于可诊断降级，不伪造 IPO、行情或账户数据。
 - Futu CLI import 现在不依赖行情仓可写性；只执行实际 Futu 子命令时才连接 OpenD。
 - Futu CLI 只读账户类查询固定使用 Futu `SIMULATE` 环境；CLI 不暴露下单、改单、撤单、交易解锁或订阅子命令。
 - `scripts/grey_market_watch.py` 当前作为暗盘 / OTC 查询内部入口，只读拉取 Futu OpenD snapshot / order book；`--once` 用于单次查询且不落 scheduler tick 状态，默认 tick 模式用于定时轮询并做节流；未接入正式 API 的券商 provider 明确返回 `unsupported`，不会用网页抓取或旧数据补编报价。
@@ -353,6 +360,7 @@
 - 小时汇报下一步需要改成用户报告形态：本小时操作、持仓现状、板块观点和下一步计划。
 - 将 blocked run 的 `next_research_actions` 反向生成下一颗探索任务，优先扩 universe / 因子方向，而不是重复同一批因子。
 - 接入 Cli Claw / Agent 层执行 `stock-kol-intel` 返回的 assistant prompt，把 `agent_required` 转成可落库的 KOL 情报报告；否则策略迭代应继续暂停。
+- 部署后继续观察 `/hkipo` workflow：若 OpenD 不可用，预期表现是快速返回可解释的 `futu_opend` timeout，而不是静默挂起或空 stderr；如需更高可用性，再补 IPO 池的非 Futu fallback 数据源。
 
 ## 已知风险与阻塞
 
@@ -361,6 +369,7 @@
 - `stock-analysis-skill` 将不再保留本地 wrapper，文档必须明确调用入口在 API 仓库，避免使用方继续假设 skill 根目录存在同名脚本
 - 股票名解析依赖 `cn_symbols/us_symbols` 本地目录和必要时的目录刷新；多候选时必须由调用方提示用户澄清，不得猜测。
 - Futu/OpenD 依赖本机 OpenD 进程、端口和权限；单元测试必须使用 fake gateway / broker，不能依赖真实网络或真实账户。
+- Futu/OpenD timeout 只能把无响应转换成可解释失败，不能保证外部 OpenD 服务可用；`/hkipo` 上层 workflow 必须把该错误当作数据源不可用处理，不能编造 IPO 池。
 - 自动交易一期仅允许 `SIMULATE`，不实现真实交易、交易解锁、订阅推送或 OpenD 配置写入。
 - 策略迭代必须先落结构化 proposal 和回测门槛，不能让 Agent 在轮询链路里直接决定下单。
 - KOL 预检不是 KOL 情报本身；`agent_required` 期间继续触发策略迭代只会重复消费占位输入，必须先由 Agent 生成最终 KOL 报告。
