@@ -66,6 +66,11 @@ src/
 
 - `api/` 只负责 HTTP 输入输出，不承载业务规则
 - `scripts/` 只负责内部脚本参数解析、结果输出和轻量编排，不承载核心业务规则
+- `analyzer/` 只保留当前主链路使用的 native 技术面、基本面与趋势分析实现；旧
+  Qlib / Alpha158 analyzer、初始化开关、报告字段和运行依赖全部移除，不保留“默认
+  关闭”的隐藏兼容路径
+- `model/` 只保留实际使用的领域 contract；未引用的 ORM 占位不保留，SQLite 正式
+  持久化模型统一由 `repositories/` 管理
 - `scripts/poll_realtime_quotes.py` 的核心业务逻辑必须落在 `src/services/`，脚本本身只负责参数解析与纯 JSON 输出
 - `scripts/market_data_query.py` 是面向 Skill / Agent 的无状态批量取数入口；首个
   `daily-pack` use case 固定返回中美主要指数与美国 10 年期国债收益率，不启动
@@ -140,6 +145,8 @@ src/
   - `technical_signals`
   - `fear_greed`
 - `/stock/analyze` 的 `technical` 是研究辅助确认层，不单独承担“买卖建议”语义；其公共输出应优先表达趋势确认、动量、量价、波动与失效条件
+- 内部 `AnalysisReport` 与结构化 stock analysis normalizer 只包含当前可执行的
+  `technical` / `fundamental` / `trend_analysis`，不得继续输出空 `qlib` 兼容字段
 - 盯盘接口默认返回 compact snapshot，不复用重型分析报告整包 payload
 - `facts` 仅允许 `reported` / `consensus`
 - `analysis` 仅允许 `derived` / `estimate` / `model_output`
@@ -170,6 +177,9 @@ src/
 - `hk_daily` / `us_daily` 的第一阶段补库口径优先服务显式 symbols；HK 使用 Futu 原生代码如 `HK.00700`，US 可使用裸 ticker 或 `US.AAPL`
 - Futu 日 K 写入本地仓时只作为只读 EOD 数据源，不订阅、不交易解锁、不调用账户写入或订单能力
 - Alpha 非显式 universe 构建必须只使用本地 `daily_start_date` / `daily_end_date` 已存在的标的；显式 `--symbols` 不做覆盖过滤，缺日线时由 scan / evaluate / backtest 输出结构化缺口
+- Alpha 与公共分析运行依赖不得包含 `pyqlib`；锁定依赖文件必须从根
+  `pyproject.toml` 重新生成，避免残留 MLflow、Jupyter、Redis、PyArrow 等仅由
+  Qlib 引入的传递依赖
 - `src/model/market.py` 是市场规则的最小 contract owner；CN / HK / US 的币种、时区、常规时段、默认 lot / tick 和估算 round-trip 成本必须先进入 `MarketSpec`，Alpha / backtest 只消费 contract，不在业务逻辑里散落市场判断
 - `MarketSpec` 当前只用于评估和回测成本假设；逐标的 lot size / tick 可先通过 `futu_market_data.py symbol-rules` 从 Futu snapshot 暴露，尚未代表完整交易日历、真实成交约束或券商实际费率；显式 `--cost-bps` 始终可覆盖默认估算
 - `cn_daily` 主列应覆盖 Tushare `daily`、`daily_basic`、`adj_factor`、`stk_limit`、`suspend_d` 中稳定且标准化的日级市场事实

@@ -141,9 +141,7 @@ def _enrich_hk_ipo_names(data: Any) -> Any:
             row.setdefault("name_source", "hkipo_alias_map")
         else:
             display_name = _safe_str(
-                _first_present(
-                    row, ("display_name", "name_zh", "cn_name", "stock_name", "name")
-                )
+                _first_present(row, ("display_name", "name_zh", "cn_name", "stock_name", "name"))
             )
             if display_name:
                 row.setdefault("display_name", display_name)
@@ -177,9 +175,7 @@ def _symbol_rule_from_snapshot(snapshot: MarketSnapshot) -> dict[str, Any]:
         "source": snapshot.source,
         "as_of": snapshot.as_of,
         "lot_size": lot_size,
-        "lot_size_source": (
-            "futu_snapshot" if raw_lot_size is not None else "market_spec_default"
-        ),
+        "lot_size_source": ("futu_snapshot" if raw_lot_size is not None else "market_spec_default"),
         "price_tick": price_tick,
         "price_tick_source": (
             "futu_snapshot" if raw_price_tick is not None else "market_spec_default"
@@ -235,9 +231,7 @@ def _futu_call_deadline(timeout_seconds: float):
         return
 
     def _raise_timeout(_signum: int, _frame: Any) -> None:
-        raise FutuOpenDTimeoutError(
-            f"Futu OpenD call timed out after {timeout_seconds:g}s"
-        )
+        raise FutuOpenDTimeoutError(f"Futu OpenD call timed out after {timeout_seconds:g}s")
 
     previous_handler = signal.getsignal(signal.SIGALRM)
     signal.signal(signal.SIGALRM, _raise_timeout)
@@ -271,12 +265,8 @@ def _build_parser() -> argparse.ArgumentParser:
     kline.add_argument("--start")
     kline.add_argument("--end")
     kline.add_argument("--max-page", type=int)
-    kline.add_argument(
-        "--rehab", choices=["none", "forward", "backward"], default="forward"
-    )
-    kline.add_argument(
-        "--session", choices=["NONE", "RTH", "ETH", "ALL"], default="NONE"
-    )
+    kline.add_argument("--rehab", choices=["none", "forward", "backward"], default="forward")
+    kline.add_argument("--session", choices=["NONE", "RTH", "ETH", "ALL"], default="NONE")
     kline.add_argument("--json", action="store_true", dest="output_json")
 
     snapshot = subparsers.add_parser("snapshot", help="Get market snapshots")
@@ -316,9 +306,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     option_expirations.add_argument("--json", action="store_true", dest="output_json")
 
-    option_chain = subparsers.add_parser(
-        "option-chain", help="Get readonly option chain"
-    )
+    option_chain = subparsers.add_parser("option-chain", help="Get readonly option chain")
     option_chain.add_argument("--code", required=True)
     option_chain.add_argument("--start")
     option_chain.add_argument("--end")
@@ -327,9 +315,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["NORMAL", "SMALL", "NONE"],
         default="NORMAL",
     )
-    option_chain.add_argument(
-        "--option-type", choices=["ALL", "CALL", "PUT"], default="ALL"
-    )
+    option_chain.add_argument("--option-type", choices=["ALL", "CALL", "PUT"], default="ALL")
     option_chain.add_argument(
         "--option-cond-type",
         choices=["ALL", "WITHIN", "OUTSIDE"],
@@ -337,16 +323,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     option_chain.add_argument("--json", action="store_true", dest="output_json")
 
-    account = subparsers.add_parser(
-        "account", help="Get readonly simulated account summary"
-    )
+    account = subparsers.add_parser("account", help="Get readonly simulated account summary")
     _add_trade_args(account)
     account.add_argument("--currency", default="HKD")
     account.add_argument("--json", action="store_true", dest="output_json")
 
-    positions = subparsers.add_parser(
-        "positions", help="Get readonly simulated positions"
-    )
+    positions = subparsers.add_parser("positions", help="Get readonly simulated positions")
     _add_trade_args(positions)
     positions.add_argument("--code", default="")
     positions.add_argument("--json", action="store_true", dest="output_json")
@@ -359,9 +341,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_trade_args(deals)
     _add_trade_query_args(deals)
 
-    cash_flow = subparsers.add_parser(
-        "cash-flow", help="Get readonly simulated cash flow"
-    )
+    cash_flow = subparsers.add_parser("cash-flow", help="Get readonly simulated cash flow")
     _add_trade_args(cash_flow)
     cash_flow.add_argument("--clearing-date", default="")
     cash_flow.add_argument("--direction", default="N/A")
@@ -370,9 +350,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_trade_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--market", choices=["HK", "US", "CN", "SG", "AU", "JP"], default="HK"
-    )
+    parser.add_argument("--market", choices=["HK", "US", "CN", "SG", "AU", "JP"], default="HK")
     parser.add_argument("--acc-id", type=int, default=0)
     parser.add_argument("--acc-index", type=int, default=0)
 
@@ -483,9 +461,7 @@ def main(
                     "status": "ok",
                     "source": SOURCE,
                     "request": {"codes": codes, "count": len(codes)},
-                    "data": [
-                        _symbol_rule_from_snapshot(snapshot) for snapshot in snapshots
-                    ],
+                    "data": [_symbol_rule_from_snapshot(snapshot) for snapshot in snapshots],
                 },
             )
             return 0
@@ -584,9 +560,7 @@ def main(
 
         if args.command == "account":
             trade_gateway = trade_gateway or _build_trade_gateway(args)
-            data = _call_suppressing_stdout(
-                trade_gateway.get_account, currency=args.currency
-            )
+            data = _call_suppressing_stdout(trade_gateway.get_account, currency=args.currency)
             _write_payload(
                 writer,
                 {

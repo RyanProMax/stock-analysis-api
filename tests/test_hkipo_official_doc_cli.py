@@ -210,13 +210,12 @@ def test_hkipo_official_doc_cli_emits_structured_artifact(tmp_path):
 
 def test_hkipo_official_doc_service_locates_and_parses_hkex_documents(tmp_path):
     search_url = (
-        "https://www1.hkexnews.hk/search/titlesearch.xhtml?"
-        "lang=zh&market=SEHK&stockId=01234"
+        "https://www1.hkexnews.hk/search/titlesearch.xhtml?" "lang=zh&market=SEHK&stockId=01234"
     )
-    prospectus_url = "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0516/demo_prospectus.pdf"
-    allotment_url = (
-        "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/demo_allotment.pdf"
+    prospectus_url = (
+        "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0516/demo_prospectus.pdf"
     )
+    allotment_url = "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/demo_allotment.pdf"
     page = f"""
     <html><body>
       <a href="/listedco/listconews/sehk/2026/0516/demo_prospectus.pdf">招股章程</a>
@@ -277,9 +276,7 @@ def test_hkipo_official_doc_service_locates_and_parses_hkex_documents(tmp_path):
         "public_float_pct",
         "clawback_max_pct",
     }.issubset(structure_fields)
-    assert {"offer_market_cap", "use_of_proceeds", "core_business"}.issubset(
-        valuation_fields
-    )
+    assert {"offer_market_cap", "use_of_proceeds", "core_business"}.issubset(valuation_fields)
     assert item["source_errors"] == []
     assert payload["summary"]["parsed_document_count"] == 2
 
@@ -295,13 +292,18 @@ def test_hkipo_official_doc_service_locates_and_parses_hkex_documents(tmp_path):
 
 def test_hkipo_official_doc_service_falls_back_to_new_listing_table(tmp_path):
     title_search_url = (
-        "https://www1.hkexnews.hk/search/titlesearch.xhtml?"
-        "lang=zh&market=SEHK&stockId=02723"
+        "https://www1.hkexnews.hk/search/titlesearch.xhtml?" "lang=zh&market=SEHK&stockId=02723"
     )
-    main_board_url = "https://www2.hkexnews.hk/New-Listings/New-Listing-Information/Main-Board?sc_lang=zh-HK"
+    main_board_url = (
+        "https://www2.hkexnews.hk/New-Listings/New-Listing-Information/Main-Board?sc_lang=zh-HK"
+    )
     gem_url = "https://www2.hkexnews.hk/New-Listings/New-Listing-Information/GEM?sc_lang=zh-HK"
-    announcement_url = "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0518/2026051800012_c.pdf"
-    prospectus_url = "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0518/2026051800024_c.pdf"
+    announcement_url = (
+        "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0518/2026051800012_c.pdf"
+    )
+    prospectus_url = (
+        "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0518/2026051800024_c.pdf"
+    )
     main_board_page = f"""
     <table>
       <tr>
@@ -373,10 +375,7 @@ def test_hkipo_official_doc_service_falls_back_to_new_listing_table(tmp_path):
 def test_hkipo_official_doc_service_degrades_on_download_or_parse_failure(tmp_path):
     def fetcher(url: str):
         if "titlesearch" in url:
-            return (
-                '<a href="/listedco/listconews/sehk/2026/0516/broken.pdf">'
-                "招股章程</a>"
-            )
+            return '<a href="/listedco/listconews/sehk/2026/0516/broken.pdf">' "招股章程</a>"
         raise TimeoutError("hkex download timed out")
 
     service = HkIpoOfficialDocService(fetcher=fetcher)

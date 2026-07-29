@@ -402,7 +402,6 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
         },
         "technical_signals": report.get("technical", {}).get("factors", []),
         "trend": report.get("trend_analysis"),
-        "qlib": report.get("qlib", {}).get("factors", []),
     }
     payload = InterfacePayload(
         entity={"symbol": report.get("symbol"), "name": report.get("stock_name")},
@@ -412,7 +411,6 @@ def stock_analysis_contract(report: Dict[str, Any]) -> Dict[str, Any]:
             as_of=as_of,
             sources=_normalize_sources(
                 report.get("technical", {}).get("data_source", ""),
-                report.get("qlib", {}).get("data_source", ""),
                 fundamental_context.get("source_chain", []),
             ),
             data_completeness="partial",

@@ -17,9 +17,7 @@ import urllib.request
 from .hkipo_heat_scan_service import classify_staleness
 
 SOURCE = "hkipo_official_docs"
-USER_AGENT = (
-    "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
-)
+USER_AGENT = "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
 DEFAULT_FETCH_TIMEOUT_SECONDS = 8.0
 DEFAULT_MAX_DOCUMENTS_PER_IPO = 6
 DEFAULT_MAX_PDF_PAGES = 450
@@ -149,9 +147,7 @@ class HkIpoOfficialDocService:
                 DEFAULT_MAX_DOCUMENTS_PER_IPO,
             )
         )
-        self.max_pdf_pages = _env_int(
-            "HKIPO_OFFICIAL_DOC_MAX_PDF_PAGES", DEFAULT_MAX_PDF_PAGES
-        )
+        self.max_pdf_pages = _env_int("HKIPO_OFFICIAL_DOC_MAX_PDF_PAGES", DEFAULT_MAX_PDF_PAGES)
         self.fetcher = fetcher or self._default_fetch
 
     def _default_fetch(self, url: str) -> FetchResult:
@@ -163,9 +159,7 @@ class HkIpoOfficialDocService:
                 "Accept-Language": "zh-HK,zh;q=0.9,en;q=0.6",
             },
         )
-        with urllib.request.urlopen(
-            request, timeout=self.fetch_timeout_seconds
-        ) as response:
+        with urllib.request.urlopen(request, timeout=self.fetch_timeout_seconds) as response:
             raw = response.read(8_000_000)
             content_type = response.headers.get("Content-Type", "")
             final_url = response.geturl()
@@ -185,9 +179,7 @@ class HkIpoOfficialDocService:
             if include_closed or ipo.get("is_subscribe_status") is not False
         ]
         parsed_count = sum(len(row.get("documents", [])) for row in rows)
-        degraded_count = sum(
-            1 for row in rows if row.get("status") != "official_docs_parsed"
-        )
+        degraded_count = sum(1 for row in rows if row.get("status") != "official_docs_parsed")
         return {
             "status": "ok",
             "source": SOURCE,
@@ -228,9 +220,7 @@ class HkIpoOfficialDocService:
         valuation_evidence: list[dict[str, Any]] = []
 
         try:
-            search_result = self._coerce_fetch_result(
-                self.fetcher(search_url), search_url
-            )
+            search_result = self._coerce_fetch_result(self.fetcher(search_url), search_url)
             search_html = _decode_bytes(search_result.body)
             links = self._extract_document_links(search_html, base_url=search_url)
         except Exception as exc:
@@ -253,9 +243,7 @@ class HkIpoOfficialDocService:
                         )
                     )
                 except Exception as exc:
-                    source_errors.append(
-                        self._source_error(listing_url, exc, source=source_name)
-                    )
+                    source_errors.append(self._source_error(listing_url, exc, source=source_name))
 
         links = self._dedupe_links(links)
 
@@ -273,9 +261,7 @@ class HkIpoOfficialDocService:
             try:
                 fetched = self._fetch_with_cache(link.url, cache_dir)
                 text = self._extract_text(fetched)
-                source_time = self._extract_source_time(
-                    text, link.published_at, report_date
-                )
+                source_time = self._extract_source_time(text, link.published_at, report_date)
                 digest = sha256(fetched.body).hexdigest()
                 documents.append(
                     {
@@ -310,9 +296,7 @@ class HkIpoOfficialDocService:
         status = (
             "official_docs_parsed"
             if documents
-            else (
-                "official_docs_degraded" if source_errors else "official_docs_not_found"
-            )
+            else ("official_docs_degraded" if source_errors else "official_docs_not_found")
         )
         return {
             "code": code,
@@ -375,9 +359,7 @@ class HkIpoOfficialDocService:
             )
         if isinstance(value, bytes):
             return FetchResult(body=value, content_type="", final_url=url)
-        return FetchResult(
-            body=_safe_str(value).encode("utf-8"), content_type="", final_url=url
-        )
+        return FetchResult(body=_safe_str(value).encode("utf-8"), content_type="", final_url=url)
 
     def _extract_text(self, fetched: FetchResult) -> str:
         is_pdf = (
@@ -429,9 +411,7 @@ class HkIpoOfficialDocService:
             return False
         return len(re.findall(r"[\u4e00-\u9fff]", normalized)) >= 20
 
-    def _extract_document_links(
-        self, text: str, *, base_url: str
-    ) -> list[DocumentLink]:
+    def _extract_document_links(self, text: str, *, base_url: str) -> list[DocumentLink]:
         links: list[DocumentLink] = []
         seen: set[str] = set()
         for match in re.finditer(
@@ -565,9 +545,7 @@ class HkIpoOfficialDocService:
         ):
             return "prospectus"
         if (
-            any(
-                token in title for token in ["配发", "配發", "分配结果", "中签", "中籤"]
-            )
+            any(token in title for token in ["配发", "配發", "分配结果", "中签", "中籤"])
             or "allotment" in lowered
         ):
             return "allotment_result"
@@ -587,9 +565,7 @@ class HkIpoOfficialDocService:
         year, month, day = match.groups()
         return f"{year}-{month}-{day}"
 
-    def _extract_source_time(
-        self, text: str, fallback: str | None, report_date: str
-    ) -> str | None:
+    def _extract_source_time(self, text: str, fallback: str | None, report_date: str) -> str | None:
         if fallback:
             return fallback
 
@@ -605,7 +581,9 @@ class HkIpoOfficialDocService:
                     candidate = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
                 else:
                     month, day = groups
-                    candidate = f"{int(normalized_report_date[:4]):04d}-{int(month):02d}-{int(day):02d}"
+                    candidate = (
+                        f"{int(normalized_report_date[:4]):04d}-{int(month):02d}-{int(day):02d}"
+                    )
                 try:
                     date.fromisoformat(candidate)
                     return candidate
@@ -693,13 +671,9 @@ class HkIpoOfficialDocService:
             if not match:
                 continue
             snippet = match.group(0)
-            if field == "cornerstone_offer_pct" and self._is_false_cornerstone_snippet(
-                snippet
-            ):
+            if field == "cornerstone_offer_pct" and self._is_false_cornerstone_snippet(snippet):
                 continue
-            if field == "public_float_pct" and self._is_false_public_float_snippet(
-                snippet
-            ):
+            if field == "public_float_pct" and self._is_false_public_float_snippet(snippet):
                 continue
             value = _safe_float(match.group(1))
             if value is None:

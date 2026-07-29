@@ -15,6 +15,21 @@
 - 禁止真实交易、交易解锁、订阅推送、OpenD 写入配置和任何绕过 broker adapter 的交易调用。
 - 所有 JSON contract 必须可被 `json.dumps(..., allow_nan=False)` 序列化。
 
+## Legacy Qlib / Alpha158 移除要求
+
+- 当前 Alpha 研究与回测只使用本地 native factor / backtest 实现，不保留
+  Qlib / Alpha158 运行时兼容入口。
+- 从根依赖中删除 `pyqlib`，并从 `requirements.txt` 移除仅由它引入的传递依赖。
+- 删除 `src/analyzer/qlib_158_factors.py` 及 package export。
+- `MultiFactorAnalyzer`、`StockService.analyze_symbol` / `batch_analyze` 不再接受
+  `include_qlib_factors`，也不初始化 Qlib analyzer。
+- `AnalysisReport.to_dict()` 与 `stock_analysis_contract()` 不再输出空 `qlib`
+  字段；技术面和基本面仍保持现有 contract。
+- 删除未引用的 `src/model/storage.py` ORM 占位；正式 SQLite 持久化继续只通过
+  `src/repositories/`。
+- 验收必须覆盖：仓库内无运行时代码引用 Qlib / Alpha158、全量测试通过、
+  `requirements.txt` 可由 `pyproject.toml` 重建、全局 Black 检查通过。
+
 ## 数据契约
 
 ### AlphaCandidate

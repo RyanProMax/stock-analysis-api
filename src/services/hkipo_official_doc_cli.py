@@ -13,15 +13,11 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Fetch and parse readonly HK IPO official docs"
-    )
+    parser = argparse.ArgumentParser(description="Fetch and parse readonly HK IPO official docs")
     parser.add_argument("--date", help="Report date in YYYY-MM-DD")
     parser.add_argument("--ipos-json", required=True, help="Path to IPO pool JSON")
     parser.add_argument("--include-closed", action="store_true")
-    parser.add_argument(
-        "--cache-dir", help="Shared cache directory for downloaded documents"
-    )
+    parser.add_argument("--cache-dir", help="Shared cache directory for downloaded documents")
     parser.add_argument("--timezone", default=DEFAULT_TIMEZONE)
     parser.add_argument("--json", action="store_true", dest="output_json")
     parser.add_argument("--pretty", action="store_true")
@@ -52,9 +48,7 @@ def _load_ipos(path: str) -> list[dict[str, Any]]:
         payload = json.load(handle)
     rows = payload.get("data") if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
-        raise ValueError(
-            "--ipos-json must contain a JSON list or an object with data[]"
-        )
+        raise ValueError("--ipos-json must contain a JSON list or an object with data[]")
     return [dict(item) for item in rows if isinstance(item, dict)]
 
 

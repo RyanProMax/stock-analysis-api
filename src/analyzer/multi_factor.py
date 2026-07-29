@@ -6,7 +6,6 @@ from ..core import AnalysisReport, FactorAnalysis, FearGreed
 from ..data_provider import data_manager
 from .technical_factors import TechnicalFactorLibrary
 from .fundamental_factors import FundamentalFactorLibrary
-from .qlib_158_factors import Qlib158FactorLibrary
 from .trend_analyzer import StockTrendAnalyzer
 
 
@@ -15,14 +14,13 @@ class MultiFactorAnalyzer:
     多因子股票分析器
 
     核心设计理念：
-    1. 加载各个因子库（技术面、基本面、qlib158等）
+    1. 加载当前主链路使用的技术面与基本面因子库
     2. 统一输出因子列表
     3. 每个因子库独立管理自己的因子计算逻辑
 
     因子库：
     - TechnicalFactorLibrary: 技术面因子库（MA、EMA、MACD、RSI等）
     - FundamentalFactorLibrary: 基本面因子库（营收增长率、PE、PB等）
-    - Qlib158FactorLibrary: Qlib 158 经典因子库
     """
 
     # 需要计算的技术指标列表（按因子分类）
@@ -58,7 +56,6 @@ class MultiFactorAnalyzer:
         df: pd.DataFrame,
         symbol: str,
         stock_name: str,
-        include_qlib_factors: bool = False,
         data_source: str = "",
         financial_data_source: str = "",
     ):
@@ -69,7 +66,6 @@ class MultiFactorAnalyzer:
             df: 股票行情数据 DataFrame
             symbol: 股票代码
             stock_name: 股票名称
-            include_qlib_factors: 是否包含 Qlib 158 因子，默认 False
             data_source: 日线数据源标识
             financial_data_source: 财务数据源标识
         """
@@ -81,7 +77,6 @@ class MultiFactorAnalyzer:
         self.raw_df = df.copy()
         self.symbol = symbol.strip().upper()
         self.stock_name = stock_name or symbol
-        self.include_qlib_factors = include_qlib_factors
         self.data_source = data_source
         self.financial_data_source = financial_data_source
 
@@ -95,7 +90,6 @@ class MultiFactorAnalyzer:
         # 初始化因子库
         self.technical_library = TechnicalFactorLibrary()
         self.fundamental_library = FundamentalFactorLibrary()
-        self.qlib158_library = Qlib158FactorLibrary()
 
     def _calculate_fear_greed(self, row, prev_row, close) -> tuple[float, str]:
         """
@@ -268,7 +262,6 @@ class MultiFactorAnalyzer:
         # --- 从各个因子库加载因子 ---
         technical_factors = []
         fundamental_factors = []
-        qlib_factors = []
 
         # 1. 技术面因子库
         try:
@@ -302,25 +295,6 @@ class MultiFactorAnalyzer:
             print(f"⚠️ 计算基本面因子失败: {e}")
             traceback.print_exc()
 
-        # 3. Qlib 158 因子库（根据参数决定是否计算）
-        try:
-            if self.include_qlib_factors:
-                qlib_factors = self.qlib158_library.get_factors(
-                    self.stock,
-                    self.raw_df,
-                    symbol=self.symbol,
-                    data_source=self.data_source,
-                    raw_data=technical_raw_data,
-                )
-            else:
-                qlib_factors = []
-        except Exception as e:
-            import traceback
-
-            print(f"⚠️ 计算 Qlib 158 因子失败: {e}")
-            traceback.print_exc()
-            qlib_factors = []
-
         # 创建贪恐指数对象
         fear_greed = FearGreed(index=fg_index, label=fg_label)
 
@@ -351,11 +325,6 @@ class MultiFactorAnalyzer:
                 factors=fundamental_factors,
                 data_source=financial_data_source,
                 raw_data=financial_raw_data,
-            ),
-            qlib=FactorAnalysis(
-                factors=qlib_factors,
-                data_source=self.data_source,
-                raw_data=None,
             ),
             fear_greed=fear_greed,
             industry=stock_info.get("industry", ""),

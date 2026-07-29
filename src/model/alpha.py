@@ -59,13 +59,9 @@ class AlphaEvaluation:
             raise ValueError("forward_windows must not be empty")
         if any(window <= 0 for window in self.forward_windows):
             raise ValueError("forward_windows must be positive")
-        missing = [
-            name for name in REQUIRED_SAMPLE_SPLITS if name not in self.sample_split
-        ]
+        missing = [name for name in REQUIRED_SAMPLE_SPLITS if name not in self.sample_split]
         if missing:
-            raise ValueError(
-                f"sample_split missing required section: {', '.join(missing)}"
-            )
+            raise ValueError(f"sample_split missing required section: {', '.join(missing)}")
 
     def to_dict(self) -> dict[str, Any]:
         return json_safe(asdict(self))

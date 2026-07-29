@@ -171,9 +171,7 @@ class FakeReadonlyTradeGateway:
         self.calls.append("get_positions")
         return [{"code": "HK.00700", "qty": 100, "market_val": 41000.0}]
 
-    def get_orders(
-        self, *, code: str = "", start: str = "", end: str = "", history: bool = False
-    ):
+    def get_orders(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
         assert code == "HK.00700"
         assert start == "2026-05-01"
         assert end == "2026-05-07"
@@ -181,9 +179,7 @@ class FakeReadonlyTradeGateway:
         self.calls.append("get_orders")
         return [{"order_id": "O-1", "code": "HK.00700", "order_status": "FILLED_ALL"}]
 
-    def get_deals(
-        self, *, code: str = "", start: str = "", end: str = "", history: bool = False
-    ):
+    def get_deals(self, *, code: str = "", start: str = "", end: str = "", history: bool = False):
         assert code == "HK.00700"
         assert start == "2026-05-01"
         assert end == "2026-05-07"
@@ -456,9 +452,7 @@ def test_symbol_rules_cli_extracts_lot_size_and_tick_from_futu_snapshot():
 
 
 def test_order_book_ticker_rt_data_cli_contracts():
-    exit_code, order_book = _run_cli(
-        "order-book", "--code", "HK.00700", "--num", "3", "--json"
-    )
+    exit_code, order_book = _run_cli("order-book", "--code", "HK.00700", "--num", "3", "--json")
     assert exit_code == 0
     assert order_book["status"] == "ok"
     assert order_book["request"] == {"code": "HK.00700", "num": 3}
@@ -478,9 +472,7 @@ def test_order_book_ticker_rt_data_cli_contracts():
 
 
 def test_option_expirations_and_chain_cli_contracts():
-    exit_code, expirations = _run_cli(
-        "option-expirations", "--code", "US.AAPL", "--json"
-    )
+    exit_code, expirations = _run_cli("option-expirations", "--code", "US.AAPL", "--json")
     assert exit_code == 0
     assert expirations["status"] == "ok"
     assert expirations["request"] == {"code": "US.AAPL", "index_option_type": "NORMAL"}

@@ -2106,7 +2106,7 @@ class StockAnalyzeService:
         symbol: str,
         info: Dict[str, Any],
     ) -> Dict[str, Any]:
-        report = stock_service.analyze_symbol(symbol, include_qlib_factors=False)
+        report = stock_service.analyze_symbol(symbol)
         if report is None:
             error = "Technical analysis unavailable from current daily data sources."
             return self._wrap_structured_module(

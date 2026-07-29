@@ -31,7 +31,6 @@ class TestHTTPOnlyStructuredContracts:
                 "fear_greed": {"index": 50.0, "label": "中性"},
                 "technical": {"factors": [], "data_source": "US_yfinance"},
                 "fundamental": {"factors": [], "data_source": "yfinance", "raw_data": {"info": {}}},
-                "qlib": {"factors": []},
                 "trend_analysis": None,
             }
         )
@@ -46,6 +45,7 @@ class TestHTTPOnlyStructuredContracts:
         assert "fundamental_context" not in payload["analysis"]
         assert "yfinance.info" in payload["meta"]["sources"]
         assert "fundamental_pipeline" not in payload["meta"]["sources"]
+        assert "qlib" not in payload["analysis"]
 
     def test_stock_analysis_contract_removes_legacy_scattered_fundamental_fields(self):
         payload = stock_analysis_contract(
@@ -72,7 +72,6 @@ class TestHTTPOnlyStructuredContracts:
                         }
                     },
                 },
-                "qlib": {"factors": []},
                 "trend_analysis": None,
             }
         )

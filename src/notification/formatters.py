@@ -56,7 +56,6 @@ def console_report(report: AnalysisReport):
     # 直接使用报告中的分类因子
     technical_factors = report.technical.factors
     fundamental_factors = report.fundamental.factors
-    qlib_factors = report.qlib.factors
 
     # 构建因子详情面板
     factor_panels = []
@@ -107,33 +106,10 @@ def console_report(report: AnalysisReport):
         )
         factor_panels.append(fund_panel)
 
-    # Qlib 因子
-    if qlib_factors:
-        qlib_content = []
-        for factor in qlib_factors:
-            qlib_content.append(f"\n[bold magenta]{factor.name}[/]")
-            qlib_content.append(f"状态: {factor.status}")
-            if factor.bullish_signals:
-                qlib_content.append("\n[green]多头信号:[/]")
-                for sig in factor.bullish_signals:
-                    qlib_content.append(f"  ✅ {format_signal(sig)}")
-            if factor.bearish_signals:
-                qlib_content.append("\n[red]空头信号:[/]")
-                for sig in factor.bearish_signals:
-                    qlib_content.append(f"  ❌ {format_signal(sig)}")
-            qlib_content.append("")
-
-        qlib_panel = Panel(
-            "\n".join(qlib_content),
-            title="📈 Qlib 因子",
-            border_style="magenta",
-        )
-        factor_panels.append(qlib_panel)
-
     # 汇总所有因子的信号
     all_bull_signals = []
     all_bear_signals = []
-    for factor in technical_factors + fundamental_factors + qlib_factors:
+    for factor in technical_factors + fundamental_factors:
         all_bull_signals.extend(factor.bullish_signals)
         all_bear_signals.extend(factor.bearish_signals)
 

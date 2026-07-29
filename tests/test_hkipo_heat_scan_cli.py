@@ -277,8 +277,7 @@ def test_hkipo_heat_scan_service_degrades_scraped_value_without_source_time():
     assert item["heat_status"] == "heat_threshold_not_met"
     assert item["subscription_heat"]["status"] == "热度未达当日核验门槛"
     assert all(
-        entry["staleness_status"] == "invalid_missing_attribution"
-        for entry in item["evidence"]
+        entry["staleness_status"] == "invalid_missing_attribution" for entry in item["evidence"]
     )
 
 
@@ -319,10 +318,7 @@ def test_hkipo_heat_scan_service_extracts_chief_broker_detail_snapshot():
     assert heat_fields["subscription_multiple"]["value"] == 14.2
     assert heat_fields["subscription_multiple"]["source"] == "致富证券 IPO"
     assert heat_fields["subscription_multiple"]["updated_at"] == "2026-05-18"
-    assert (
-        heat_fields["subscription_multiple"]["source_time_mode"]
-        == "active_subscription_window"
-    )
+    assert heat_fields["subscription_multiple"]["source_time_mode"] == "active_subscription_window"
     assert structure_fields["sponsor"]["value"] == "中信建投(国际)融资有限公司"
     assert valuation_fields["core_business"]["value"].startswith(
         "公司是面向企业客户的智慧家庭解决方案提供商"
@@ -362,10 +358,7 @@ def test_hkipo_heat_scan_service_extracts_tradesmart_margin_pulse():
     assert heat_fields["margin_multiple"]["staleness_status"] == "same_day"
     assert heat_fields["margin_multiple"]["upstream_source"] == "AiPO (myiqdii.com)"
     assert heat_fields["margin_amount_hkd_yi"]["value"] == 66.8769
-    assert (
-        "updateTime=2026/05/19%2009:02:10"
-        in heat_fields["margin_multiple"]["upstream_url"]
-    )
+    assert "updateTime=2026/05/19%2009:02:10" in heat_fields["margin_multiple"]["upstream_url"]
 
 
 def test_hkipo_heat_scan_default_fetch_uses_requests_session(monkeypatch):
@@ -422,9 +415,7 @@ def test_hkipo_heat_scan_service_prefers_display_name_for_query_plan():
     query_urls = json.dumps(item["query_plan"], ensure_ascii=False)
     assert item["name"] == "深演智能"
     assert item["name_en"] == "DEEPZERO"
-    assert (
-        "深演智能" in query_urls or "%E6%B7%B1%E6%BC%94%E6%99%BA%E8%83%BD" in query_urls
-    )
+    assert "深演智能" in query_urls or "%E6%B7%B1%E6%BC%94%E6%99%BA%E8%83%BD" in query_urls
     assert "DEEPZERO" in query_urls
 
 
@@ -539,7 +530,5 @@ def test_hkipo_heat_scan_service_ignores_unqualified_peer_pe_fragments():
     )
 
     item = payload["data"][0]
-    peer_pe_rows = [
-        entry for entry in item["valuation_evidence"] if entry["field"] == "peer_pe"
-    ]
+    peer_pe_rows = [entry for entry in item["valuation_evidence"] if entry["field"] == "peer_pe"]
     assert peer_pe_rows == []

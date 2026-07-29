@@ -2,7 +2,6 @@
 from .base import BaseFactor, FactorLibrary
 from .technical_factors import TechnicalFactorLibrary
 from .fundamental_factors import FundamentalFactorLibrary
-from .qlib_158_factors import Qlib158FactorLibrary
 from .multi_factor import MultiFactorAnalyzer
 from .trend_analyzer import StockTrendAnalyzer, analyze_stock
 from ..model import (
@@ -19,7 +18,6 @@ __all__ = [
     "FactorLibrary",
     "TechnicalFactorLibrary",
     "FundamentalFactorLibrary",
-    "Qlib158FactorLibrary",
     "MultiFactorAnalyzer",
     # 趋势分析
     "StockTrendAnalyzer",

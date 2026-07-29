@@ -13,9 +13,7 @@ import urllib.parse
 import requests
 
 SOURCE = "hkipo_heat_scan"
-USER_AGENT = (
-    "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
-)
+USER_AGENT = "Mozilla/5.0 (compatible; stock-analysis-api/1.0; +https://github.com/RyanProMax)"
 DEFAULT_FETCH_TIMEOUT_SECONDS = 12.0
 DEFAULT_MAX_WORKERS = 10
 SOURCE_FAMILIES = (
@@ -122,9 +120,7 @@ def normalize_heat_evidence(raw: dict[str, Any], report_date: str) -> dict[str, 
     evidence["unit"] = _safe_str(evidence.get("unit"))
     evidence["url"] = _safe_str(evidence.get("url"))
     confidence = _safe_float(evidence.get("confidence"))
-    evidence["confidence"] = max(
-        0.0, min(1.0, confidence if confidence is not None else 0.0)
-    )
+    evidence["confidence"] = max(0.0, min(1.0, confidence if confidence is not None else 0.0))
     evidence["staleness_status"] = _safe_str(
         evidence.get("staleness_status")
     ) or classify_staleness(_source_time(evidence), report_date)
@@ -159,12 +155,8 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         item["valuation_evidence"] = _normalize_auxiliary_evidence(
             item.get("valuation_evidence"), report_date
         )
-        item["structure_status"] = _classify_structure_status(
-            item["structure_evidence"]
-        )
-        item["valuation_status"] = _classify_valuation_status(
-            item["valuation_evidence"]
-        )
+        item["structure_status"] = _classify_structure_status(item["structure_evidence"])
+        item["valuation_status"] = _classify_valuation_status(item["valuation_evidence"])
         usable = [
             entry
             for entry in evidence
@@ -175,9 +167,7 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         if usable:
             same_day_count += 1
             item.setdefault("heat_status", "same_day_verified")
-            item.setdefault(
-                "evidence_quality", "high" if len(usable) >= 2 else "medium"
-            )
+            item.setdefault("evidence_quality", "high" if len(usable) >= 2 else "medium")
             item["subscription_heat"] = {
                 **(
                     item.get("subscription_heat")
@@ -205,9 +195,7 @@ def normalize_scan_payload(payload: dict[str, Any], report_date: str) -> dict[st
         normalized_rows.append(item)
 
     normalized["data"] = normalized_rows
-    summary = (
-        normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
-    )
+    summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
     normalized["summary"] = {
         "ipo_count": len(normalized_rows),
         "same_day_heat_count": same_day_count,
@@ -244,24 +232,16 @@ def _score_subscription_heat(evidence: list[dict[str, Any]]) -> dict[str, Any]:
         "max_multiple": best_multiple,
         "usable_evidence_count": len(evidence),
         "source_family_count": len(
-            {
-                entry.get("source_family")
-                for entry in evidence
-                if entry.get("source_family")
-            }
+            {entry.get("source_family") for entry in evidence if entry.get("source_family")}
         ),
-        "fields": sorted(
-            {str(entry.get("field")) for entry in evidence if entry.get("field")}
-        ),
+        "fields": sorted({str(entry.get("field")) for entry in evidence if entry.get("field")}),
     }
 
 
 def _normalize_auxiliary_evidence(value: Any, report_date: str) -> list[dict[str, Any]]:
     rows = value if isinstance(value, list) else []
     return [
-        normalize_heat_evidence(entry, report_date)
-        for entry in rows
-        if isinstance(entry, dict)
+        normalize_heat_evidence(entry, report_date) for entry in rows if isinstance(entry, dict)
     ]
 
 
@@ -392,9 +372,7 @@ class HkIpoHeatScanService:
             or ipo.get("stock_name")
             or ipo.get("name")
         )
-        name_en = _safe_str(
-            ipo.get("name_en") or ipo.get("english_name") or ipo.get("name")
-        )
+        name_en = _safe_str(ipo.get("name_en") or ipo.get("english_name") or ipo.get("name"))
         candidates = self._source_candidates(code=code, name=name, name_en=name_en)
         evidence: list[dict[str, Any]] = []
         structure_evidence: list[dict[str, Any]] = []
@@ -406,9 +384,7 @@ class HkIpoHeatScanService:
         structure_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
         valuation_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
         errors_by_index: list[list[dict[str, Any]]] = [[] for _ in candidates]
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=worker_count
-        ) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
             futures = {
                 executor.submit(self.fetcher, candidate.url): (index, candidate)
                 for index, candidate in enumerate(candidates)
@@ -676,9 +652,7 @@ class HkIpoHeatScanService:
                 source_time_mode=source_time_mode,
                 field=field,
                 value=value,
-                unit=(
-                    "%" if field in {"grey_change_pct", "one_lot_success_rate"} else "x"
-                ),
+                unit=("%" if field in {"grey_change_pct", "one_lot_success_rate"} else "x"),
                 confidence=0.55,
             )
 
@@ -695,9 +669,7 @@ class HkIpoHeatScanService:
         if not compact_code:
             return
 
-        record = self._find_tradesmart_margin_record(
-            html, compact_code=compact_code, name=name
-        )
+        record = self._find_tradesmart_margin_record(html, compact_code=compact_code, name=name)
         if record is None:
             return
 
@@ -743,9 +715,7 @@ class HkIpoHeatScanService:
         self, html: str, *, compact_code: str, name: str
     ) -> dict[str, Any] | None:
         margin_section_start = html.find(r"\"margin\"")
-        search_space = (
-            html[margin_section_start:] if margin_section_start >= 0 else html
-        )
+        search_space = html[margin_section_start:] if margin_section_start >= 0 else html
         record_pattern = re.compile(
             r"\{\\\"symbol\\\":\\\"(?P<symbol>\d{5})\\\"(?P<body>.*?)(?=\},\{\\\"symbol\\\"|\}\]\})",
             flags=re.DOTALL,
@@ -759,12 +729,8 @@ class HkIpoHeatScanService:
             record = {
                 "symbol": match.group("symbol"),
                 "name": self._extract_tradesmart_string(raw_record, "name"),
-                "broker_top_text": self._extract_tradesmart_string(
-                    raw_record, "broker_top_text"
-                ),
-                "observed_at": self._extract_tradesmart_string(
-                    raw_record, "observed_at"
-                ),
+                "broker_top_text": self._extract_tradesmart_string(raw_record, "broker_top_text"),
+                "observed_at": self._extract_tradesmart_string(raw_record, "observed_at"),
                 "source_url": self._extract_tradesmart_string(raw_record, "source_url"),
                 "margin_total_hkd_yi": self._extract_tradesmart_float(
                     raw_record, "margin_total_hkd_yi"
@@ -773,11 +739,7 @@ class HkIpoHeatScanService:
                     raw_record, "oversubscription_ratio"
                 ),
             }
-            if (
-                name
-                and record["name"]
-                and not self._names_likely_match(name, str(record["name"]))
-            ):
+            if name and record["name"] and not self._names_likely_match(name, str(record["name"])):
                 continue
             return record
         return None
@@ -795,9 +757,7 @@ class HkIpoHeatScanService:
             return match.group(1).replace(r"\u0026", "&")
 
     def _extract_tradesmart_float(self, raw_record: str, key: str) -> float | None:
-        match = re.search(
-            rf"\\\"{re.escape(key)}\\\":([0-9]+(?:\.[0-9]+)?)", raw_record
-        )
+        match = re.search(rf"\\\"{re.escape(key)}\\\":([0-9]+(?:\.[0-9]+)?)", raw_record)
         return _safe_float(match.group(1) if match else None)
 
     def _names_likely_match(self, left: str, right: str) -> bool:
@@ -805,9 +765,7 @@ class HkIpoHeatScanService:
         left_norm = normalize(left)
         right_norm = normalize(right)
         return bool(
-            left_norm
-            and right_norm
-            and (left_norm in right_norm or right_norm in left_norm)
+            left_norm and right_norm and (left_norm in right_norm or right_norm in left_norm)
         )
 
     def _extract_structure_evidence(
@@ -863,9 +821,7 @@ class HkIpoHeatScanService:
                 field=field,
                 value=value,
                 unit=unit,
-                confidence=(
-                    0.65 if candidate.source_family == "official_document" else 0.58
-                ),
+                confidence=(0.65 if candidate.source_family == "official_document" else 0.58),
             )
 
         text_patterns = [
@@ -894,9 +850,7 @@ class HkIpoHeatScanService:
                 field=field,
                 value=value,
                 unit="text",
-                confidence=(
-                    0.62 if candidate.source_family == "official_document" else 0.55
-                ),
+                confidence=(0.62 if candidate.source_family == "official_document" else 0.55),
             )
 
     def _extract_valuation_evidence(
@@ -948,11 +902,7 @@ class HkIpoHeatScanService:
             ):
                 peer = match.group(1).strip()
                 value = _safe_float(match.group(2))
-                if (
-                    value is None
-                    or value <= 0
-                    or not re.search(r"[A-Za-z\u4e00-\u9fff]", peer)
-                ):
+                if value is None or value <= 0 or not re.search(r"[A-Za-z\u4e00-\u9fff]", peer):
                     continue
                 yield self._make_evidence(
                     candidate=candidate,

@@ -33,7 +33,7 @@ class FactorDetail:
 
 @dataclass
 class FactorAnalysis:
-    """因子分析结果（技术面/基本面/Qlib）"""
+    """因子分析结果（技术面/基本面）"""
 
     factors: List[FactorDetail] = field(default_factory=list)
     data_source: str = ""
@@ -76,7 +76,6 @@ class AnalysisReport:
     # 因子分析结果（新结构）
     technical: FactorAnalysis = field(default_factory=FactorAnalysis)
     fundamental: FactorAnalysis = field(default_factory=FactorAnalysis)
-    qlib: FactorAnalysis = field(default_factory=FactorAnalysis)
     # 趋势分析结果
     trend_analysis: Optional[TrendAnalysisResult] = None
 
@@ -90,7 +89,6 @@ class AnalysisReport:
             "industry": self.industry,
             "technical": self.technical.to_dict(),
             "fundamental": self.fundamental.to_dict(),
-            "qlib": self.qlib.to_dict(),
             "trend_analysis": (
                 self.trend_analysis.to_dict() if self.trend_analysis is not None else None
             ),

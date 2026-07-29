@@ -6,7 +6,6 @@
 - 基础数据获取
 - 基本面分析
 - 技术面分析
-- Qlib因子分析
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -85,15 +84,12 @@ class StockService:
 
     # ==================== 分析服务 ====================
 
-    def analyze_symbol(
-        self, symbol: str, include_qlib_factors: bool = False
-    ) -> Optional[AnalysisReport]:
+    def analyze_symbol(self, symbol: str) -> Optional[AnalysisReport]:
         """
         分析单只股票
 
         Args:
             symbol: 股票代码
-            include_qlib_factors: 是否包含 Qlib 158 因子，默认 False
 
         Returns:
             分析报告
@@ -116,7 +112,6 @@ class StockService:
                 df,
                 symbol,
                 stock_name,
-                include_qlib_factors=include_qlib_factors,
                 data_source=data_source,
                 financial_data_source=financial_data_source,
             )
@@ -141,14 +136,12 @@ class StockService:
     def batch_analyze(
         self,
         symbols: List[str],
-        include_qlib_factors: bool = False,
     ) -> List[AnalysisReport]:
         """
         批量分析股票
 
         Args:
             symbols: 股票代码列表
-            include_qlib_factors: 是否包含 Qlib 158 因子，默认 False
 
         Returns:
             成功分析的报告列表
@@ -161,7 +154,7 @@ class StockService:
             if normalized in seen:
                 continue
             seen.add(normalized)
-            report = self.analyze_symbol(normalized, include_qlib_factors)
+            report = self.analyze_symbol(normalized)
             if report is not None:
                 reports.append(report)
 
@@ -194,19 +187,6 @@ class StockService:
         """
         report = self.analyze_symbol(symbol)
         return report.technical.factors if report else None
-
-    def get_qlib_factors(self, symbol: str) -> Optional[List[FactorDetail]]:
-        """
-        获取Qlib因子
-
-        Args:
-            symbol: 股票代码
-
-        Returns:
-            Qlib因子列表
-        """
-        report = self.analyze_symbol(symbol)
-        return report.qlib.factors if report else None
 
 
 # 创建全局实例

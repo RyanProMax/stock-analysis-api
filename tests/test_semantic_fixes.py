@@ -87,7 +87,6 @@ class TestStockAnalyzeSerializationFixes:
             fear_greed=FearGreed(index=60.0, label="贪婪"),
             technical=FactorAnalysis(),
             fundamental=FactorAnalysis(),
-            qlib=FactorAnalysis(),
             trend_analysis=TrendAnalysisResult(code="NVDA", trend_status=TrendStatus.BULL),
         )
 
@@ -95,6 +94,7 @@ class TestStockAnalyzeSerializationFixes:
         json.dumps(payload, ensure_ascii=False)
 
         assert payload["as_of"] == "2026-03-20"
+        assert "qlib" not in payload
         assert payload["trend_analysis"]["trend_status"] == "多头排列"
 
 

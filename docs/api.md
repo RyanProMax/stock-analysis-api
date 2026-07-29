@@ -88,7 +88,7 @@
 
 - 仅支持单市场批次请求
 - 请求体启用 `extra=forbid`
-- 不再公开 `include_qlib_factors`
+- 不存在 `include_qlib_factors` 或 Qlib / Alpha158 公共参数与响应字段
 - 不再公开 `modules` / `module_options`
 
 响应结构：
