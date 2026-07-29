@@ -1,9 +1,13 @@
 # 当前任务计划
 
-更新时间：2026-06-18
+更新时间：2026-07-29
 
 ## 当前目标
 
+- 把 Stock Daily 的首批指数 / 收益率直连请求抽到 API 无状态数据层。
+- 新增 `market_data_query.py daily-pack` 一次性严格 JSON CLI，默认且仅允许
+  `persistence=none`，在 FastAPI 未启动时可由 Skill / Agent 调用。
+- 保留 Stock Daily 的新闻采集和行业热度算法，先完成低风险的六项行情迁移。
 - 优先补齐模拟盘自动交易进入定时轮询前的高 ROI 基础能力：SQLite 持久化 ledger 与内部 dry-run `run_once` CLI
 - 补齐模拟盘盘后只读闭环 MVP：从 SQLite ledger 生成每日操作 / 行情摘要，并产出需要人工批准的结构化 `strategy_proposal`
 - 补齐显式 opt-in 的 Futu `SIMULATE` broker adapter，默认仍保持 dry-run，禁止真实交易与 `unlock_trade`
@@ -28,6 +32,23 @@
 - 本轮开始补齐更真实市场规则：新增 `futu_market_data.py symbol-rules`，从 Futu snapshot 暴露逐标的 `lot_size` / `price_spread`，缺失时回退到 `MarketSpec` 默认值。
 - 本轮开始落实 Alpha / 模拟盘自迭代任务链：新增持久化 task-chain worker，先跑通 due task、lease、防重入、append-only run log、小时汇报和日终纠偏 review 结构。
 - 本轮收紧 task-chain 策略迭代门槛：KOL 预检返回 `agent_required` 时只代表需要 Agent 生成最终报告，不能触发 `strategy_iteration`；策略迭代必须等到 KOL 情报正文落地后才消费新闻 / KOL / 板块输入。
+
+## 当前进展（2026-07-29）
+
+- 已新增 `docs/specs/daily-market-pack/`，固化需求、设计与实施任务。
+- 已实现无状态 market-series provider、daily market pack service 与严格 JSON CLI；
+  Stock Daily 已改为通过 Skill contract 单次调用，不要求 FastAPI 常驻且固定
+  `persistence=none`。
+- 已用真实 2026-07-29 evening collection 验证：SPX、IXIC、DJI 截至
+  2026-07-28，SSE、CSI300 截至 2026-07-29；DGS10 按 FRED 最新已发布值截至
+  2026-07-27。
+- 回归验证通过：API 261 项、Skill 59 项、Stock Daily 23 项测试。
+- 后续优先复用 `stock_analyze.py --mode base` 为已核验股票增加 Stock Lens
+  （研究策略、技术面、业绩、催化剂、估值与证据），数据在日报生成时快照。
+- 行业基准行情可作为下一批迁移对象；行业评分、Top 3、连续上榜等日报展示逻辑继续
+  留在 Stock Daily。
+- 盘口、逐笔、期权、账户、模拟盘与 Alpha 内部能力不进入公开归档日报，避免引入
+  日内噪声、敏感状态和不可复现数据。
 - 本轮将 `PLAN/ROADMAP.md` 从旧 Alpha / 回测路线图更新为 agentic strategy loop 路线图：P0 当前事实核查、P1 agent handoff queue、P2 Cli Claw scheduled-agent bridge、P3 KOL / news / sector / daily report semantic review、P4 strategy proposal human review / registry gate、P5 de-hardcode watchlist / thresholds、P6 observability / replay / eval。
 - 本轮新增 `docs/specs/agentic-strategy-loop.md`，明确第一阶段只做可审计 handoff queue 和 CLI contract；不自动运行 agent、不自动下单、不自动 approve、不自动 activate。
 - 本轮新增 `/hkipo` workflow 所需的二级热度采集内部 CLI：`scripts/hkipo_heat_scan.py`，用于接收 Futu IPO 池并输出孖展、公开认购、一手中签率、暗盘等多源 heat evidence；该入口只服务内部 agent / skill workflow，不新增公共 HTTP API。

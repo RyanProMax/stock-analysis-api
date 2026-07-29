@@ -106,6 +106,60 @@
   - `partial`
   - `failed`
 
+### 2a. `scripts/market_data_query.py`
+
+用途：
+
+- 面向日报 / 定时内容任务的无状态批量取数入口
+- 首个 `daily-pack` operation 固定返回 SPX、IXIC、DJI、DGS10、SSE、CSI300
+- 不属于公共 HTTP API，不要求 FastAPI / Uvicorn 常驻
+
+参数：
+
+- 子命令：`daily-pack`
+- `--cutoff-at`: 必填，带时区 ISO datetime
+- `--persistence`: 当前只允许 `none`
+- `--pretty`
+
+输出：
+
+- 顶层固定返回：
+  - `schema_version=market-data-query.v1`
+  - `status=ok|partial|failed`
+  - `source=market_data_query`
+  - `computed_at`
+  - `request`
+  - `summary`
+  - `data.markets`
+  - `data.failures`
+- 单项行情固定包含：
+  - `symbol`
+  - `name`
+  - `region`
+  - `kind`
+  - `unit`
+  - `latest_value`
+  - `previous_value`
+  - `change_value`
+  - `change_ratio`
+  - `display_value`
+  - `display_change`
+  - `direction`
+  - `as_of`
+  - `provider`
+  - `source`
+  - `source_label`
+  - `provider_attempts`
+
+语义约束：
+
+- stdout 必须是严格 JSON。
+- provider 层统一执行截点过滤，未完成收盘不得进入结果。
+- 美股 / 美债并行比较 FRED 与 Yahoo 完整候选并选择最新 `as_of`。
+- 中国指数按腾讯证券、东方财富、Yahoo 顺序 fallback。
+- 固定 `persistence=none`，不得读写 SQLite、scheduler state、watchlist 或券商状态。
+- 单项全部失败时返回结构化 failure，不补编数值。
+
 ### 3. `scripts/futu_market_data.py`
 
 用途：
@@ -224,6 +278,19 @@
 - 若两条链路都失败：
   - item `status = failed`
   - `quote_data = null`
+
+### `market_data_query.py daily-pack`
+
+- SPX / IXIC / DJI / DGS10：
+  - FRED 与 Yahoo Finance 均为候选。
+  - 只接受截点前已完成日值，选择最新完整 `as_of`。
+- SSE / CSI300：
+  1. 腾讯证券
+  2. 东方财富
+  3. Yahoo Finance
+- FRED HTTP 读取失败时允许 Yahoo 降级；provider 尝试结果必须保留在
+  `provider_attempts`。
+- 本入口不调用 `daily_data_read_service` / `daily_data_write_service`，不打开行情仓。
 
 ### `trading_run_once.py`
 
