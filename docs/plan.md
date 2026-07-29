@@ -35,6 +35,9 @@
 
 ## 当前进展（2026-07-29）
 
+- 已按用户确认完成 `main` 全历史身份修正：将改写前 143 个提交的 author /
+  committer 邮箱统一为 `ryan.pro.1024@gmail.com`，保留原 tree、日期和标题；
+  远端通过 `--force-with-lease` 替换为等价的新历史，commit hash 变化属于预期。
 - 已新增 `docs/specs/daily-market-pack/`，固化需求、设计与实施任务。
 - 已实现无状态 market-series provider、daily market pack service 与严格 JSON CLI；
   Stock Daily 已改为通过 Skill contract 单次调用，不要求 FastAPI 常驻且固定
