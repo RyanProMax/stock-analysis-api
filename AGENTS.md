@@ -36,6 +36,9 @@ black --line-length 100 .
 ## 项目结构
 
 ```text
+.agents/
+└── skills/
+    └── stock-analysis/ # 与 API 同版本维护的配套 skill
 scripts/            # 内部脚本入口（skill / agent 调用），不属于公共 API
 src/
 ├── analyzer/         # 因子计算与标准化适配
@@ -105,6 +108,7 @@ src/
 
 - 公共能力新增优先通过 HTTP 路由、schema、文档和测试交付
 - 内部 skill / agent 脚本能力统一放在 `scripts/`，其业务逻辑仍应放在 `src/services/`、`src/data_provider/` 或 `src/analyzer/`
+- 配套 `stock-analysis-skill` 固定放在 `.agents/skills/stock-analysis/`，不再维护独立仓库；skill 只保存路由、输出约束、slash command、references、辅助脚本和自身测试
 - 业务逻辑优先放在 `src/services/`、`src/repositories/` 或 `src/analyzer/`
 - 标准化 contract 放在 `src/model/contracts.py` 和 `src/analyzer/normalizers.py`
 - `src/storage/` 只保留兼容导入，不再新增正式实现

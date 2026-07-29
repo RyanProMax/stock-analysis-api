@@ -1,11 +1,20 @@
 # 架构约束
 
-更新时间：2026-05-16
+更新时间：2026-07-29
 
 ## 系统边界
 
 - 项目当前仅保留 HTTP REST API，对外协议不再包含 MCP
 - 仓库允许保留内部 `scripts/` 作为 Agent / skill 调用入口，但这类脚本不属于公共接口，不改变“HTTP 是对外协议”的边界
+- 配套 `stock-analysis-skill` 固定随 API 仓库放在
+  `.agents/skills/stock-analysis/`，与内部 CLI contract 同版本提交；不再维护独立
+  `stock-analysis-skill` 仓库
+- `.agents/skills/stock-analysis/` 只保存 `SKILL.md`、slash command executor、
+  references、skill 自身辅助脚本和回归测试，不复制 API 业务实现，不引入子目录
+  `AGENTS.md`、独立计划文档、虚拟环境或真实 `.env`
+- skill command 查找 API 根目录时优先接受显式 `STOCK_ANALYSIS_API_ROOT`，随后识别
+  当前 monorepo 根目录；兼容外部安装时才回退 sibling 路径。命令不得依赖调用进程
+  当前工作目录猜测仓库位置
 - 当前对 skill / agent 暴露的内部 CLI 固定为：
   - `scripts/stock_analyze.py`
   - `scripts/poll_realtime_quotes.py`
@@ -39,6 +48,9 @@
 ## 模块边界
 
 ```text
+.agents/
+└── skills/
+    └── stock-analysis/ # 与 API 同版本的 Agent skill、commands、references 与测试
 scripts/            # 内部脚本入口（skill / agent 调用），不属于公共 API
 src/
 ├── analyzer/         # 因子计算、分析拼装、标准化适配

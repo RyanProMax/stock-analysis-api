@@ -22,6 +22,19 @@ uv run start
 - Swagger UI: `http://127.0.0.1:8080/docs`
 - 健康检查: `http://127.0.0.1:8080/health`
 
+## 配套 Agent skill
+
+`stock-analysis-skill` 已随本仓库维护在
+`.agents/skills/stock-analysis/`，不需要单独 clone 或配置 sibling 仓库。
+slash command 会优先自动识别当前仓库根目录；只有外部安装或测试场景才需要显式设置
+`STOCK_ANALYSIS_API_ROOT`。
+
+skill 自身命令、references 和测试都在该目录。根仓库测试会同时收集 API 与 skill：
+
+```bash
+uv run pytest -q
+```
+
 ## 常用命令
 
 启动 HTTP 服务：

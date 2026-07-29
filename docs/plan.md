@@ -4,6 +4,9 @@
 
 ## 当前目标
 
+- 审计当前项目完成度，明确已经可用的功能面、仍属 MVP 的能力与下一阶段优先级。
+- 将配套 `stock-analysis-skill` 从独立仓库整合到
+  `.agents/skills/stock-analysis/`，与 API contract 同版本提交和回归。
 - 把 Stock Daily 的首批指数 / 收益率直连请求抽到 API 无状态数据层。
 - 新增 `market_data_query.py daily-pack` 一次性严格 JSON CLI，默认且仅允许
   `persistence=none`，在 FastAPI 未启动时可由 Skill / Agent 调用。
@@ -35,6 +38,21 @@
 
 ## 当前进展（2026-07-29）
 
+- 已完成本轮仓库基线审计：公共 HTTP 仍严格限定为
+  `GET /health`、`POST /stock/analyze`、`POST /watch/poll`；内部 CLI 已覆盖行情仓、
+  Futu/OpenD 只读查询、港股 IPO/暗盘、模拟盘、Alpha 研究、策略治理和 task-chain。
+- 迁移前基线验证通过：API `261 passed`，独立 skill `59 tests OK`；现有 Black
+  基线仍有 8 个 API 文件待格式化，本轮不混入无关机械改写。
+- 已将独立 skill 的本地最新 HEAD（包含尚未推送的 daily market pack 路由提交）
+  整合到 `.agents/skills/stock-analysis/`；不迁入独立 `AGENTS.md`、`PLANS/`、
+  README、requirements、`.env` 或虚拟环境。
+- skill executor 已支持从 `.agents/skills/stock-analysis/` 自动发现当前 API
+  monorepo 根目录，同时保留 `STOCK_ANALYSIS_API_ROOT` 显式覆盖和旧 sibling 安装兼容。
+- 根仓库 pytest 配置已纳入 skill tests，API 与 skill contract 可在同一回归命令验证。
+- 迁移后统一回归通过：`324 passed, 4 subtests passed`；skill 定向 Black、py_compile、
+  `git diff --check` 和迁移资产清单比对均通过。
+- 原独立目录 `/Users/ryan/projects/stock-analysis-skill` 已移动到 macOS 废纸篓
+  `stock-analysis-skill-standalone-20260729`，可恢复但不再作为活跃仓库维护。
 - 已按用户确认完成 `main` 全历史身份修正：将改写前 143 个提交的 author /
   committer 邮箱统一为 `ryan.pro.1024@gmail.com`，保留原 tree、日期和标题；
   远端通过 `--force-with-lease` 替换为等价的新历史，commit hash 变化属于预期。
@@ -374,6 +392,8 @@
 
 ## 下一步计划
 
+- 优先清理旧兼容面：移除未使用的 `src/model/storage.py` ORM 占位、评估并拆除主链路
+  已禁用但仍安装/初始化的 Qlib Alpha158 依赖，减少依赖和初始化噪声。
 - 下一步把 `symbol-rules` 的逐标的 HK lot size / tick 接入回测和模拟盘执行规则，并继续补交易日历、公司行动 / 分红复权和更真实组合级回测
 - 继续迁移剩余 Futu 只读 provider 能力：窝轮 / 牛熊证、资金流、资金分布、经纪队列、板块与成分股、条件选股、期货资料等尚未覆盖查询
 - 后续若要增强 self-iteration，需要补更真实的组合级回测、参数搜索、调度状态面和失败归因策略生成；最终给人审核的是 evaluator 通过后的候选，而不是每一轮研究草稿
@@ -388,6 +408,15 @@
 
 ## 已知风险与阻塞
 
+- 当前 `black --check --line-length 100 src scripts tests` 有 8 个历史文件未通过；
+  不影响 261 项 API 测试，但说明格式化门禁尚未收口。
+- `docs/specs/` 与 `PLAN/ROADMAP.md` 仍保留较多已完成阶段内容，和“只保留未完成
+  specs、`docs/plan.md` 为唯一状态入口”的治理目标存在历史债务，需要专项清理而不是
+  继续叠加阶段文档。
+- `src/model/storage.py` 仍是未引用的 ORM TODO 占位；`pyqlib` / Alpha158 已被当前
+  Alpha 主链路禁止使用，但依赖、兼容代码和部分输出模型仍保留，增加安装体积与维护面。
+- 标准化 fundamental context 的 `capital_flow`、`dragon_tiger`、`boards` 当前固定
+  `not_supported`；如果这些事实要进入公共分析，需要先补 provider、contract 和来源追踪。
 - Tushare `quotation` 可能受源端权限或可用性影响，因此 legacy realtime 降级语义必须保持真实，不得伪装成完整 realtime
 - `TushareDataSource.get_pro()` 当前仍可能打印初始化信息；CLI 层必须继续保证 stdout 纯 JSON
 - `stock-analysis-skill` 将不再保留本地 wrapper，文档必须明确调用入口在 API 仓库，避免使用方继续假设 skill 根目录存在同名脚本

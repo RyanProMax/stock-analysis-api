@@ -49,3 +49,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+    ".agents/skills/stock-analysis/tests",
+]

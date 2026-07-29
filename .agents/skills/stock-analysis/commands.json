@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "commands": {
+    "hkipo": {
+      "description": "自动分析当前可认购港股 IPO 池",
+      "argumentHint": "[--all]",
+      "entrypoints": ["im", "web"],
+      "executor": {
+        "command": "python3",
+        "args": ["commands/hkipo.py"]
+      }
+    },
+    "cnipo": {
+      "description": "预留 A 股 IPO 指令位（暂未实现）",
+      "usage": "/cnipo",
+      "entrypoints": ["im", "web"],
+      "executor": {
+        "command": "python3",
+        "args": ["commands/cnipo.py"]
+      }
+    },
+    "research": {
+      "description": "生成单只股票深度研报",
+      "argumentHint": "<股票名称/代码>",
+      "entrypoints": ["im", "web"],
+      "executor": {
+        "command": "python3",
+        "args": ["commands/research.py"]
+      }
+    },
+    "otc": {
+      "description": "查询港股 IPO 暗盘 / OTC 报价，支持单次查询和定时间隔轮询",
+      "argumentHint": "<港股代码> [--loop=300s]",
+      "entrypoints": ["im", "web"],
+      "executor": {
+        "command": "python3",
+        "args": ["commands/otc.py"]
+      }
+    }
+  }
+}

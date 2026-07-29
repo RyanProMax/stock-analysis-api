@@ -1,14 +1,38 @@
 # Skill / Agent CLI Contract
 
-更新时间：2026-05-15
+更新时间：2026-07-29
 
 本文件是 `stock-analysis-api` 内部 skill / agent CLI contract 的唯一规格说明，不属于公共 HTTP API 文档。
 
 ## 目标
 
-- 让外部 `stock-analysis-skill` 与其他 agent 直接消费本仓库 CLI
+- 让仓库内 `.agents/skills/stock-analysis/` 与其他 agent 直接消费本仓库 CLI
 - 统一内部脚本的输入、输出、状态语义和降级规则
 - 保证 CLI stdout 始终为机器可读 JSON
+
+## Skill 集成与路径 contract
+
+- `stock-analysis-skill` 的唯一版本化位置是
+  `.agents/skills/stock-analysis/`；API 与 skill 变更在同一 Git 提交中交付。
+- skill 目录包含：
+  - `SKILL.md`
+  - `commands.json`
+  - `commands/*.py`
+  - `references/*.md`
+  - `scripts/tushare_toolkit.py`
+  - `scripts/hkipo_backtest.py`
+  - `tests/test_*.py`
+- 独立仓库治理文件不迁入 skill 目录：不保留子目录 `AGENTS.md`、`PLANS/`、
+  独立 `README.md`、`.gitignore`、`.env`、`.venv` 或独立 dependency lock。
+- skill 运行依赖复用根仓库的 `pyproject.toml` 与 `uv` 环境；skill 不维护第二套
+  requirements。
+- `STOCK_ANALYSIS_API_ROOT` 仍是最高优先级显式覆盖，便于打包安装或测试。
+- 未设置显式覆盖时，executor 必须从 skill 安装目录向上识别包含
+  `scripts/stock_analyze.py` / `scripts/futu_market_data.py` /
+  `scripts/grey_market_watch.py` 的 monorepo 根目录；兼容旧外部安装时才检查 sibling
+  `stock-analysis-api`。
+- executor 不得把任意 process cwd 当作 API 根目录，也不得生成相对 API 命令。
+- skill 自身测试从 `.agents/skills/stock-analysis/tests` 运行，并计入根仓库回归。
 
 ## CLI 列表
 
