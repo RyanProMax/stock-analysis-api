@@ -1,6 +1,6 @@
 # Daily Market Pack Requirements
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 ## 问题与范围
 
@@ -25,8 +25,9 @@ Yahoo Finance。相同的底层行情能力无法被常驻 HTTP 服务、内部 
 
 1. 当调用 `scripts/market_data_query.py daily-pack --cutoff-at <ISO>` 时，系统应在
    不启动 FastAPI 的情况下返回严格 JSON。
-2. 当请求日报数据包时，系统应返回 SPX、IXIC、DJI、DGS10、SSE 和 CSI300
-   六项指标，并为每项提供 `as_of`、provider、来源 URL、最新值、前值和变化。
+2. 当请求日报数据包时，系统应返回 SPX、IXIC、DJI、DGS10、SSE、SZSE、
+   CSI300、CSI500、CHINEXT 和 STAR50 十项指标，并为每项提供 `as_of`、
+   provider、来源 URL、最新值、前值和变化。
 3. 当数据源返回晚于 `cutoff_at` 的数据时，系统应排除该数据，不把盘中或未来
    数据伪装成已完成收盘。
 4. 当同一美股或美债指标有 FRED 与 Yahoo 两个完整候选时，系统应选择最新
@@ -35,7 +36,7 @@ Yahoo Finance。相同的底层行情能力无法被常驻 HTTP 服务、内部 
    降级；当某项仍失败时，系统应返回结构化失败，不补编数值。
 6. 当未显式要求持久化时，系统应固定使用 `persistence=none`，且不得读取或写入
    SQLite 行情仓、scheduler state、watchlist 或券商状态。
-7. 当 Stock Daily 采集行情时，采集器应调用上述一次性 CLI，而不再直接请求六项
+7. 当 Stock Daily 采集行情时，采集器应调用上述一次性 CLI，而不再直接请求十项
    指数/收益率的外部数据源。
 8. 当 CLI 返回非 `ok`、指标缺失或 contract 不匹配时，Stock Daily 应让采集失败，
    不静默回退到旧的 Node.js 直连实现。

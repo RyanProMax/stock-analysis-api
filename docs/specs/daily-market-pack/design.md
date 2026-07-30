@@ -1,6 +1,6 @@
 # Daily Market Pack Design
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 ## 架构
 
@@ -22,7 +22,7 @@ flowchart LR
   - provider 只负责外部请求和原始点位标准化，不依赖 SQLite。
   - provider 接受统一 UTC `cutoff_at`，只返回截点内的有效点。
 - `src/services/daily_market_pack_service.py`
-  - 固定日报首批六项指标与 provider policy。
+  - 固定日报十项指标与 provider policy。
   - 选择完整候选、格式化变化、汇总 provider attempts。
   - 不启动 HTTP，不依赖 repository。
 - `src/services/market_data_query_cli.py`
@@ -57,7 +57,8 @@ flowchart LR
 ## Provider Policy
 
 - SPX / IXIC / DJI / DGS10：并行尝试 FRED 与 Yahoo，选择最新完整候选。
-- SSE / CSI300：腾讯证券 -> 东方财富 -> Yahoo，首个完整候选成功即停止。
+- SSE / SZSE / CSI300 / CSI500 / CHINEXT / STAR50：腾讯证券 -> 东方财富
+  -> Yahoo，首个完整候选成功即停止。
 - provider 失败只进入 `provider_attempts`；全部失败才生成 item failure。
 
 ## 截点

@@ -11,7 +11,10 @@ from src.data_provider.market_series import (
     MarketSeriesSpec,
     YahooChartProvider,
 )
-from src.services.daily_market_pack_service import DailyMarketPackService
+from src.services.daily_market_pack_service import (
+    DAILY_MARKET_SERIES,
+    DailyMarketPackService,
+)
 from src.services.market_data_query_cli import main as market_data_query_main
 
 
@@ -27,7 +30,9 @@ class FakeProvider:
         self.failures = failures or set()
         self.calls: list[str] = []
 
-    def fetch(self, spec: MarketSeriesSpec, cutoff_at: datetime) -> MarketSeriesCandidate:
+    def fetch(
+        self, spec: MarketSeriesSpec, cutoff_at: datetime
+    ) -> MarketSeriesCandidate:
         assert cutoff_at.tzinfo is not None
         self.calls.append(spec.symbol)
         if spec.symbol in self.failures:
@@ -70,6 +75,21 @@ def _strict_json(raw: str) -> dict:
         raise ValueError(value)
 
     return json.loads(raw, parse_constant=reject_constant)
+
+
+def test_default_daily_pack_covers_major_china_and_innovation_indexes():
+    assert [spec.symbol for spec in DAILY_MARKET_SERIES] == [
+        "SPX",
+        "IXIC",
+        "DJI",
+        "DGS10",
+        "SSE",
+        "SZSE",
+        "CSI300",
+        "CSI500",
+        "CHINEXT",
+        "STAR50",
+    ]
 
 
 def test_daily_pack_uses_freshest_us_candidate_and_exposes_machine_fields():
@@ -166,7 +186,8 @@ def test_cn_provider_falls_back_in_order_without_calling_later_sources():
     assert eastmoney.calls == ["SSE"]
     assert yahoo.calls == []
     assert [
-        attempt["status"] for attempt in payload["data"]["markets"][0]["provider_attempts"]
+        attempt["status"]
+        for attempt in payload["data"]["markets"][0]["provider_attempts"]
     ] == ["failed", "ok"]
 
 

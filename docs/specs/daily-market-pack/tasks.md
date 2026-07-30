@@ -27,3 +27,8 @@
   - 运行 API、Skill、Stock Daily 的定向与完整测试。
   - 更新架构、计划和操作文档。
   - _Requirements: 1–8_
+
+- [x] 7. 扩展中国主要指数覆盖
+  - 新增深证成指、中证 500、创业板指和科创 50。
+  - 同步 Stock Daily contract、数据与响应式行情矩阵。
+  - _Requirements: 2, 3, 5, 7, 8_

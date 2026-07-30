@@ -61,6 +61,17 @@ DAILY_MARKET_SERIES = (
         },
     ),
     MarketSeriesSpec(
+        symbol="SZSE",
+        name="深证成指",
+        region="CN",
+        kind="index",
+        identifiers={
+            "tencent": "sz399001",
+            "eastmoney": "0.399001",
+            "yahoo_finance": "399001.SZ",
+        },
+    ),
+    MarketSeriesSpec(
         symbol="CSI300",
         name="沪深 300",
         region="CN",
@@ -69,6 +80,39 @@ DAILY_MARKET_SERIES = (
             "tencent": "sh000300",
             "eastmoney": "1.000300",
             "yahoo_finance": "000300.SS",
+        },
+    ),
+    MarketSeriesSpec(
+        symbol="CSI500",
+        name="中证 500",
+        region="CN",
+        kind="index",
+        identifiers={
+            "tencent": "sh000905",
+            "eastmoney": "1.000905",
+            "yahoo_finance": "000905.SS",
+        },
+    ),
+    MarketSeriesSpec(
+        symbol="CHINEXT",
+        name="创业板指",
+        region="CN",
+        kind="index",
+        identifiers={
+            "tencent": "sz399006",
+            "eastmoney": "0.399006",
+            "yahoo_finance": "399006.SZ",
+        },
+    ),
+    MarketSeriesSpec(
+        symbol="STAR50",
+        name="科创 50",
+        region="CN",
+        kind="index",
+        identifiers={
+            "tencent": "sh000688",
+            "eastmoney": "1.000688",
+            "yahoo_finance": "000688.SS",
         },
     ),
 )
@@ -106,7 +150,8 @@ class DailyMarketPackService:
         failures_by_symbol: dict[str, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=min(len(self.series), 6)) as executor:
             futures = {
-                executor.submit(self._collect_one, spec, cutoff_utc): spec for spec in self.series
+                executor.submit(self._collect_one, spec, cutoff_utc): spec
+                for spec in self.series
             }
             for future in as_completed(futures):
                 spec = futures[future]
@@ -286,14 +331,20 @@ class DailyMarketPackService:
             if math.isclose(change_value, 0.0, abs_tol=0.0001)
             else "up" if change_value > 0 else "down"
         )
-        change_ratio = round(change_value / previous.value, 10) if previous.value else None
+        change_ratio = (
+            round(change_value / previous.value, 10) if previous.value else None
+        )
         unit = "percent" if spec.kind == "yield" else "points"
-        display_value = f"{latest.value:.2f}%" if spec.kind == "yield" else f"{latest.value:,.2f}"
+        display_value = (
+            f"{latest.value:.2f}%" if spec.kind == "yield" else f"{latest.value:,.2f}"
+        )
         if spec.kind == "yield":
             basis_points = change_value * 100
             display_change = f"{basis_points:+.0f} bp"
         else:
-            display_change = f"{change_ratio * 100:+.2f}%" if change_ratio is not None else "—"
+            display_change = (
+                f"{change_ratio * 100:+.2f}%" if change_ratio is not None else "—"
+            )
         return {
             "symbol": spec.symbol,
             "name": spec.name,
@@ -319,9 +370,12 @@ class MarketSeriesUnavailable(RuntimeError):
     def __init__(self, symbol: str, provider_attempts: list[dict[str, Any]]):
         self.provider_attempts = provider_attempts
         failed = [
-            f"{item['provider']}={item.get('error', item['status'])}" for item in provider_attempts
+            f"{item['provider']}={item.get('error', item['status'])}"
+            for item in provider_attempts
         ]
-        super().__init__(f"{symbol}: no complete provider candidate; {'; '.join(failed)}")
+        super().__init__(
+            f"{symbol}: no complete provider candidate; {'; '.join(failed)}"
+        )
 
 
 daily_market_pack_service = DailyMarketPackService()

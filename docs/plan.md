@@ -1,6 +1,6 @@
 # 当前任务计划
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 ## 当前目标
 
@@ -8,6 +8,8 @@
 - 将配套 `stock-analysis-skill` 从独立仓库整合到
   `.agents/skills/stock-analysis/`，与 API contract 同版本提交和回归。
 - 把 Stock Daily 的首批指数 / 收益率直连请求抽到 API 无状态数据层。
+- 将 Stock Daily 的中国指数覆盖从上证、沪深 300 扩展到深证成指、中证 500、
+  创业板指和科创 50，保持相同截点、fallback 与来源审计。
 - 新增 `market_data_query.py daily-pack` 一次性严格 JSON CLI，默认且仅允许
   `persistence=none`，在 FastAPI 未启动时可由 Skill / Agent 调用。
 - 保留 Stock Daily 的新闻采集和行业热度算法，先完成低风险的六项行情迁移。
@@ -36,8 +38,14 @@
 - 本轮开始落实 Alpha / 模拟盘自迭代任务链：新增持久化 task-chain worker，先跑通 due task、lease、防重入、append-only run log、小时汇报和日终纠偏 review 结构。
 - 本轮收紧 task-chain 策略迭代门槛：KOL 预检返回 `agent_required` 时只代表需要 Agent 生成最终报告，不能触发 `strategy_iteration`；策略迭代必须等到 KOL 情报正文落地后才消费新闻 / KOL / 板块输入。
 
-## 当前进展（2026-07-29）
+## 当前进展（2026-07-30）
 
+- Daily market pack 已从 6 项扩展为 10 项：新增深证成指、中证 500、创业板指和
+  科创 50，沿用腾讯证券优先、东方财富与 Yahoo Finance fallback 的无状态读取
+  contract；真实 2026-07-30 收盘查询返回 `10 succeeded / 0 failed`。
+- 本轮回归通过：daily market pack 定向测试 `7 passed`，API / Skill 全量测试
+  `325 passed, 4 subtests passed`；相关 Python 文件已通过 Black 格式化和
+  `git diff --check`。
 - 已完成本轮仓库基线审计：公共 HTTP 仍严格限定为
   `GET /health`、`POST /stock/analyze`、`POST /watch/poll`；内部 CLI 已覆盖行情仓、
   Futu/OpenD 只读查询、港股 IPO/暗盘、模拟盘、Alpha 研究、策略治理和 task-chain。
@@ -91,6 +99,9 @@
 
 ## 最近完成项
 
+- 已将 Stock Daily 使用的中国主要指数从上证、沪深 300 扩展为上证、深证、
+  沪深 300、中证 500、创业板和科创 50；统一返回点位、涨跌幅、方向、交易日、
+  来源与 provider attempts，不新增持久化或公共 HTTP 接口。
 - 已修复 Futu/OpenD CLI 超时 contract：
   - `FUTU_OPEND_CALL_TIMEOUT_SECONDS` 控制单次 Futu/OpenD 查询 deadline，默认 30 秒，覆盖 SDK 查询与清理阶段；设为 `0` 可禁用内部 deadline。
   - OpenD/Futu API 无响应时，CLI 输出 `status=failed / source=futu_opend / error="Futu OpenD call timed out after ..."` 并可靠退出，避免外层 workflow 等到 120 秒进程超时。
